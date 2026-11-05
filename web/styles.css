@@ -1514,9 +1514,10 @@ details.setup-part:not([open]) { padding-top: 8px; }
 .top-link .top-count { display: inline-block; min-width: 18px; padding: 0 4px; border-radius: 999px; background: var(--border-strong); color: var(--ink);
   font: 700 12px/18px var(--font-body); text-align: center; font-variant-numeric: tabular-nums; }
 
-/* the Tasks tab from 1,100 px: the week's grid across the top, Upkeep and Long-term side by side under it */
+/* the Tasks tab from 900 px (critique 2026-11-05 #24: an empty Long-term took a full row): the week's grid across the top,
+   Upkeep and Long-term side by side under it */
 .tk-grid { display: grid; gap: 16px; align-items: start; }
-@media (min-width: 1100px) {
+@media (min-width: 900px) {
   .tk-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .tk-grid > .tk-today { grid-column: 1 / -1; }
 }
@@ -1718,43 +1719,54 @@ h2.r-named { display: flex; }
 .ov-value-label > .r-ico { align-self: center; margin-right: -2px; }
 
 /* ---- the Tasks tab's grid (spec 2026-11-04-task-grid-design.md 2): the week's daily tasks as the room's log sheet. Days
-   down and tasks across on a desk; a phone turns it (task-grid.js sets data-turn): a task's name over its row of 7 days.
-   Colour is state only: amber for a missed ✗, the accent for today's ring and the focus; the rest neutral. ---- */
+   down and tasks across on a desk; turned where the columns do not fit the card (task-grid.js sets data-turn by the card's
+   width): a task's name over its row of 7 days. Colour is state only: amber for a missed ✗ (its box tinted), the accent for
+   today's ring (desk) or column (turned) and the focus; the rest neutral. ---- */
 .tg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 12px; }
-.tg-nav { display: flex; gap: 4px; }
-.tg-step { min-width: 36px; padding: 0 10px; font-size: var(--fs-lg); line-height: 1; }
-.tg-nav [aria-disabled="true"] { color: var(--muted); cursor: default; }
 .tg-title { flex: 1 1 auto; margin: 0; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
-.tg-scroll { overflow-x: auto; }
+.tg-nav { display: flex; gap: 6px; margin-left: auto; } /* as the Calendar's: the dates first, ‹ This week › at the right */
+.tg-step { min-width: 36px; padding-inline: 0; font-size: var(--fs-lg); line-height: 1; }
+.tg-nav [aria-disabled="true"] { color: var(--muted); cursor: default; }
+/* the head, the grid, the Undo line and the legend stop at the grid's own width (a few tasks on a wide desk) */
+.tg-host[data-turn="desk"] > * { max-width: calc(88px + var(--cols, 6) * 150px); }
+.tg-host[data-turn="phone"] > * { max-width: 720px; }
+.tg-scroll { overflow-x: auto; } /* a guard: the grid turns before its columns would need it */
 .tg { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
-/* columns of one width, at most 150 px each: a week of few tasks does not stretch its boxes into bars; at least a box's 52 px
-   and its padding, so many tasks on a narrow desk (601 to 800 px) scroll sideways rather than run over their cells */
-.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 56px); max-width: calc(88px + var(--cols, 6) * 150px); }
+/* columns of one width: 92 px or more ("Contamination" whole; task-grid-math deskWidth), at most 150 px, so a week of few
+   tasks does not stretch its boxes into bars */
+.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); max-width: calc(88px + var(--cols, 6) * 150px); }
 .tg th, .tg td { padding: 2px; font-weight: inherit; }
 .tg-corner { width: 88px; }
 .tg .tg-day { padding: 2px 10px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 500; text-align: left; white-space: nowrap; }
-.tg-task { vertical-align: bottom; }
-.tg-task-name { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; min-height: 0; padding: 4px 2px;
-  border: 0; background: none; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.25; text-align: center;
-  hyphens: auto; overflow-wrap: anywhere; } /* "Contamination" in a 56 px column breaks rather than runs into the next head */
+/* the heads' pictures on one line at the top, their names two lines at most under them, the unit muted under the name */
+.tg-task { vertical-align: top; }
+.tg-task-name { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; min-height: 0; padding: 4px 2px;
+  border: 0; background: none; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.25; text-align: center; }
+.tg-task-name > .pic { margin-bottom: 2px; }
+.tg-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; } /* the last guard: a word wider than its column breaks rather than runs into the next head */
+.tg-unit { color: var(--muted); font-weight: 500; }
 .tg-task-name:hover { background: var(--band); border-color: transparent; color: var(--ink); }
 .tg-box { position: relative; display: grid; place-items: center; width: 100%; min-width: 52px; height: 40px; min-height: 0; padding: 0;
   border: 1px solid var(--border-strong); border-radius: 6px; background: none; color: var(--ink); font-size: var(--fs-sm);
   -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-.tg-box:is([data-kind="none"], [data-kind="cancelled"]) { border-color: transparent; background: var(--band); }
+/* not due: a shade with some weight (about 1.35:1 on the card in both themes), still quieter than any mark */
+.tg-box:is([data-kind="none"], [data-kind="cancelled"]) { border-color: transparent; background: color-mix(in srgb, var(--ink) 9%, transparent); }
 .tg-box[data-kind="open"] { border: 2px solid var(--ink-2); }
 button.tg-box:hover { background: var(--band); }
 button.tg-box[data-kind="open"]:hover { border-color: var(--ink); }
 .tg-box[data-kind="planned"] { border: 1px dashed var(--border-strong); }
 .tg-box[aria-disabled="true"] { opacity: .55; cursor: progress; }
 .tg-look { display: flex; flex-direction: column; align-items: center; line-height: 1.15; pointer-events: none; }
-.tg-mark { font-weight: 600; white-space: nowrap; }
+.tg-mark { display: inline-flex; align-items: center; gap: 2px; font-weight: 600; white-space: nowrap; }
+.tg-tick { display: block; flex: none; }
+/* a missed day: the whole box tinted and an amber ✗, the grid's only amber */
+.tg-box[data-kind="missed"] { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: var(--warning-soft); }
 .tg-box[data-kind="missed"] .tg-mark { color: var(--warning-text); font-size: 20px; font-weight: 700; line-height: 1; } /* the font draws ✗ small */
 .tg-box[data-kind="skipped"] .tg-mark { color: var(--muted); }
-.tg-who { color: var(--ink-2); font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.tg-who { color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em; }
 .tg-about { position: absolute; top: 1px; right: 4px; color: var(--muted); font-size: 11px; }
 td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* today: its row (desk) or its column (phone) ringed in the accent */
+/* today: its row ringed in the accent (desk) */
 .tg[data-turn="desk"] tr.tg-today > * { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent); }
 .tg[data-turn="desk"] tr.tg-today > :first-child { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent), inset 2px 0 var(--accent); }
 .tg[data-turn="desk"] tr.tg-today > :last-child { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent), inset -2px 0 var(--accent); }
@@ -1765,32 +1777,59 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 .tg[data-turn="phone"] .tg-corner { display: none; }
 .tg[data-turn="phone"] .tg-task { grid-column: 1 / -1; padding-top: 8px; }
 .tg[data-turn="phone"] .tg-task-name { flex-direction: row; justify-content: flex-start; gap: 8px; min-height: 36px; padding: 2px 4px; font-size: var(--fs-sm); text-align: left; }
+.tg[data-turn="phone"] .tg-task-name > .pic { margin-bottom: 0; }
+.tg[data-turn="phone"] .tg-name { display: inline; }
 .tg[data-turn="phone"] .tg-day { padding: 6px 0; text-align: center; }
 .tg[data-turn="phone"] .tg-box { min-width: 0; height: 48px; overflow: hidden; }
-.tg[data-turn="phone"] .tg-amount { display: block; font-size: var(--fs-xs); line-height: 1.1; }
-.tg[data-turn="phone"] .tg-mark:has(.tg-amount) { font-size: 11px; line-height: 1; }
-.tg[data-turn="phone"] .tg-today { box-shadow: inset 2px 0 var(--accent), inset -2px 0 var(--accent); }
-.tg[data-turn="phone"] thead .tg-today { box-shadow: inset 2px 0 var(--accent), inset -2px 0 var(--accent), inset 0 2px var(--accent); color: var(--ink); font-weight: 600; }
-.tg[data-turn="phone"] tbody tr:last-child .tg-today { box-shadow: inset 2px 0 var(--accent), inset -2px 0 var(--accent), inset 0 -2px var(--accent); }
-.tg-legend { margin: 10px 0 0; font-size: var(--fs-sm); }
-.tg-csv { margin: 6px 0 0; }
+.tg[data-turn="phone"] .tg-mark:has(.tg-amount) { flex-direction: column; gap: 0; }
+.tg[data-turn="phone"] .tg-mark:has(.tg-amount) .tg-tick { width: 14px; height: 14px; }
+.tg[data-turn="phone"] .tg-amount { font-size: var(--fs-xs); line-height: 1.1; }
+/* today (turned): its column tinted from its head to its last box, through the task names' rows (--today: its place, 0 to 6) */
+.tg[data-turn="phone"] .tg-today { background: var(--accent-soft); }
+.tg[data-turn="phone"] thead .tg-today { border-radius: 8px 8px 0 0; color: var(--ink); font-weight: 600; }
+.tg[data-turn="phone"] tbody tr:last-child .tg-today { border-radius: 0 0 8px 8px; }
+.tg[data-turn="phone"][data-today] .tg-task { background: linear-gradient(to right, transparent calc(100% / 7 * var(--today)),
+  var(--accent-soft) 0 calc(100% / 7 * (var(--today) + 1)), transparent 0); }
+/* the Undo line after a Done or Skip from the grid (a live region: empty, not hidden, when there is nothing to undo) */
+.tg-done-line { display: flex; flex-wrap: wrap; align-items: center; margin: 8px 0 0; font-size: var(--fs-sm); }
+.tg-done-line:empty { margin: 0; }
+.tg-undo { color: var(--ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+/* the legend: each box as it shows, small, with its words */
+.tg-legend { margin: 10px 0 0; font-size: var(--fs-sm); line-height: 1.9; }
+.tg-key { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; vertical-align: middle; }
+.tg-box.tg-key-box { width: 18px; min-width: 0; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
+.tg-key-box .tg-tick { width: 12px; height: 12px; }
+.tg-box.tg-key-box[data-kind="missed"] .tg-mark { font-size: 13px; }
+.tg-key-about { color: var(--muted); }
+.tg-csv { margin: 8px 0 0; }
 .tg-host .tg-none { margin: 0; }
-/* the long press menu: Skip…, Undo, Details at the box */
+/* the long press menu: Skip…, Undo, Details at the box; a pointer's menu takes the focus itself, the keys' its first item,
+   and the focus ring sits inside the item as a menu's highlight */
 .tg-menu { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 168px; padding: 4px;
   border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); box-shadow: 0 8px 24px var(--shadow); }
+.tg-menu:focus { outline: none; }
 .tg-menu button { justify-content: flex-start; min-height: 40px; border: 0; background: none; text-align: left; }
-.tg-menu button:is(:hover, :focus-visible) { background: var(--band); }
+.tg-menu button:hover { background: var(--band); }
+.tg-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--band); }
 .tg-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0 0; font-variant-numeric: tabular-nums; }
 .tg-facts dt { color: var(--muted); }
 .tg-facts dd { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
 @media (max-width: 600px) {
   .tg-scroll { margin: 0 -12px; padding: 0 2px; } /* the card's padding to the boxes: 7 of them at 44 px or more from 360 px */
-  .tg-head :is(button, .button) { min-height: 44px; }
+  .tg-host[data-turn] > .tg-scroll { max-width: none; }
+  /* ‹ the week's dates › on one row; This week under them only while another week is on show */
+  .tg-head { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px 8px; }
+  .tg-nav { display: contents; }
+  .tg-prev { grid-area: 1 / 1; }
+  .tg-title { grid-area: 1 / 2; text-align: center; }
+  .tg-next { grid-area: 1 / 3; }
+  .tg-this { grid-area: 2 / 1 / 3 / -1; justify-self: center; }
+  .tg-this[aria-disabled="true"] { display: none; }
+  .tg-head button { min-height: 44px; }
   .tg-step { min-width: 44px; }
-  .tg-title { order: -1; flex-basis: 100%; }
-  .tg-print { margin-left: auto; }
   .tg[data-turn="phone"] th, .tg[data-turn="phone"] td { padding: 1px; }
   .tg-menu button { min-height: 44px; }
+  .tg-csv a { display: inline-block; padding: 12px 0; margin: -12px 0; } /* 44 px to tap */
 }
 
 /* ---- the month sheet of a room's daily tasks, #/rooms/:id/tasks/sheet (spec 2026-11-04-task-grid-design.md 4): the paper

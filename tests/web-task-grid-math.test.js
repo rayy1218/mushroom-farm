@@ -4,8 +4,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  RULE_ORDER, SHORT_NAMES, LEGEND, UNDO_MS, weekOf, shiftWeek, weekTitle, monthDays, shortName, initialsFor, gridColumns,
-  gridCells, boxWords, boxAmount, canUndo, sheetRows, sheetLayout, monthTitle,
+  RULE_ORDER, SHORT_NAMES, LEGEND, legendFor, UNDO_MS, weekOf, shiftWeek, weekTitle, monthDays, shortName, initialsFor, gridColumns,
+  gridCells, boxWords, boxAmount, canUndo, sheetRows, sheetLayout, monthTitle, unitHead, sheetHead, deskWidth, doneSplit, undoWords,
+  createUndoLine,
 } from '../web/task-grid-math.js';
 import { DAILY_RULES, CLEAR_OUT } from '../server/task-rules.js';
 import { DOT } from '../web/text-math.js';
@@ -68,9 +69,10 @@ test('shortName: spec 2.1 for the built-in rules; an own rule its text cut to 24
   assert.equal(shortName('floorClean'), 'Floor');
   assert.equal(shortName('clearOut'), 'Clear out');
   assert.equal(shortName('custom:3', 'Check the water tank'), 'Check the water tank');
-  assert.equal(shortName('custom:3', 'Check the water tank level and top up'), 'Check the water tank le…');
-  assert.equal(shortName('custom:3', 'Check the water tank level and top up').length, 24);
+  assert.equal(shortName('custom:3', 'Check the water tank level and top it up'), 'Check the water tank…', 'cut at the last whole word (critique #14)');
   assert.equal(shortName('custom:3', 'Wash the boots and the gloves'), 'Wash the boots and the…', 'no space before the "…"');
+  assert.equal(shortName('custom:3', 'Disinfectthewholecorridorfloor'), 'Disinfectthewholecorrid…', 'one long word: cut inside it');
+  assert.equal(shortName('custom:3', 'Disinfectthewholecorridorfloor').length, 24);
   assert.equal(shortName('custom:3', 'x'.repeat(24)), 'x'.repeat(24), '24 characters stay whole');
   assert.equal(shortName('somethingNew', 'Weigh the bags: before they go in'), 'Weigh the bags', 'a rule this page does not know: its name');
 });
@@ -83,16 +85,23 @@ test('initialsFor: two words the first letters of the first two, one word its fi
   assert.equal(m.get('J'), 'J');
 });
 
-test('initialsFor: names that share initials each show the first name cut to 4 letters, as written', () => {
-  const m = initialsFor(['Aliya Tan', 'Ali Teh', 'Sara', 'Ben', 'Sam Lee']);
-  assert.equal(m.get('Aliya Tan'), 'Aliy');
-  assert.equal(m.get('Ali Teh'), 'Ali');
-  assert.equal(m.get('Sara'), 'SA', 'Sara (SA) and Sam Lee (SL) do not clash');
+test('initialsFor: names that share initials each show three letters, upper case (critique #10)', () => {
+  const m = initialsFor(['Ali Lee', 'Amin Lau', 'Sara', 'Ben', 'Sam Lee']);
+  assert.equal(m.get('Ali Lee'), 'ALE', 'two words: the first letter of the first, the first two of the second');
+  assert.equal(m.get('Amin Lau'), 'ALA');
+  assert.equal(m.get('Sara'), 'SA', 'Sara (SA) and Sam Lee (SL) do not clash: two letters still');
   assert.equal(m.get('Ben'), 'BE');
   const n = initialsFor(['Sara', 'Sabri', 'sara', null, '', 'Sara']);
-  assert.equal(n.get('Sara'), 'Sara', 'a name twice (or in another case) is one person, still clashing with Sabri');
-  assert.equal(n.get('Sabri'), 'Sabr');
+  assert.equal(n.get('Sara'), 'SAR', 'one word: its first three; a name twice (or in another case) is one person');
+  assert.equal(n.get('Sabri'), 'SAB');
   assert.equal(n.size, 3);
+});
+
+test('initialsFor: still clashing at three letters, the first name cut to 4 letters, as written', () => {
+  const m = initialsFor(['Aliya Tan', 'Ali Tang', 'Ana Teh']);
+  assert.equal(m.get('Aliya Tan'), 'Aliy', 'ATA twice');
+  assert.equal(m.get('Ali Tang'), 'Ali');
+  assert.equal(m.get('Ana Teh'), 'ATE', 'its three letters are its own');
 });
 
 test('gridColumns: the week\'s daily rules in the rules\' order, then own rules by id; only rules with a row or a planned item', () => {
@@ -205,9 +214,9 @@ test('gridCells: the initials see the week\'s names and the workers\' list for a
   });
   const cols = gridColumns(days);
   const grid = gridCells({ days, columns: cols, today: TODAY, workers: ['Sara'] });
-  assert.deepEqual(grid.slice(0, 2).map((r) => r.cells[0].initials), ['Aliy', 'Ali']);
+  assert.deepEqual(grid.slice(0, 2).map((r) => r.cells[0].initials), ['ATA', 'ATE']);
   const clash = gridCells({ days: week({ '2026-11-02': days[0].items }), columns: cols, today: TODAY, workers: ['Ali Teh'] });
-  assert.equal(clash[0].cells[0].initials, 'Aliy', 'a clash with a worker who did nothing this week still counts');
+  assert.equal(clash[0].cells[0].initials, 'ATA', 'a clash with a worker who did nothing this week still counts');
 });
 
 test('boxAmount: the figure alone, kg to 2 decimals at most, bags whole', () => {
@@ -241,9 +250,14 @@ test('canUndo: today\'s done or skipped box with an id, closed at most a minute 
   assert.equal(canUndo(cell({ kind: 'open' }), now), false);
 });
 
-test('LEGEND: the line under the grid, its dots kept to the words before them', () => {
-  assert.equal(LEGEND, ['✓ done (initials)', '✗ missed', '— skipped', 'shaded: not due'].join(DOT));
-  assert.equal(LEGEND.replace(/\u00a0/g, ' '), '✓ done (initials) · ✗ missed · — skipped · shaded: not due');
+test('LEGEND: one list for the grid and the sheet, every box on show with its words (critique #13)', () => {
+  assert.deepEqual(legendFor('grid').map((e) => [e.kind, e.mark ?? '', e.words]), [
+    ['open', '', 'to do'], ['done', '✓', 'done, initials'], ['missed', '✗', 'missed'], ['skipped', '—', 'skipped'],
+    ['none', '', 'not due'], ['planned', '', 'planned'], ['about', '≈', 'date estimated'],
+  ]);
+  assert.deepEqual(legendFor('sheet').map((e) => e.words), ['to do', 'done, initials', 'missed', 'skipped', 'not due'],
+    'the sheet: a planned box is outlined for the pen, as today\'s open one');
+  assert.equal(LEGEND.length, 7);
 });
 
 test('sheetRows: a month of 30 days, a weekday letter, the boxes as print text, days ahead blank with planned outlined', () => {
@@ -256,15 +270,19 @@ test('sheetRows: a month of 30 days, a weekday letter, the boxes as print text, 
   on('2026-11-05').push(item({}));
   const sheet = sheetRows({ month: '2026-11', days, today: TODAY, workers: ['Ali Lee', 'Sara'] });
   assert.deepEqual(sheet.columns.map((c) => c.shortName), ['Harvest AM', 'Footbath']);
+  assert.deepEqual(sheet.columns.map(sheetHead), ['Harvest AM (kg)', 'Footbath'], 'the unit in the head, once');
   assert.equal(sheet.rows.length, 30);
-  assert.deepEqual(sheet.rows.slice(0, 3).map((r) => [r.day, r.weekday]), [[1, 'S'], [2, 'M'], [3, 'T']]);
+  assert.deepEqual(sheet.rows.slice(0, 3).map((r) => [r.day, r.weekday]), [[1, 'Su'], [2, 'Mo'], [3, 'Tu']], 'two letters: S was Saturday or Sunday');
+  assert.deepEqual(sheet.rows.filter((r) => r.weekEnd).map((r) => r.day), [1, 8, 15, 22, 29], 'Sundays rule off the week');
   assert.equal(sheet.rows[29].date, '2026-11-30');
+  assert.equal(sheet.initials, true, 'days still to come: the Initials column for the pen');
   const r = (d) => sheet.rows[d - 1];
-  assert.deepEqual(r(1).cells, [{ kind: 'none', text: '', outlined: false, shaded: true }, { kind: 'none', text: '', outlined: false, shaded: true }]);
-  assert.deepEqual(r(2).cells.map((c) => c.text), ['✓ 2.4 AL', '✓ SA']);
-  assert.deepEqual(r(3).cells.map((c) => c.text), ['✗', '—']);
-  assert.deepEqual(r(4).cells[1], { kind: 'open', text: '', outlined: true, shaded: false }, 'today\'s open box: blank for the pen');
-  assert.deepEqual(r(5).cells, [{ kind: 'none', text: '', outlined: false, shaded: false }, { kind: 'planned', text: '', outlined: true, shaded: false }]);
+  const blank = { mark: '', amount: '', who: '' };
+  assert.deepEqual(r(1).cells, [{ kind: 'none', ...blank, outlined: false, shaded: true }, { kind: 'none', ...blank, outlined: false, shaded: true }]);
+  assert.deepEqual(r(2).cells.map((c) => [c.mark, c.amount, c.who]), [['✓', '2.4', 'AL'], ['✓', '', 'SA']], 'the amount bare (the head says the unit)');
+  assert.deepEqual(r(3).cells.map((c) => [c.kind, c.mark]), [['missed', '✗'], ['skipped', '—']]);
+  assert.deepEqual(r(4).cells[1], { kind: 'open', ...blank, outlined: true, shaded: false }, 'today\'s open box: blank for the pen');
+  assert.deepEqual(r(5).cells, [{ kind: 'none', ...blank, outlined: false, shaded: false }, { kind: 'planned', ...blank, outlined: true, shaded: false }]);
   assert.deepEqual([r(3).ahead, r(4).ahead, r(5).ahead], [false, false, true]);
   assert.equal(sheet.rows.every((x) => x.cells.length === 2), true);
 });
@@ -274,13 +292,85 @@ test('sheetRows: a month of 31 days; a month with no daily tasks has no columns'
   const sheet = sheetRows({ month: '2026-12', days, today: TODAY });
   assert.equal(sheet.rows.length, 31);
   assert.deepEqual(sheet.columns, []);
-  assert.deepEqual(sheet.rows[30], { date: '2026-12-31', day: 31, weekday: 'T', ahead: true, cells: [] });
+  assert.deepEqual(sheet.rows[30], { date: '2026-12-31', day: 31, weekday: 'Th', weekEnd: false, ahead: true, cells: [] });
 });
 
-test("sheetLayout: A4 portrait for 8 columns or fewer, landscape above; the heads sideways when a column is narrower than 22 mm", () => {
+test('sheetRows: a month gone by has no Initials column (it could never be used; critique #23); today\'s month keeps it', () => {
+  const days = (m) => monthDays(m).days.map((date) => ({ date, items: [] }));
+  assert.equal(sheetRows({ month: '2026-10', days: days('2026-10'), today: TODAY }).initials, false);
+  assert.equal(sheetRows({ month: '2026-11', days: days('2026-11'), today: '2026-11-30' }).initials, true, 'its last day is today: for the pen');
+});
+
+test("sheetLayout: A4 portrait for 12 columns or fewer, landscape above; the heads sideways when a column is narrower than 22 mm", () => {
   const at = (n) => { const l = sheetLayout(n); return `${l.landscape ? 'L' : 'P'}${l.sideways ? 's' : ''}`; };
-  assert.deepEqual([0, 1, 6, 7, 8].map(at), ['P', 'P', 'P', 'P', 'Ps'], 'portrait: 156 mm over the columns');
-  assert.deepEqual([9, 11, 12, 20].map(at), ['L', 'L', 'Ls', 'Ls'], 'landscape: 243 mm over them');
+  assert.deepEqual([0, 1, 6, 7, 8, 9, 12].map(at), ['P', 'P', 'P', 'P', 'Ps', 'Ps', 'Ps'], 'portrait: 156 mm over the columns, 13 mm at 12 (critique #4)');
+  assert.deepEqual([13, 20].map(at), ['Ls', 'Ls'], 'landscape: 243 mm over them');
+});
+
+test('unitHead and sheetHead: the unit once, in the column head (the Units Rule; critique #2)', () => {
+  assert.equal(unitHead({ unit: 'kg' }), 'kg');
+  assert.equal(unitHead({ unit: 'bags' }), 'bags removed');
+  assert.equal(unitHead({ unit: null }), '');
+  assert.equal(unitHead({ unit: 'L' }), 'L', 'a unit this page does not know: as it is');
+  assert.equal(sheetHead({ shortName: 'Harvest AM', unit: 'kg' }), 'Harvest AM (kg)');
+  assert.equal(sheetHead({ shortName: 'Contamination walk', unit: 'bags' }), 'Contamination walk (bags)');
+  assert.equal(sheetHead({ shortName: 'Floor', unit: null }), 'Floor');
+});
+
+test('deskWidth: the desk layout\'s least width, 92 px a column ("Contamination" whole) beside the 88 px days (critique #6)', () => {
+  assert.equal(deskWidth(6), 88 + 6 * 92);
+  assert.equal(deskWidth(0), 88);
+});
+
+test('doneSplit: a mixed Done\'s harvests by crop, for Details (critique #21)', () => {
+  const closedAt = at(TODAY, '09:49');
+  const hv = (over) => ({ id: 1, roomId: 7, crop: 'oyster', kg: 150, pickedAt: closedAt, taskId: 41, ...over });
+  const list = [hv({}), hv({ id: 2, crop: 'lionsmane', kg: 4.2 }), hv({ id: 3, kg: 9, taskId: null }), hv({ id: 4, kg: 7, taskId: 40, pickedAt: closedAt - 1 })];
+  assert.equal(doneSplit({ id: 41, closedAt }, list), 'Grey oyster 150.00 kg · Lion\'s mane 4.20 kg'.replace(' · ', DOT));
+  assert.equal(doneSplit({ closedAt }, list), doneSplit({ id: 41, closedAt }, list), 'a day gone has no id: the Done\'s time finds them');
+  assert.equal(doneSplit({ id: 41, closedAt }, [hv({})]), '', 'one crop: the amount says it');
+  assert.equal(doneSplit({ id: 41, closedAt }, null), '');
+});
+
+test('undoWords: the line under the grid after a Done or Skip', () => {
+  assert.equal(undoWords('Floor', { status: 'done', worker: 'Sara' }), 'Floor done by Sara');
+  assert.equal(undoWords('Footbath', { status: 'skipped', worker: null }), 'Footbath skipped');
+});
+
+test('createUndoLine: shows when the tapped row comes back closed, for a minute; the next tap, an Undo or the row reopened hide it', () => {
+  let t = 0;
+  const timers = [];
+  const clock = { set: (fn, ms) => { timers.push({ fn, at: t + ms }); return timers.length - 1; }, clear: (id) => { timers[id] = null; } };
+  const run = (ms) => { t += ms; for (const [i, x] of timers.entries()) if (x && x.at <= t) { timers[i] = null; x.fn(); } };
+  const seen = [];
+  const line = createUndoLine({ onChange: (shown) => seen.push(shown && shown.text), timers: clock });
+  const floor = { id: 5, status: 'done', worker: 'Sara' };
+  line.expect(5, 'Floor');
+  line.rows([{ id: 5, status: 'open' }]);
+  assert.equal(line.current(), null, 'not yet closed in the reply');
+  line.rows([floor]);
+  assert.deepEqual(line.current(), { id: 5, text: 'Floor done by Sara' });
+  line.rows([floor]);
+  assert.deepEqual(seen, ['Floor done by Sara'], 'shown once');
+  run(UNDO_MS - 1);
+  assert.ok(line.current());
+  run(1);
+  assert.equal(line.current(), null, 'a minute on: gone (the server has the last word)');
+  line.expect(5, 'Floor');
+  line.rows([floor]);
+  line.expect(6, 'Footbath');
+  assert.equal(line.current(), null, 'the next tap hides it');
+  line.rows([{ id: 6, status: 'skipped', worker: 'Ali Lee' }]);
+  assert.equal(line.current().text, 'Footbath skipped by Ali Lee');
+  line.rows([{ id: 6, status: 'open' }]);
+  assert.equal(line.current(), null, 'undone elsewhere: gone');
+  line.expect(7, 'Floor');
+  line.rows([{ id: 7, status: 'done', worker: 'Sara' }]);
+  line.hide();
+  assert.equal(line.current(), null, 'Undo pressed');
+  line.rows([{ id: 7, status: 'done', worker: 'Sara' }]);
+  assert.equal(line.current(), null, 'and it does not come back');
+  assert.equal(seen.at(-1), null);
 });
 
 test('monthTitle: "November 2026"', () => {

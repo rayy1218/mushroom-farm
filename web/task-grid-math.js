@@ -7,10 +7,11 @@ import { farmTime, amountText, taskParts } from './tasks-math.js';
 import { dayTitle } from './calendar-math.js';
 import { taskPicture } from './pictures-data.js';
 import { DOT } from './text-math.js';
+import { cropShortName } from './crops.js';
 
 const DAY_MS = 86_400_000;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // two letters: one S was Saturday or Sunday (critique #22)
 const SLOTS = ['morning', 'afternoon', 'any'];
 const OWN = 'custom:';
 const MAX_NAME = 24;
@@ -41,7 +42,29 @@ export const SHORT_NAMES = {
 };
 export const RULE_ORDER = Object.keys(SHORT_NAMES);
 
-export const LEGEND = ['✓ done (initials)', '✗ missed', '— skipped', 'shaded: not due'].join(DOT);
+// The legend under the grid and on the sheet (critique #13): each box as it shows, with its words. A planned box and the
+// estimate's "≈" are the grid's alone: on the sheet a planned box is outlined for the pen, as today's open one.
+export const LEGEND = [
+  { kind: 'open', words: 'to do' },
+  { kind: 'done', mark: '✓', words: 'done, initials' },
+  { kind: 'missed', mark: '✗', words: 'missed' },
+  { kind: 'skipped', mark: '—', words: 'skipped' },
+  { kind: 'none', words: 'not due' },
+  { kind: 'planned', words: 'planned', grid: true },
+  { kind: 'about', mark: '≈', words: 'date estimated', grid: true },
+];
+export const legendFor = (where) => LEGEND.filter((e) => where === 'grid' || !e.grid);
+
+// A column head's unit, said once (the Units Rule; critique #2): the grid's second line, the sheet's brackets.
+const UNIT_HEAD = { kg: 'kg', bags: 'bags removed' };
+export const unitHead = (col) => (col?.unit ? UNIT_HEAD[col.unit] ?? col.unit : '');
+export const sheetHead = (col) => (col?.unit ? `${col.shortName} (${col.unit})` : col.shortName);
+
+// The desk layout's least width (days down, tasks across): the day column's 88 px and 92 px a task, where "Contamination"
+// fits whole at 12 px 600 (critique #6). A card narrower than this turns the grid, as a phone does.
+export const DAY_COL_PX = 88;
+export const TASK_COL_PX = 92;
+export const deskWidth = (cols) => DAY_COL_PX + cols * TASK_COL_PX;
 
 // A Done or Skip can be undone this long after it (the server's UNDO_WINDOW_MS; the server has the last word).
 export const UNDO_MS = 60_000;
@@ -79,31 +102,50 @@ export function monthDays(month) {
 
 // ---- names ----
 
-// A column's name (spec 2.1): a built-in rule's short name; an own rule's text cut to 24 characters with "…"; a rule this page
-// does not know yet, the name part of its text (tasks-math taskParts), cut the same way.
+// A column's name (spec 2.1): a built-in rule's short name; an own rule's text cut to 24 characters with "…", at the last
+// whole word that fits ("Check the water tank…"; one long word is cut inside it); a rule this page does not know yet, the
+// name part of its text (tasks-math taskParts), cut the same way.
 export function shortName(ruleKey, text = '') {
   if (Object.hasOwn(SHORT_NAMES, ruleKey ?? '')) return SHORT_NAMES[ruleKey];
   const words = String(ruleKey ?? '').startsWith(OWN) ? String(text ?? '').trim() : taskParts(text).name;
   const c = chars(words);
-  return c.length <= MAX_NAME ? words : `${c.slice(0, MAX_NAME - 1).join('').trimEnd()}…`;
+  if (c.length <= MAX_NAME) return words;
+  const cut = c.slice(0, MAX_NAME).join(''); // a space right after it: its last word is whole
+  const end = c[MAX_NAME] === ' ' ? cut.length : cut.lastIndexOf(' ');
+  const whole = end > 0 ? cut.slice(0, end).trimEnd() : '';
+  return whole && chars(whole).length <= MAX_NAME - 1 ? `${whole}…` : `${c.slice(0, MAX_NAME - 1).join('').trimEnd()}…`;
 }
 
 // The workers' initials (spec 2): two words or more, the first letters of the first two ("Ali Lee" → "AL"); one word, its first
-// two letters ("Sara" → "SA"); upper case. Names that would share initials each show the first name cut to 4 letters as
-// written ("Aliy", "Ali"). names: the week's workers and the workers' list (blanks and repeats, case aside, are one).
-// → Map name → what its boxes show
+// two letters ("Sara" → "SA"); upper case. Names that would share them take three letters (critique #10): two words or more,
+// the first letter of the first and the first two of the second ("Ali Lee" → "ALE", "Amin Lau" → "ALA"); one word, its
+// first three ("Sara" → "SAR"). Still the same: the first name cut to 4 letters as written ("Aliy", "Ali"). names: the week's
+// workers and the workers' list (blanks and repeats, case aside, are one). → Map name → what its boxes show
 export function initialsFor(names) {
   const given = (names ?? []).map((n) => (typeof n === 'string' ? n.trim() : '')).filter(Boolean);
   const people = new Map(); // lower case → the name as first written
   for (const name of given) if (!people.has(name.toLowerCase())) people.set(name.toLowerCase(), name);
-  const first = (name) => name.split(/\s+/);
-  const initials = (name) => {
-    const w = first(name);
+  const words = (name) => name.split(/\s+/);
+  const two = (name) => {
+    const w = words(name);
     return (w.length >= 2 ? chars(w[0])[0] + chars(w[1])[0] : chars(w[0]).slice(0, 2).join('')).toUpperCase();
   };
-  const count = new Map();
-  for (const name of people.values()) count.set(initials(name), (count.get(initials(name)) ?? 0) + 1);
-  const label = (name) => (count.get(initials(name)) > 1 ? chars(first(name)[0]).slice(0, 4).join('') : initials(name));
+  const three = (name) => {
+    const w = words(name);
+    return (w.length >= 2 ? chars(w[0])[0] + chars(w[1]).slice(0, 2).join('') : chars(w[0]).slice(0, 3).join('')).toUpperCase();
+  };
+  const counted = (form, list) => {
+    const count = new Map();
+    for (const name of list) count.set(form(name), (count.get(form(name)) ?? 0) + 1);
+    return (name) => count.get(form(name)) > 1;
+  };
+  const all = [...people.values()];
+  const clashes = counted(two, all);
+  const stillClashes = counted(three, all.filter(clashes));
+  const label = (name) => {
+    if (!clashes(name)) return two(name);
+    return stillClashes(name) ? chars(words(name)[0]).slice(0, 4).join('') : three(name);
+  };
   // every spelling given finds its person's label
   return new Map(given.map((name) => [name, label(people.get(name.toLowerCase()))]));
 }
@@ -176,6 +218,52 @@ export function boxWords(column, date, cell, today = null) {
   return `${column.shortName}, ${dayTitle(date, today)}: ${what}`;
 }
 
+// A mixed Done's harvests by crop, for its Details (critique #21): "Grey oyster 150.00 kg · Lion's mane 4.20 kg"; '' for one
+// crop or none (the amount says it). The box and the calendar keep the sum; the room's harvests (GET /api/rooms/:id/harvests)
+// hold the split: the Done's own (taskId, the row's id), or on a day gone (no id) the ones a Done made at its closed time;
+// in the order the Done made them.
+export function doneSplit(row, harvests) {
+  const mine = (harvests ?? []).filter((h) => h?.taskId != null && finite(h.kg)
+    && (finite(row?.id) ? h.taskId === row.id : finite(row?.closedAt) && h.pickedAt === row.closedAt));
+  if (mine.length < 2) return '';
+  return mine.sort((a, b) => (a.id ?? 0) - (b.id ?? 0)).map((h) => `${cropShortName(h.crop)} ${h.kg.toFixed(2)} kg`).join(DOT);
+}
+
+// The line under the grid after a Done or Skip from it (critique #7): "Floor done by Sara", "Footbath skipped".
+export const undoWords = (name, row) => `${name} ${row.status}${row?.worker ? ` by ${row.worker}` : ''}`;
+
+// That line's state: a tapped row (expect) shows once the room reply has it done or skipped, for `ms` (Undo's minute, from
+// when it shows: the server has the last word); the next tap, an Undo (hide) or the row open again (undone elsewhere) hide
+// it. onChange(shown | null), shown: { id, text }. timers: { set(fn, ms), clear(id) } (a test's clock).
+export function createUndoLine({ onChange, ms = UNDO_MS, timers = { set: (fn, t) => setTimeout(fn, t), clear: (id) => clearTimeout(id) } }) {
+  let pending = null; // { id, name }: tapped, its row not yet closed in a reply
+  let shown = null;
+  let timer = null;
+  const set = (next) => {
+    if (timer !== null) timers.clear(timer);
+    timer = null;
+    const was = shown;
+    shown = next;
+    if (next) timer = timers.set(() => { timer = null; set(null); }, ms);
+    if (was !== next) onChange?.(shown);
+  };
+  return {
+    expect(id, name) { pending = { id, name }; if (shown) set(null); },
+    rows(rows) {
+      const find = (id) => (rows ?? []).find((r) => r?.id === id);
+      const closed = (r) => r?.status === 'done' || r?.status === 'skipped';
+      if (shown && !closed(find(shown.id))) set(null);
+      const row = pending && find(pending.id);
+      if (row && closed(row)) {
+        set({ id: pending.id, text: undoWords(pending.name, row) });
+        pending = null;
+      }
+    },
+    hide() { pending = null; if (shown) set(null); },
+    current: () => shown,
+  };
+}
+
 // Whether a box's Done or Skip can still be undone at `now` (ms): today's closed row (it has an id) closed UNDO_MS ago or less.
 export function canUndo(cell, now) {
   return (cell?.kind === 'done' || cell?.kind === 'skipped') && cell.taskId != null && finite(cell.row?.closedAt) && now - cell.row.closedAt <= UNDO_MS;
@@ -231,9 +319,11 @@ export function gridCells({ days, columns, today, todayRows = null, workers = []
 
 const MARKS = { done: '✓', missed: '✗', skipped: '—' };
 
-// The month sheet's table: { columns (gridColumns over the month), rows: [{ date, day, weekday (a letter), ahead (a day still
-// to come: the pen's), cells: [{ kind, text ('✓ 2.4 AL', '✓ AL', '✗', '—', or '' for the pen), outlined (a planned box, or
-// today's open one), shaded (not due or cancelled, on a day gone or today) }] }] }. days: the calendar reply's for the month.
+// The month sheet's table: { columns (gridColumns over the month), initials (whether a day is still to come, today with them:
+// the Initials column, for the pen; a month gone by has none), rows: [{ date, day, weekday ('Mo'), weekEnd (a Sunday: the
+// week ruled off), ahead (a day still to come: the pen's), cells: [{ kind, mark ('✓', '✗', '—', or '' for the pen), amount
+// (bare: the head says the unit), who (the initials), outlined (a planned box, or today's open one), shaded (not due or
+// cancelled, on a day gone or today) }] }] }. days: the calendar reply's for the month.
 export function sheetRows({ month, days, today, todayRows = null, workers = [] }) {
   const { days: dates } = monthDays(month);
   const byDate = new Map((days ?? []).map((d) => [d.date, d]));
@@ -242,14 +332,18 @@ export function sheetRows({ month, days, today, todayRows = null, workers = [] }
   const grid = gridCells({ days: all, columns, today, todayRows, workers });
   return {
     columns,
+    initials: dates.at(-1) >= today,
     rows: grid.map(({ date, cells }) => ({
       date,
       day: Number(date.slice(8)),
-      weekday: WEEKDAY_LETTERS[new Date(utc(date)).getUTCDay()],
+      weekday: WEEKDAYS[new Date(utc(date)).getUTCDay()],
+      weekEnd: new Date(utc(date)).getUTCDay() === 0,
       ahead: date > today,
       cells: cells.map((c) => ({
         kind: c.kind,
-        text: MARKS[c.kind] ? [MARKS[c.kind], c.amountText, c.initials].filter(Boolean).join(' ') : '',
+        mark: MARKS[c.kind] ?? '',
+        amount: c.amountText,
+        who: c.initials,
         outlined: c.kind === 'planned' || c.kind === 'open',
         shaded: (c.kind === 'none' || c.kind === 'cancelled') && date <= today,
       })),
@@ -263,13 +357,14 @@ export function monthTitle(month) {
   return `${MONTHS[m - 1]} ${y}`;
 }
 
-// The printed page of a sheet with n columns (spec 4): A4 portrait for 8 or fewer, landscape above; the heads written sideways
-// when a column gets less than 22 mm (the page less 12 mm margins, the day's 12 mm and Initials' 18 mm, over the columns).
+// The printed page of a sheet with n columns (spec 4): A4 portrait for 12 or fewer (13 mm a column at 12, the heads sideways;
+// critique #4: a landscape page left 4.3 mm rows), landscape above; the heads written sideways when a column gets less than
+// 22 mm (the page less 12 mm margins, the day's 12 mm and Initials' 18 mm, over the columns).
 const PAGE_MM = { portrait: 210 - 24, landscape: 297 - 24 };
 const FIXED_MM = 12 + 18;
 const NARROW_MM = 22;
 export function sheetLayout(n) {
-  const landscape = n > 8;
+  const landscape = n > 12;
   const width = (landscape ? PAGE_MM.landscape : PAGE_MM.portrait) - FIXED_MM;
   return { landscape, sideways: n > 0 && width / n < NARROW_MM };
 }

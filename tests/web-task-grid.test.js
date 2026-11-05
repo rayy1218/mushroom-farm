@@ -51,14 +51,18 @@ test('the week from GET /api/calendar; a late reply never paints over a newer we
   assert.ok(grid.includes("failed = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : \"Couldn't load the week\";"));
   assert.ok(grid.includes("none.textContent = 'No daily tasks this week.';"));
   const destroy = grid.slice(grid.indexOf('destroy() {'));
-  for (const x of ['seq++;', 'stopPress();', 'closeMenu();', 'reload.cancel();', 'off()', "removeEventListener('change', onTurn)"]) assert.ok(destroy.includes(x), x);
+  for (const x of ['seq++;', 'stopPress();', 'closeMenu();', 'reload.cancel();', 'off()', 'sized?.disconnect();', 'undoLine.hide();']) assert.ok(destroy.includes(x), x);
 });
 
-test('one renderer for both layouts: days down on a desk, turned on a phone (≤ 600 px); this week has no query', () => {
-  assert.ok(grid.includes("const PHONE = '(max-width: 600px)';"));
+test('one renderer for both layouts: days down on a desk, turned where the columns do not fit the card; this week has no query', () => {
+  // by the card's width against the desk layout's (critique #6: a 700 px tablet broke "Contaminat / ion"), not the screen's
+  assert.ok(!grid.includes('matchMedia'));
+  assert.ok(grid.includes('turned = width > 0 && width < deskWidth(columns.length);'));
+  assert.ok(grid.includes('sized?.observe(host);') && grid.includes('if (w !== width) { width = w; paint(); }'));
   assert.ok(grid.includes('const heads = turned ? rows.map((r) => dayHead(r.date, cal.today)) : columns.map(taskHead);'));
   assert.equal(grid.split('box(c, col, date)').length, 3, 'one box renderer (its definition and its one call)');
-  assert.ok(grid.includes("b.append(picture('task', col.picture, { size: 24 }), el('span', '', col.shortName));"));
+  assert.ok(grid.includes("b.append(picture('task', col.picture, { size: 24 }), el('span', 'tg-name', col.shortName));"));
+  assert.ok(grid.includes("if (unitHead(col)) b.append(el('span', 'tg-unit', unitHead(col)));"), 'the unit once, in the head (critique #2)');
   assert.ok(grid.includes("if (week === mine) { week = null; onWeek?.(null); } // this week has no query"));
   assert.ok(grid.includes('print.href = taskSheetHash(roomId,'));
 });
@@ -91,7 +95,7 @@ test('a long press (500 ms) opens the menu and the tap that ends it does not als
 });
 
 test("a tap: today's open box is Done (the one tap, or its dialog), any other row Details; Undo posts and says its errors", () => {
-  assert.ok(grid.includes("else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c, at);"));
+  assert.ok(grid.includes("else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c, at, x.col);"));
   assert.ok(grid.includes('else if (hasRow(x.c)) details(x, at);'));
   assert.ok(grid.includes("await request('POST', `/api/tasks/${c.taskId}/undo`, undefined, COMMAND_TIMEOUT);"));
   assert.ok(grid.includes('if (err.status === 409 || err.status === 404) onChanged?.();'));
@@ -105,15 +109,38 @@ test("a tap: today's open box is Done (the one tap, or its dialog), any other ro
   assert.equal(grid.split('held.changed(').length, 2, 'only update() lets a box go on a change');
   // Details: the text, then status, who, when (not a missed row's), amount, reason, note
   assert.ok(grid.includes("['Status', STATUS[c.kind]], ['Who', r.worker], ['When', c.kind !== 'missed'"));
+  // ...today's open box also Skip… and Done (critique #20); a mixed Done's kg by crop from the room's harvests (#21)
+  assert.ok(grid.includes("buttons: [{ label: 'Skip…', value: 'skip' }, { label: 'Done', value: 'done', primary: true }]"));
+  assert.ok(grid.includes("form.closed.then(() => (chose ? act(chose === 'done' ? actions.done : actions.skip, c, at, col) : refocus(at)));"));
+  assert.ok(grid.includes("request('GET', `/api/rooms/${roomId}/harvests`)") && grid.includes('const split = doneSplit(r, '));
 });
 
-test('the look: amber only for a missed ✗, the accent ring on today, a planned box dashed, the boxes 44 px or more on a phone', () => {
-  const block = css.slice(css.indexOf("/* ---- the Tasks tab's grid"), css.indexOf('/* ---- the Calendar page'));
+test('the Undo line: after a Done or Skip from the grid, "Floor done by Sara · Undo", polite, for the minute (critique #7)', () => {
+  assert.ok(grid.includes("const doneLine = el('p', 'muted tg-done-line');"));
+  assert.ok(grid.includes("doneLine.setAttribute('role', 'status');") && grid.includes("doneLine.setAttribute('aria-live', 'polite');"));
+  assert.ok(grid.includes('undoLine.expect(id, col.shortName);'), 'every act: the tap, the menu\'s Skip…, Details\' Done and Skip…');
+  assert.ok(grid.includes('undoLine.rows(next?.today);'), 'shown once the room reply has the row closed');
+  assert.ok(grid.includes("const b = button('Undo', 'tk-quiet tg-undo');") && grid.includes('undo({ taskId: shown.id });'));
+  assert.ok(grid.includes('host.replaceChildren(head, none, scroller, doneLine, legend);'), 'under the grid, before the legend');
+  // its state's behaviour: tests/web-task-grid-math.test.js (createUndoLine)
+});
+
+test('the look: amber only for a missed day, the accent on today, a planned box dashed, the boxes 44 px or more on a phone', () => {
+  const block = css.slice(css.indexOf("/* ---- the Tasks tab's grid"), css.indexOf('/* ---- the month sheet'));
   assert.ok(block.includes('.tg-box[data-kind="missed"] .tg-mark { color: var(--warning-text);'));
-  assert.equal(block.match(/--warning/g).length, 1, 'amber nowhere else');
+  assert.ok(block.includes('.tg-box[data-kind="missed"] { border-color: color-mix(in srgb, var(--warning) 45%, transparent); background: var(--warning-soft); }'), 'the whole box tinted (critique #9)');
+  assert.equal(block.match(/--warning/g).length, 3, 'amber nowhere else');
   assert.doesNotMatch(block, /--good|--critical|#[0-9a-f]{3,6}\b/i, 'no green, no red, no new colour');
   assert.ok(block.includes('.tg[data-turn="desk"] tr.tg-today > * { box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent); }'));
-  assert.ok(block.includes('.tg[data-turn="phone"] .tg-today { box-shadow: inset 2px 0 var(--accent), inset -2px 0 var(--accent); }'));
+  // turned: today's column tinted, through the task names' rows too, not ringed in pieces (critique #11)
+  assert.ok(block.includes('.tg[data-turn="phone"] .tg-today { background: var(--accent-soft); }'));
+  assert.ok(block.includes('.tg[data-turn="phone"][data-today] .tg-task { background: linear-gradient('));
+  assert.ok(grid.includes("table.style.setProperty('--today', String(Math.max(0, todayAt)));"));
+  assert.ok(block.includes('.tg-box:is([data-kind="none"], [data-kind="cancelled"]) { border-color: transparent; background: color-mix(in srgb, var(--ink) 9%, transparent); }'), 'not due: a shade with weight (#12)');
+  assert.ok(block.includes('.tg-who { color: var(--ink-2); font-size: var(--fs-xs);'), 'the initials at the type scale (#8)');
+  assert.ok(grid.includes("if (c.kind === 'done') mark.append(tick());"), 'the tick drawn (#8)');
+  assert.ok(block.includes('.tg-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--band); }'), 'the ring inside the item (#19)');
+  assert.ok(grid.includes('(byKey ? menu.firstChild : menu).focus({ preventScroll: true });'), "a pointer's menu takes the focus itself");
   assert.ok(block.includes('.tg-box[data-kind="planned"] { border: 1px dashed var(--border-strong); }'));
   assert.ok(block.includes('.tg[data-turn="phone"] .tg-box { min-width: 0; height: 48px;'));
   assert.ok(block.includes('.tg { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }'));
@@ -127,7 +154,7 @@ test('the menu holds the repaint and closes on a scroll; a dialog gives the focu
   assert.ok(grid.includes("document.addEventListener('scroll', onMove, true);") && grid.includes("document.removeEventListener('scroll', onMove, true);"));
   assert.ok(grid.includes('if (back) byAt(at)?.focus();'), 'the box found again by its place: a held repaint made it anew');
   // after Done's or Skip's dialog, Details and a task's full text: the box again when the focus fell to the page
-  assert.ok(grid.includes('refocus(at);') && grid.split('.closed.then(() => refocus(at));').length === 3);
+  assert.ok(grid.includes('refocus(at);') && grid.split('.closed.then(() => refocus(at));').length === 2);
   assert.ok(grid.includes("if (!alive || !at || (a && a !== document.body && a.isConnected && !a.closest('dialog:not([open])'))) return;"));
   assert.ok(grid.includes('loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});'));
   assert.ok(grid.includes("const text = typeof r.text === 'string' && r.text.trim() ? [r.text] : [];"), 'Details: no empty line');
@@ -135,9 +162,15 @@ test('the menu holds the repaint and closes on a scroll; a dialog gives the focu
   assert.ok(load.includes('print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday()));'), 'Print month has an address while the week loads');
 });
 
-test('a desk of many tasks (601 to 800 px): the boxes keep their width and the grid scrolls sideways', () => {
-  assert.ok(css.includes('.tg-scroll { overflow-x: auto; }'));
-  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 56px); max-width: calc(88px + var(--cols, 6) * 150px); }'));
-  assert.ok(grid.includes("table.style.setProperty('--cols', String(columns.length));"));
-  assert.ok(css.includes('hyphens: auto; overflow-wrap: anywhere; }'), 'a long head breaks in its column');
+test('a desk: columns of 92 to 150 px; the head, Undo line and legend stop at the grid\'s width; Print month in the foot', () => {
+  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 92px); max-width: calc(88px + var(--cols, 6) * 150px); }'));
+  assert.ok(css.includes('.tg-host[data-turn="desk"] > * { max-width: calc(88px + var(--cols, 6) * 150px); }'), 'critique #18');
+  assert.ok(grid.includes("host.style.setProperty('--cols', String(columns.length));"));
+  assert.ok(css.includes('.tg-task { vertical-align: top; }'), 'the pictures on one line (#15)');
+  assert.ok(css.includes('-webkit-line-clamp: 2;'), 'a head two lines at most (#14)');
+  // the head as the Calendar's: the dates, then ‹ This week › (#17); on a phone ‹ dates › on one row (#16)
+  assert.ok(grid.includes('head.append(title, nav);'));
+  assert.ok(css.includes('.tg-this[aria-disabled="true"] { display: none; }'));
+  assert.ok(card.includes('csvLine.append(grid.printLink, DOT, csv,'), 'Print month beside Export CSV');
+  assert.ok(css.includes('@media (min-width: 900px) {\n  .tk-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }'), 'Upkeep and Long-term side by side from 900 px (#24)');
 });

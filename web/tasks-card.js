@@ -44,12 +44,12 @@ export function createTasksCard(host, { roomId, week = null, onWeek, onCounts, o
   const calLink = el('a', 'tk-cal', 'Open in the calendar');
   calLink.href = calendarHash({ room: roomId });
   todaySub.append(subText, DOT, calLink);
-  // Every closed task as CSV, for the myGAP records (the Log's export, under the grid that took its place)
+  // The foot: Print month (the grid's) and every closed task as CSV, for the myGAP records (the Log's export, under the grid
+  // that took its place)
   const csvLine = el('p', 'muted tk-sub tg-csv');
   const csv = el('a', '', 'Export CSV');
   csv.href = `/api/rooms/${roomId}/tasks/log.csv`;
   csv.setAttribute('download', '');
-  csvLine.append(csv, `${DOT}every done, skipped, missed and cancelled task, for the myGAP records`);
   todayCard.append(todayHead, todaySub, error, gridHost, csvLine);
 
   // Upkeep
@@ -87,6 +87,7 @@ export function createTasksCard(host, { roomId, week = null, onWeek, onCounts, o
   const actions = createTaskActions({ onChanged, onError });
   // the grid's Undo says its failures and asks again the same way
   const grid = createTaskGrid(gridHost, { roomId, week, onWeek, actions, onChanged, onError });
+  csvLine.append(grid.printLink, DOT, csv, `: every done, skipped, missed and cancelled task, for the myGAP records`);
 
   function paint() {
     const key = JSON.stringify(view);
