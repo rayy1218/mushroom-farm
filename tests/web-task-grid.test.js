@@ -128,7 +128,7 @@ test('the menu holds the repaint and closes on a scroll; a dialog gives the focu
   assert.ok(grid.includes('if (back) byAt(at)?.focus();'), 'the box found again by its place: a held repaint made it anew');
   // after Done's or Skip's dialog, Details and a task's full text: the box again when the focus fell to the page
   assert.ok(grid.includes('refocus(at);') && grid.split('.closed.then(() => refocus(at));').length === 3);
-  assert.ok(grid.includes("if (!alive || !at || (document.activeElement && document.activeElement !== document.body)) return;"));
+  assert.ok(grid.includes("if (!alive || !at || (a && a !== document.body && a.isConnected && !a.closest('dialog:not([open])'))) return;"));
   assert.ok(grid.includes('loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});'));
   assert.ok(grid.includes("const text = typeof r.text === 'string' && r.text.trim() ? [r.text] : [];"), 'Details: no empty line');
   const load = grid.slice(grid.indexOf('async function load() {'), grid.indexOf("await request('GET', `/api/calendar"));
@@ -139,4 +139,5 @@ test('a desk of many tasks (601 to 800 px): the boxes keep their width and the g
   assert.ok(css.includes('.tg-scroll { overflow-x: auto; }'));
   assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 56px); max-width: calc(88px + var(--cols, 6) * 150px); }'));
   assert.ok(grid.includes("table.style.setProperty('--cols', String(columns.length));"));
+  assert.ok(css.includes('hyphens: auto; overflow-wrap: anywhere; }'), 'a long head breaks in its column');
 });

@@ -220,9 +220,11 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
 
   // ---- acting on a box (spec 3) ----
 
-  // After a dialog: the box (or head) at `at` takes the focus again when a repaint under the dialog left it on nothing.
+  // After a dialog: the box (or head) at `at` takes the focus again when a repaint under the dialog left it on nothing (the
+  // page, or still in the closed dialog: Chrome moves it to the page only at the next frame when its box is gone).
   function refocus(at) {
-    if (!alive || !at || (document.activeElement && document.activeElement !== document.body)) return;
+    const a = document.activeElement;
+    if (!alive || !at || (a && a !== document.body && a.isConnected && !a.closest('dialog:not([open])'))) return;
     byAt(at)?.focus();
   }
 

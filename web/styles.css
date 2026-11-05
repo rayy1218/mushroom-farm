@@ -1729,7 +1729,8 @@ h2.r-named { display: flex; }
 .tg .tg-day { padding: 2px 10px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 500; text-align: left; white-space: nowrap; }
 .tg-task { vertical-align: bottom; }
 .tg-task-name { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; min-height: 0; padding: 4px 2px;
-  border: 0; background: none; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.25; text-align: center; }
+  border: 0; background: none; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; line-height: 1.25; text-align: center;
+  hyphens: auto; overflow-wrap: anywhere; } /* "Contamination" in a 56 px column breaks rather than runs into the next head */
 .tg-task-name:hover { background: var(--band); border-color: transparent; color: var(--ink); }
 .tg-box { position: relative; display: grid; place-items: center; width: 100%; min-width: 52px; height: 40px; min-height: 0; padding: 0;
   border: 1px solid var(--border-strong); border-radius: 6px; background: none; color: var(--ink); font-size: var(--fs-sm);
