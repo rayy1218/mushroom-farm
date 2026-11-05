@@ -18,6 +18,7 @@ colors:
   accent-soft: "rgba(77,141,255,.14)"
   accent-text: "#7fb0ff"
   on-accent: "#ffffff"
+  on-critical: "#ffffff"
   good: "#2eb872"
   good-text: "#3fcf85"
   good-soft: "rgba(46,184,114,.14)"
@@ -32,6 +33,7 @@ colors:
   series-co2: "#a98bfa"
   series-energy: "#c9b26a"
   series-water: "#4fc1b0"
+  series-harvest: "#b8844e"
   page-light: "#f4f5f7"
   surface-light: "#ffffff"
   raised-light: "#f7f8fa"
@@ -49,6 +51,7 @@ colors:
   series-co2-light: "#7c3aed"
   series-energy-light: "#8a7425"
   series-water-light: "#0f8f80"
+  series-harvest-light: "#a87a4c"
 typography:
   display:
     fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
@@ -68,7 +71,23 @@ typography:
     fontSize: "20px"
     fontWeight: 600
     lineHeight: 1.2
+  figure:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "20px"
+    fontWeight: 700
+    lineHeight: 1.25
+    fontFeature: "\"tnum\", \"cv11\", \"ss01\""
+  name:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "16px"
+    fontWeight: 600
+    lineHeight: 1.45
   card-title:
+    fontFamily: "Inter, system-ui, sans-serif"
+    fontSize: "14px"
+    fontWeight: 600
+    lineHeight: 1.45
+  field-label:
     fontFamily: "Inter, system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 600
@@ -90,6 +109,7 @@ typography:
     fontWeight: 600
     lineHeight: 1.5
 rounded:
+  small: "6px"
   control: "8px"
   card: "12px"
   segment-track: "10px"
@@ -120,8 +140,25 @@ components:
     backgroundColor: "{colors.accent-hover}"
   button-danger:
     backgroundColor: "{colors.critical}"
-    textColor: "{colors.on-accent}"
+    textColor: "{colors.on-critical}"
     rounded: "{rounded.control}"
+  button-compact:
+    backgroundColor: "{colors.raised}"
+    textColor: "{colors.ink}"
+    typography: "{typography.small}"
+    rounded: "{rounded.control}"
+    padding: "4px 12px"
+    height: "32px"
+  button-quiet:
+    backgroundColor: "transparent"
+    textColor: "{colors.muted}"
+    typography: "{typography.small}"
+    rounded: "{rounded.control}"
+    padding: "4px 8px"
+    height: "28px"
+  button-quiet-hover:
+    backgroundColor: "{colors.band}"
+    textColor: "{colors.ink}"
   switch-off:
     backgroundColor: "{colors.raised}"
     textColor: "{colors.ink}"
@@ -130,8 +167,8 @@ components:
     height: "36px"
     width: "64px"
   switch-on:
-    backgroundColor: "color-mix(in srgb, #336fe6 24%, transparent)"
-    textColor: "{colors.ink}"
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.accent-text}"
     rounded: "{rounded.control}"
     padding: "4px 12px"
     height: "36px"
@@ -190,11 +227,102 @@ components:
     typography: "{typography.label}"
     rounded: "{rounded.pill}"
     padding: "2px 9px"
+  chip-level-warning:
+    backgroundColor: "transparent"
+    textColor: "{colors.warning-text}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill}"
+    padding: "2px 8px"
+  chip-level-serious:
+    backgroundColor: "transparent"
+    textColor: "{colors.critical-text}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill}"
+    padding: "2px 8px"
+  chip-level-critical:
+    backgroundColor: "{colors.critical}"
+    textColor: "{colors.on-critical}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill}"
+    padding: "2px 8px"
+  chip-level-acknowledged:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-2}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill}"
+    padding: "2px 8px"
+  count:
+    backgroundColor: "{colors.border-strong}"
+    textColor: "{colors.ink}"
+    typography: "{typography.label}"
+    rounded: "{rounded.pill}"
+    padding: "0 4px"
+    height: "18px"
+  count-warning:
+    backgroundColor: "{colors.warning}"
+    textColor: "{colors.page}"
   tab:
     textColor: "{colors.muted}"
     padding: "10px 12px"
   tab-active:
     textColor: "{colors.ink}"
+  link-chip:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-2}"
+    typography: "{typography.small}"
+    rounded: "{rounded.pill}"
+    padding: "6px 12px"
+  dialog:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.card}"
+    padding: "24px"
+    width: "480px"
+  dialog-wide:
+    width: "560px"
+  menu:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.control}"
+    padding: "4px"
+    width: "168px"
+  menu-item:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink}"
+    height: "40px"
+  menu-item-hover:
+    backgroundColor: "{colors.band}"
+  tooltip:
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.surface}"
+    typography: "{typography.label}"
+    rounded: "{rounded.small}"
+    padding: "4px 8px"
+  table-head:
+    textColor: "{colors.ink-2}"
+    typography: "{typography.small}"
+    padding: "6px 8px"
+  table-cell:
+    textColor: "{colors.ink}"
+    typography: "{typography.body}"
+    padding: "6px 8px"
+  tile:
+    textColor: "{colors.ink}"
+    typography: "{typography.figure}"
+    padding: "2px 0 2px 14px"
+  checkbox:
+    size: "18px"
+  checkbox-phone:
+    size: "20px"
+  empty-state:
+    backgroundColor: "transparent"
+    textColor: "{colors.ink-2}"
+    rounded: "{rounded.card}"
+    padding: "20px"
+  banner-error:
+    backgroundColor: "{colors.critical-bg}"
+    textColor: "{colors.critical-text}"
+    rounded: "{rounded.control}"
+    padding: "12px 16px"
 ---
 
 # Design System: Mushroom farm
@@ -207,7 +335,7 @@ The farm app is a climate-controller dashboard in the category standard: a neutr
 
 Density is moderate and calm: cards on a quiet page, hairlines rather than boxes, a tight type scale with tabular figures, plain English and metric units in every line. Colour is spent on state and, by a deliberate exception, on the identity of the three measured quantities. Dark is the default (the owner's choice); a light theme mirrors it token for token.
 
-Scope: only the room page (`#/rooms/:id` with its Now, History, Crop, Simulations and Setup tabs) was rebuilt in this world. The Overview, the Rooms list, Settings and the simulation run pages already use these tokens (colours, type, radii, buttons, cards) but keep their older layouts; bring them into the layouts and rules below when they are next worked on.
+Scope: every page uses these tokens. The room page (`#/rooms/:id` and its tabs) was rebuilt in this world on 2026-10-28 and every page since (Today, Calendar, Harvest, the task grid) was built in it; the Rooms list is folded into the Overview. (2026-11-05, design-system audit) Some parts built before the components below were written down still differ from them in small ways: a few type sizes and corners off the scale, three chip styles where one is meant, section card titles a step large on some pages. They are listed in `docs/superpowers/plans/2026-11-05-design-system-css-pass.md`; until that pass, the words here are the target, not the stray CSS. A new page uses the components here as they are, before inventing one.
 
 **Key Characteristics:**
 - Neutral dark ground (`page` under `surface` cards), light theme mirroring it.
@@ -233,6 +361,7 @@ A neutral grey ladder with one blue and three state colours; three series hues a
 ### Tertiary (series)
 - **Temperature Ember** (`series-temperature`), **Humidity Sky** (`series-humidity`), **CO₂ Violet** (`series-co2`): each quantity's trace on its Now reading card (with its band shaded at 13 % of the same hue) and its line on the History charts.
 - **Energy Brass** (`series-energy`, `--s-energy`) and **Water Teal** (`series-water`, `--s-water`): the electricity and water bars and lines (History, the energy cards, a simulation's per-day bars). They are their own quantities, so they never borrow the climate hues.
+- **Harvest Ochre** (`series-harvest`, `--s-harvest`): the kg picked, on the Harvest page's bars and the Overview's 30-day strip.
 
 ### Neutral
 - **Night Page** (`page`): the page behind the cards; the sticky Setup links bar on a phone.
@@ -261,13 +390,16 @@ A neutral grey ladder with one blue and three state colours; three series hues a
 ### Hierarchy
 - **Display** (600, 32 px, 1.1, -0.02em, tabular): the live value on a reading card; 28 px on a phone.
 - **Headline** (700, 24 px desktop / 20 px phone, 1.15, -0.02em): the page title (the room's name).
-- **Title** (600, 20 px): a Setup part's title, a large status value on equipment cards, the crop name on the Crop tab.
-- **Card title** (600, 14 px): a card's head ("Control", "Machines"); 16 px for `h2` in older layouts and stage names.
+- **Title** (600, 20 px): a Setup part's title, a large status value on equipment cards, the crop name on the Crop tab, a print sheet's title.
+- **Figure** (700, 20 px, 1.25, tabular): a tile's number (kWh, kg, RM, BE); a page's one main figure may take Display instead (the Harvest page's kg).
+- **Name** (600, 16 px): the name of a thing whose card it is (a room on the Overview and Today, a stage on the Crop tab, the picked day on the Calendar, the crop on the Now tab's Crop card), a section heading on the page over a row of cards ("Rooms"), the Overview's status line and a simulation's verdict.
+- **Card title** (600, 14 px): what a card holds ("Control", "Machines", "Upkeep", "This run", "Energy and water", "Phone alarms"), a chart's title, a group's title inside a card. A card names its contents at this size on every page; the Name step is for a thing, not a section.
+- **Field label** (600, 14 px): a field's label above its box, a fieldset's legend, a checkbox's words when they are the field's name.
 - **Body** (400, 14 px, 1.45): rows, descriptions, form text; hints capped near 60 ch.
 - **Small** (400 or 500, 13 px): bands, sub-lines, notes, the tab row on a phone.
 - **Label** (600, 12 px): pills, status chips, legends, step numbers. Sentence case, no tracking.
 
-On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for reading at the room door.
+On screens up to 600 px the three smallest steps grow by 1 px (13, 14, 15) for reading at the room door, and a field's text is 16 px so a phone does not zoom into it. The steps are the `--fs-*` tokens (`xs` 12, `sm` 13, `md` 14, `lg` 16, `xl` 20, `2xl` 24, `3xl` 32); a size is always one of them, never a `rem` or a fixed pixel size, so it follows the phone step (Display's 28 px on a phone and a print sheet's `pt` sizes are the only others). Weights are 400, 500, 600 and 700; 800 only for the printed sheet's ✗. Nothing is set under 12 px.
 
 ### Named Rules
 **The Tabular Figures Rule.** Every number that can change or line up (readings, bands, kWh, RM, timestamps, table cells) sets `font-variant-numeric: tabular-nums`.
@@ -290,7 +422,23 @@ One sticky top bar (56 px, 61 px on a phone with its 44 px buttons: brand, Live,
 
 The Now tab is a two-column grid from 1100 px: a fluid main column (three reading cards in a row, then the room drawing) and a 320 to 400 px side column (alarms, Control with Auto | Manual, Machines in air order, the aircon panel in Manual, Crop). Below 1100 px the columns dissolve into one ordered stack. Setup puts its control form in two columns from 1100 px (48 px gutter) and its Room part on a 2 : 1 grid. Equipment cards auto-fill at 260 px minimum; sensor cards sit two by two above 600 px. The Crop tab switches to one column below a 720 px container width.
 
-Rhythm runs on 4 px: 4, 8, 12, 16, 20, 24, 32. Cards gap 16 px (12 px on a phone); rows inside a card pad 8 to 10 px; Setup parts are 32 px apart with a 24 px top rule. Breakpoints: 600, 760, 900 and 1100 px.
+Every page opens with the same head: an optional back link ("← Overview", 13 px `ink-2`, the arrow drawn by the link itself), the page title in Headline, a sub-line in `ink-2` (13 px, 14 px from 900 px, at most 70 ch), and the page's actions at the right from 900 px (full width under the title on a phone, one button each, Overview's beside the title). A page's own pickers (the worker on Today, the range on Harvest) sit in this head, not in a card. Each page's grid:
+
+| Page | Grid |
+|---|---|
+| Overview | The status card across the page; Alarms under it while there are any; the room cards auto-fit at 320 px or more, by name; then Outdoor, Energy and water, and Harvest auto-fit at 300 px |
+| Today | The rooms as cards, two a row from 1100 px; Long-term under them |
+| Calendar | The month card and the picked day's card, 1.5 : 1 from 1100 px (the day at least 320 px), stacked below |
+| Harvest | The totals card (tiles and the chart) across the page; By room and By crop under it at 3 : 2 from 1100 px |
+| Settings | Cards two a row from 1100 px: the farm's settings (Readings, Outdoor sensor and Prices as hairline-ruled parts of one card) beside Phone alarms, then Workers beside Task rules; Yield across both columns |
+| Room tabs | Now: as above. History: a sticky head (range and part links) over one column of chart cards. Tasks: Daily tasks across the top, Upkeep and Long-term side by side from 900 px. Harvest: This run and Past runs at the left, Harvests at the right, 3 : 2 from 1100 px. Crop: stages, the Stages list sticky at the right (220 to 270 px), the program row under. Setup: parts down the page under sticky link chips |
+| Simulations, a run | The list card; a run is its verdict card, what it was given (folded), then its result cards in one column |
+| Suggest machines | The form (at most 760 px) with "how the search works" sticky beside it from 1200 px; then the suggestions as rows of five columns |
+| Print sheets | No top bar, light colours whatever the theme, A4; on screen a phone scrolls the sheet sideways, its first column sticky |
+
+Rhythm runs on 4 px: 4, 8, 12, 16, 20, 24, 32. Cards gap 16 px (12 px on a phone); rows inside a card pad 8 to 10 px; Setup parts are 32 px apart with a 24 px top rule. Breakpoints: 600, 760, 900 and 1100 px (480 and 1200 px for one part each: the room drawing's fold and Suggest's aside); a part that sits in cards of many widths turns by its card's width (a container query or a measured width, as the Crop tab and the task grid), not the screen's.
+
+**The 44 px Rule.** On a phone every control is at least 44 px tall (and an icon button 44 px wide, 40 px under 400 px): buttons, fields, selects, link chips, tabs, a fold's summary, a link that is a row's only way in, a checkbox's words. A desk keeps the compact heights (36 px buttons, 40 px fields, 32 px compact buttons). Where a target cannot grow without moving the layout, its padding grows and a negative margin of the same size keeps the spacing.
 
 **The Readings First Rule.** On a phone the order is readings, alarms, control, machines, the drawing, then the crop: the question "is the room OK" is answered before any scroll.
 
@@ -301,7 +449,8 @@ Flat by default. Depth comes from tone (`surface` cards on the darker `page`) an
 ### Shadow Vocabulary
 - **Card lift, light only** (`box-shadow: 0 1px 2px var(--shadow)`): every `.card` in the light theme.
 - **Selected segment** (`box-shadow: 0 1px 2px var(--shadow), 0 0 0 1px var(--border)`): the chosen option in a segmented control.
-- **Dialog** (`box-shadow: 0 12px 40px var(--shadow)`): modal dialogs over a 60 % black backdrop.
+- **Dialog** (`box-shadow: 0 12px 40px var(--shadow)`): modal dialogs over the `backdrop` (60 % black in dark, 40 % ink in light).
+- **Menu** (`box-shadow: 0 8px 24px var(--shadow)`): a menu over the page (the task grid's long press menu).
 - **Current-stage ring** (`box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent)`): the current stage card on the Crop tab, with its border at 60 % accent.
 
 ### Named Rules
@@ -309,7 +458,18 @@ Flat by default. Depth comes from tone (`surface` cards on the darker `page`) an
 
 ## Shapes
 
-Soft, consistent corners: 12 px for cards and dialogs, 8 px for buttons, inputs and selects, 10 px for a segmented track with 7 px segments inside, and full rounding for pills, status dots and Setup link chips. Borders are 1 px hairlines; dashed hairlines mark empty states and machines not fitted. Status is drawn as 6 to 10 px dots, never as glyphs or emoji.
+Soft, consistent corners, six steps and no others:
+
+| Step | Radius | Where |
+|---|---|---|
+| Card | 12 px (`--radius-card`) | cards, dialogs, empty states, the toast |
+| Track | 10 px | a segmented control's track; the room drawing's clipped corners; a picture's empty tile |
+| Control | 8 px (`--radius`) | buttons, inputs, selects, a menu, a calendar day, a banner |
+| Segment | 7 px | a segment inside its track |
+| Small | 6 px | a box inside a card (a task grid box, a Stages list entry, a list row's hover), a tooltip, a focus ring drawn inside a tab or a scroller |
+| Pill | 999 px | pills, chips, counts, link chips, status dots, and the ends of every bar (a stage's day bar, the filter bar) |
+
+A legend's key box is its box drawn smaller and keeps its corner in proportion (4 px at 18 px); the brand mark is a drawing, not a shape on this scale. Borders are 1 px hairlines; dashed hairlines mark empty states, planned boxes and machines not fitted. Status is drawn as 6 to 10 px dots, never as glyphs or emoji.
 
 ## Components
 
@@ -321,39 +481,117 @@ Quiet and solid: most buttons are neutral, so the one blue button is the obvious
 - **Danger:** `critical` fill with white text for Delete; `critical-text` on a neutral button for quieter destructive links.
 - **Focus:** 2 px `accent` outline, 2 px offset, on every control.
 - **Disabled:** 55 % opacity; Save and Reset only look disabled while saving, so focus is never lost.
+- **Compact:** a default button 32 px tall, 4 × 12 px, 13 px text, for an action inside a row or a card's foot that is not the card's main one (Acknowledge on an alarm row, Back to stage values, Show all stages). 44 px on a phone.
+- **Quiet:** no fill and no edge, `muted` 13 px text, 28 px tall, 4 × 8 px; hover fills `band` and turns `ink`. For the row actions that should not compete with the row's words (Skip on a task, Edit on a harvest), and a dialog's quiet Delete at the footer's start (in `critical-text`, away from Save).
+- **Text link button:** a button that reads as a link (the Undo line's Undo, the stepper's done steps): no fill, no edge, underlined 3 px under, `ink` or `accent-text`.
+- **A link as a button** (Export CSV, Suggest machines, Print month): the default button's look exactly, `raised` fill and 36 px, so a reader cannot tell a link from a button by its shape.
+- **Icon button:** 36 × 36 px (44 on a phone), no fill until hover (`band`), `ink-2` icon: the theme button, the stage editor's pencil, the ‹ › steps of the Calendar and the task grid.
+- **Groups:** a dialog's or a form's buttons sit at the right end in reading order (Cancel, then the primary); on a phone they wrap with the primary on top.
 
 ### On/Off switches
-- **Off:** a default button reading "Off".
-- **On:** tinted, not filled: `accent` at 24 % behind `ink` text. Tinting keeps the page's primary action (Send, Save) the one filled button.
-- **Placement:** in Manual each machine's switch sits on its own Machines row; in Auto the row shows its pill instead.
+- **Off:** a default button reading "Off", 64 px wide at least, 36 px tall, 600 weight.
+- **On:** tinted, not filled: `accent-soft` fill, its edge `accent` at 55 %, `accent-text` words; hover deepens the fill to `accent` at 24 %. Tinting keeps the page's primary action (Send, Save) the one filled button.
+- **Placement:** in Manual each machine's switch sits on its own Machines row; in Auto the row shows its pill instead. The same switch turns a task rule on or off in Settings and a machine's Power in the aircon panel; it is a button with `aria-pressed`, never a sliding toggle.
 
 ### Status pills
 - **Style:** full-round, 12 px 600, 2 × 9 px padding, tinted background with its own text colour.
-- **Tones:** running (`accent-soft` / `accent-text`, with a 6 px dot), good (green), warning (amber), fault (`critical-bg` / `critical-text`), off (`band` / `ink-2`), no data (`muted`). Alarm level chips are outlined in their colour; critical is a solid red fill. An acknowledged alarm that is still active is not faded: its chip turns a neutral outline (`border-strong` / `ink-2`), its text `ink-2`, and its times line says "Acknowledged". An active alarm about a reading puts the value now beside the value that raised it ("· now 84.0 % RH").
+- **Tones:** running (`accent-soft` / `accent-text`, with a 6 px dot), good (green), warning (amber), fault (`critical-bg` / `critical-text`), off (`band` / `ink-2`), no data (`muted`). An acknowledged alarm that is still active is not faded: its chip turns a neutral outline (`border-strong` / `ink-2`), its text `ink-2`, and its times line says "Acknowledged". An active alarm about a reading puts the value now beside the value that raised it ("· now 84.0 % RH").
+- **Status word:** where a whole pill would be too loud beside a big number (a reading card's "In band", the Overview's band line), the pill's words alone in its text colour, 12 px 600.
+
+### Chips and counts
+A pill says a state; a chip says a level or a mark; a count says how many. One shape for all three: full-round, 12 px 600.
+
+| Kind | Look | Where |
+|---|---|---|
+| Level chip | Outlined in its colour, no fill, 2 × 8 px: warning `warning-text`, serious `critical-text`; critical a solid `critical` fill with white words; acknowledged a `border-strong` outline in `ink-2` | An alarm's level on the Alarms card and the Overview |
+| Mark chip | Outlined `border-strong`, `ink-2` words, 2 × 10 px; the current one `accent-soft` with `accent-text` and its edge at 50 % accent | A stage card's place in the plan on the Crop tab ("Current · day 2 of 7 · flush 1 of 4", "Next · about 9 Nov 08:00") |
+| Count | 18 px tall, at least 18 px wide, 0 × 4 px, 700, `border-strong` fill with `ink` words; amber (`warning` fill, `page` words in dark, `ink` in light) when something in it is overdue | The Tasks tab's count, the top bar's Today count |
+| Dot | 6 to 10 px, full-round, no words of its own: the words beside it say the state | Live, a tab with a live problem (7 px), the Overview's status line, a sensor's state, a calendar day on a phone |
+
+### Link chips
+Round outlined chips, 13 px 500 in `ink-2` on a `border-strong` edge, 6 × 12 px; hover turns the words `ink` and the edge `ink-2`. They jump to a part of a long tab (Setup's and History's parts) and never act; a strip of them that does not fit scrolls sideways with a fade at the edge that has more (`data-more`), as the tab row does.
 
 ### Cards / Containers
 - **Corner Style:** 12 px.
 - **Background:** `surface`.
 - **Shadow Strategy:** none in dark; 1 px lift in light (see Elevation).
 - **Border:** 1 px `border`; an alarm card takes its worst active alarm's colour (`warning-text` for warnings, `critical-text` from serious up); a reading out of band uses `critical` with an inset 1 px ring, a warning reading amber at 55 %.
-- **Internal Padding:** 20 px (16 px on a phone). A card head puts a 14 px 600 title at the left and a quiet `muted` note or a control at the right.
+- **Internal Padding:** 20 px (16 px on a phone). A card head puts its Card title (14 px 600) at the left and a quiet `muted` note or a control at the right, 14 px over the card's body; a card that is a thing (a room, a stage, a day) carries its Name (16 px 600) there instead, with its picture before it.
+- **Sections inside a card:** a 1 px `border` rule and 16 px above each, its title in Card title; rows inside a section are ruled by `border` too, the first row with no rule.
+- **A card that opens a page** (a room card, the Now tab's Crop card): its title is a plain `ink` link stretched over the whole card; any other link or button in it sits above that link; hover deepens the edge to `border-strong`.
+- **Toned edge:** a card whose subject has a state takes it on its edge only, never its fill: amber at 55 % (`warning`), red `critical-text` or `critical` (an out-of-band reading adds a 1 px inset ring); a simulation's verdict green, amber or red at 50 to 55 %; Control in Manual amber at 55 %.
 
 ### Reading card (signature)
 The Now tab's three cards: the quantity name (13 px `ink-2`) with its status word at the right (green, amber or red), the value in Display type with a `muted` unit, the band in Small type, then a 36 px trace of the last hour in the quantity's series hue with its band shaded behind it. On a phone the value and trace sit side by side.
 
 ### Inputs / Fields
-- **Style:** 40 px tall, 8 × 10 px padding, `surface` fill, `border-strong` edge, 8 px radius; labels 600 above the field.
+- **Style:** 40 px tall, 8 × 10 px padding, `surface` fill, `border-strong` edge, 8 px radius; its label in Field label (14 px 600) 4 px above it, and its hint (13 px `muted`, at most 60 ch) and error line under it. Every text box, number box, select and text area looks the same, wherever it sits (a dialog, a table's cell, a row of Setup bands); a number box is as wide as its numbers (12 ch, 14 ch with a unit inside it), not the column's width.
+- **Unit inside the box:** a quantity's unit sits inside the box at its right end in `muted` ("kg"), so the box keeps its width and the label stays a word.
+- **Side by side:** fields in a row share one grid (subgrid) for their label, box and error rows, so a label on two lines or an error under one box never moves its neighbour's box. Two a row in a dialog, one a row on a phone except short pairs (a date and its time).
+- **Select in a line** (the room switch, the worker picker, the Calendar's room): the field's box at 36 px with its label beside it in 13 px `ink-2` rather than above; the room switch alone takes the `raised` fill, being navigation.
 - **Focus:** 2 px `accent` outline.
 - **Error:** border and message in `critical-text`; the field stays in place (sibling fields share label, input and error rows).
 - **Check:** a value that is allowed but unlikely (a harvest pick over 0.3 kg a block): border and message in `warning-text`, not `aria-invalid` (a question, not a fault), the message still announced (the box's description, `aria-live`); the primary button reads "… anyway" ("Record anyway") and the same value sent again is kept, a changed one checked again.
 
+### Checkboxes and radios
+The browser's own, in `accent-color`, 18 px on a desk and 20 px on a phone, the box before its words with a 8 to 10 px gap; the words are the label (a tap on them toggles it) and the whole line is 36 px tall on a desk, 44 px on a phone. A checkbox that is a field's whole answer (Lights fitted, Automatic change) takes the Field label's 600 words; one of a list (the alarm levels to send) takes body words. A choice of one from a few (the simulation's days, its bands) is radios with any detail indented under its words.
+
 ### Segmented control
-Auto | Manual and the History range choice: a `band` track with a hairline, unselected options `muted` text on nothing, the selected option on `surface` with `ink` text and the selected-segment shadow. A line under it says in plain words what the choice means. (2026-11-05, the joint Business audit: `muted` on the track over the light page was 4.2 : 1, so the range control's unselected segments (`.range-bar`: History, Harvest, Sales, the 4-5 sheet, Batches' Past) are `ink-2`, 7.5 : 1; the selected one stays told by its `surface` and shadow.)
+Auto | Manual, the History, Exchange and Harvest range choices: one component. A `band` track with a hairline, 3 px inside, 10 px corners; options 30 px tall (44 px on a phone), 4 × 14 px, unselected `ink-2` 500 text on nothing (hover `ink`), the selected option on `surface` with `ink` text, 7 px corners and the selected-segment shadow. A line under it says in plain words what the choice means. On a phone a range choice may take the row's width, its options sharing it. (2026-11-05, the joint Business audit: `muted` on the track over the light page was 4.2 : 1, so the range control's unselected segments (`.range-bar`: History, Harvest, Sales, the 4-5 sheet, Batches' Past) are `ink-2`, 7.5 : 1; the selected one stays told by its `surface` and shadow.)
 
 ### Navigation
 - **Top bar:** sticky, translucent `surface` with blur and a hairline bottom; brand mark and name at the left, Live (green dot when live), the theme button (a sun or moon SVG showing the theme it switches to) and Settings at the right. On a phone the subtitle and the Settings word hide.
 - **Underline tabs:** 500 weight, `muted`; hover and current turn `ink`; current carries a 2 px `accent` underline on the row's hairline. A tab with a live problem shows a 7 px amber or red dot.
 - **Setup links:** round outlined chips; on a phone they stick under the top bar while Setup scrolls. On a phone Setup's and History's links say short words (Bands, Equipment, Filter, Room; Climate, Energy, Exchange, Machines) so all four fit at 360 px, and a strip fades only at an edge that still hides a link.
+- **Sticky heads:** a long tab's own head (History's range and links, Setup's links on a phone) sticks under the top bar on `page` with a hairline under it, as short as it can be (one line of each on a phone); a part it jumps to stops clear of it (`scroll-margin-top`).
+- **Back link:** "← Overview" and the like, 13 px, `ink-2` (`muted` on the room page), underlined on hover; the arrow comes from the link's style, not its words.
+
+### Dialogs
+- **Shape:** `surface`, 12 px corners, a hairline edge, the dialog shadow, 24 px inside; 480 px wide (560 px for the Simulate stepper), 16 px from the screen's edges on a phone. It opens anchored under the top bar, not centred, so a step that changes its height does not move it, and scrolls inside when it is taller than the screen.
+- **Inside:** the title in Name type (16 px 600), a lead line in `ink-2` saying what it acts on (the task's name and what to do), the fields, a `form-error` box over the buttons when the server refuses, then the buttons at the right: Cancel, then the one primary. A destructive confirm has a red Danger button as its primary and says what goes and whether it comes back ("Delete this simulation? This can't be undone."); a delete inside an Edit dialog is the quiet red button at the footer's start ("Delete this harvest").
+- **Focus:** the first field, or the title when there is no field (a confirm); back to the control that opened it on close; Escape closes it.
+- **Steps:** the Simulate stepper numbers its steps across the top (the current one `ink` 700 with a 2 px accent underline; done steps are links back to them), scrolls each step inside one height on a desk, and keeps Cancel, Back and Next in a sticky footer with a hairline over it.
+
+### Menus and tooltips
+- **Menu:** `surface`, `border-strong` edge, 8 px corners, the menu shadow, 4 px inside, at least 168 px wide, items 40 px (44 px on a phone) in body type with no fill until hover or focus (`band`, the focus ring inside the item). It opens at the thing it acts on, arrow keys move, Escape closes and the focus goes back. Used for a box's actions in the task grid; a page never hides its main actions in one.
+- **Tooltip** (a chart's hover read-out): `ink` fill with `surface` words, 12 px tabular, 4 × 8 px, small corners, no arrow, following the pointer along the chart. Nothing else has a tooltip: a word that needs explaining gets a hint line.
+
+### Tables
+One data table, used by the Energy and water figures, a simulation's results, the Harvest flushes and runs, By room and By crop, and Settings › Yield:
+- **Head:** 13 px 600 `ink-2`, sentence case, no rule above it; numeric heads right-aligned over their figures.
+- **Rows:** 6 × 8 px cells, a `border` rule above each, body type; the first column the row's name (600 when it is a name, a link when it opens one); figures right-aligned, tabular, never wrapping inside a figure; a total row 700 with a `border-strong` rule above.
+- **No zebra stripes, no boxed cells.** A row that differs (a simulation compared with the others) is tinted `accent` at 10 % and says "differs" beside its name; a row that opens to more is a button with a turning chevron, its detail indented under it with a 2 px `border` rule at its left.
+- **Phone:** a table whose columns do not fit becomes a stack of rows, each a block of labelled figures (the label in 12 px `muted` above its figure, three a row), or its long column names give way to short ones (`sim-short`); a sheet that must keep its columns scrolls sideways inside its own box with a fade at the edge that has more, its first column sticky.
+- **Print sheets** (myGAP, the month of daily tasks) are the exception: ruled boxes on every cell, to be written in by hand.
+
+### Tiles
+A card's handful of headline figures (Energy and water, a simulation's results, This run, the Harvest totals, the Overview's Harvest): side by side, each a 1 px `border-strong` rule at its left and 14 px in, its label (13 px `ink-2`) over its figure (Figure type: 20 px 700, tabular, its unit in the same line) and an optional basis line (12 px `muted`: "estimated", "metered"). Tiles wrap rather than shrink a figure: each at least as wide as its figure, two a row on a phone with an odd last tile taking the row. A tile's figure may take a state colour only when the number itself is the state (a simulation's time in band); a page's main figure may take Display.
+
+### Rows
+Most cards are lists of rows, and every list is built the same way: rows ruled by a `border` hairline above each (none above the first), 8 to 10 px tall padding, the thing's picture or number at the left, its name (500) over a sub-line (13 px `ink-2` or `muted`: what it does, when, who), and its state or actions at the right (a pill, a switch, quiet buttons). A closed or done row drops to `ink-2` 400 and fades its picture to 60 %; it is never struck through. Machines, alarms, tasks, harvests, calendar items, workers, task rules and the Overview's room and energy lines are all this row.
+
+### Folds
+A part that can be put away (a Setup part on a phone, what a run was given, the room drawing on a small phone, a run's flushes, "+ 4 daily tasks") folds under its own title: the title is the summary, 44 px tall on a phone, a drawn chevron at its right end (8 px, 2 px `muted` lines) pointing down when closed and up when open; a fold inside a row (a past run) puts a 6 px chevron before its words and turns it. The browser's own disclosure triangle is not used. A fold says what it holds in its title ("What this run was given", "Show the room drawing", "+ 4 daily tasks"); never "More".
+
+### Messages
+| Kind | Look | Where |
+|---|---|---|
+| Page error | A banner over the page's content: `critical-bg` with `critical-text` words, 8 px corners, 12 × 16 px, `role="alert"`, a Retry at its right when one helps | The server could not be reached or refused a page's data |
+| Form error | The same tint in a box over a dialog's or form's buttons, 8 × 12 px | The server refused a save (409, 400); the words are the server's |
+| Field error | 13 px `critical-text` under its box, the box's edge `critical-text`; a check (a value allowed but unlikely) is the same in `warning-text` | One field's value |
+| Inline error | 13 px `critical-text` on the row it is about | A switch the controller refused, a stage that would not start |
+| Saved | "Saved" in 600 `good-text` under the form, a polite live region, gone at the next edit | Settings, Setup, Task rules |
+| Unsent | "Unsent changes" in 13 px 600 `warning-text` beside Send | Control and Machines edits not yet sent |
+| Stale | 13 px 600 `warning-text` over the readings ("These are the readings from 08:12; the farm server can't be reached."); the readings stay, greyed, their pills and dots in grey | The server's stream dropped |
+| Load fail | A card at the screen's foot, `critical` edge, its words and a primary Reload | The app did not start in 8 s |
+
+Messages say what happened and what to do in plain words, with the number and unit when there is one; never "Error" or "Something went wrong" alone.
+
+### Empty states
+A part with nothing in it yet keeps its place and says so: a card with a 1 px dashed `border-strong` edge and no fill (no light-theme shadow), its words in `ink-2` (what is missing and why), its picture faded to 40 % when it has one, and the one way forward as a button or link ("No crops in this room yet." with "Give it crops on the Crop tab"). A list with nothing in it now is one `muted` line in its card ("Nothing due today.", "All done for today."), not a dashed card. A page whose subject is gone ("That room no longer exists") is the same dashed card with the way back.
+
+### Progress
+A simulation's run: the browser's progress bar, 14 px, full width, in `series-humidity`'s blue, with its line in 600 tabular over it ("Waiting for its turn…", "Running… 21 %", "Done", or "Failed:" and why). A stage's day bar and the intake filter's bar are drawn: a 6 px or 10 px `band` track with full-round ends and its fill (accent for a stage's days; green, amber or red for the filter by its pressure, with a tick at the change point).
 
 ### Machines list
 The machines in the order the air meets them, numbered, one row each: name (500), a `muted` sub-line saying what it does and why ("Adds moisture · On at 88 % RH, off at 92 % RH" for a band of 87–93 % RH: the humidifier switches inside the band, web/band-math.js `humidifierPoints`), and a state pill or, in Manual, the On/Off switch. A machine not doing what it was told turns its row text `critical-text` and keeps its fault pill beside the switch.
@@ -362,7 +600,7 @@ The machines in the order the air meets them, numbered, one row each: name (500)
 History's and a simulation's charts are one component (web/chart.js), drawn at the card's own pixel width. The y axis is numbered at 3 to 6 round values (1, 2, 2.5 or 5 times a power of ten, one every 28 px or more of plot) with a grid line at each, thousands grouped ("1,000"); the bar charts (Usage, Exchange, Harvest) run their axis to the first multiple of the same steps at or over the peak (25.3 gives 0, 10, 20, 30; 290 gives 300), and counts keep whole steps. The band is a shaded zone with dashed limits; its two numbers sit at the left end inside the plot, the top one over its line and the bottom one under it (turned to the other side rather than leave the plot), on a backing of the card's colour, and an axis number on the same row is left out (`bandLabels`). A band that moved is numbered by its values at the left end too. The outdoor line is dotted in the chart's hue at 55 %, under the band's shading and the room's line, on its own scale numbered alone at the right edge (not on a phone, where its legend gives its latest value).
 
 ### Room drawing (mimic)
-The room's picture keeps its representation: the air path, the condenser outside, the machines in air order and the shelves of blocks, drawn as flat shapes with one colour per thing (no gradients, shadows or hatching). Its palette is neutral slate (`--m-*` tokens in `mimic.css`, set per theme on the host) with blue (`--m-run`) for running fans and "On" labels; the drawing's own representational colours (cool and warm air, mist, light, the blocks) stay as they are. It sits in a card with 10 px clipped corners and no frame of its own, except in the light theme, where a 1 px `border-strong` line inside its edge keeps the pale sky from melting into the white card; on a phone the whole drawing fits the card's width (2026-10-29: at its own size it was mostly sky until swiped), and under 640 px of picture its labels hide because the Machines list and the readings say them in words. Under 480 px of screen (2026-10-29c) it folds, closed, under "Show the room drawing": that small, it says nothing the Machines list does not; wider screens show it with no fold.
+The room's picture keeps its representation: the air path, the condenser outside, the machines in air order and the shelves of blocks, drawn as flat shapes with one colour per thing (no gradients, shadows or hatching). Its palette is neutral slate (`--m-*` tokens in `mimic.css`, set per theme on the host) with blue (`--m-run`) for running fans and "On" labels; the drawing's own representational colours (cool and warm air, mist, light, the blocks) stay as they are. It sits in a card with 10 px clipped corners and no frame of its own, except in the light theme, where a 1 px `border-strong` line inside its edge keeps the pale sky from melting into the white card; on a phone the whole drawing fits the card's width (2026-10-29: at its own size it was mostly sky until swiped), and under 640 px of picture its labels hide because the Machines list and the readings say them in words. Its words are sized in the drawing's own units (13 px, the big readings 18 px 700, in `mimic.css`) and scale with it, so they sit outside the type steps. Under 480 px of screen (2026-10-29c) it folds, closed, under "Show the room drawing": that small, it says nothing the Machines list does not; wider screens show it with no fold.
 
 ### Pictures
 (2026-11-03, owner: "the app is lacking a lot of visual image"; spec `docs/superpowers/specs/2026-11-03-pictures-design.md`.) Flat drawings in the room drawing's world name the things the farm works with: each crop (9), the grow bag in each stage, each machine and sensor, each task rule (`web/pictures.js`, markup in `web/pictures-data.js` and its three parts). A 48 × 48 grid, flat fills, thin detail lines only where a shape needs them (gills, pleats); white units (`--p-unit`, a 1 px `--p-edge` in the light theme), the blocks' tan (`--p-bag`), each crop in its two hues (`--p-<crop>`, `--p-<crop>-2`, set on the picture as `--c`, `--c2`). The `--p-*` tokens sit in both theme blocks of `web/styles.css`.
@@ -522,6 +760,8 @@ The room's picture keeps its representation: the air path, the condenser outside
 - **Do** set every number in tabular figures, with one formatter per quantity (humidity and filter pressure to one decimal) and metric units.
 - **Do** add every new colour to both theme blocks under one name.
 - **Do** write labels and states in plain English sentence case: name the machine, the number and the unit.
+- **Do** build a new page from the parts above (card, card head, rows, tiles, the data table, the segmented control, chips, folds, messages, empty states) before writing a new one; a module's CSS uses the tokens and these parts' classes and adds only what is its own.
+- **Do** set every size from the `--fs-*` steps and every corner from the six radius steps; every control 44 px on a phone.
 
 ### Don't:
 - **Don't** put a card inside a card.
@@ -532,3 +772,6 @@ The room's picture keeps its representation: the air path, the condenser outside
 - **Don't** add gradients, shadows or hatching to the room drawing, or change what it represents.
 - **Don't** colour a picture by state, or let a picture say something its words do not.
 - **Don't** show a quantity in two formats on two tabs, or any US unit.
+- **Don't** make a second version of a part that exists (another chip, another segmented control, another table style, another chevron); change the one part, for every page.
+- **Don't** set a size in `rem`, under 12 px, or a weight other than 400, 500, 600 and 700.
+- **Don't** title a section card at the Name size; Name is for a thing's own card.
