@@ -283,6 +283,12 @@ html { scroll-padding-top: var(--topbar-h); }
   background: var(--critical); color: var(--on-critical); text-decoration: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .top-alarm:hover { opacity: .9; }
 @media (max-width: 600px) { .top-alarm { min-height: 44px; } .top-link span { display: none; } }
+/* a tablet too, 601 to 899 px (critique 2026-11-05 #1): five worded links left the brand 22 px under "Live" and the page
+   scrolling sideways at 700 px since Harvest; the links are their icons, the Today count kept, as on a phone */
+@media (max-width: 899px) {
+  .top-link > span:not(.top-count) { display: none; }
+  .top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }
+}
 .live-mark { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 0.8125rem; font-weight: 600; color: var(--ink-2); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; border: 2px solid currentColor; box-sizing: border-box; }
 .live-mark[data-live="on"] { color: var(--ink); }

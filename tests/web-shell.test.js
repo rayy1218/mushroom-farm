@@ -40,3 +40,13 @@ test("the page says it couldn't load when its modules never ran (a blank page un
   assert.match(html, /setTimeout\(function\(\)\{if\(window\.farmReady\)return;/);
   assert.match(app, /window\.farmReady = true;/);
 });
+
+test('601 to 899 px: the top links are their icons (and the Today count), so no page scrolls sideways (critique 2026-11-05 #1)', () => {
+  const band = css.slice(css.indexOf('@media (max-width: 899px) {'));
+  assert.ok(band.length < css.length, 'a band up to 899 px');
+  const rules = band.slice(0, band.indexOf('\n}'));
+  assert.ok(rules.includes('.top-link > span:not(.top-count) { display: none; }'), 'the words go, the count stays');
+  assert.ok(rules.includes('.top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }'));
+  // the phone's own rules come after it, so under 600 and 400 px they still win
+  assert.ok(css.indexOf('@media (max-width: 899px) {') < css.indexOf('@media (max-width: 400px) {\n  .topbar { gap: 2px; }'));
+});
