@@ -67,6 +67,9 @@ const daysOf = (query) => {
   return HARVEST_DAYS.includes(n) ? n : 30;
 };
 export const sheetHash = (days) => `#/harvest/sheet?days=${days}`;
+// ---- Costs ---- (spec 2026-11-05-costs-design.md 6): its month in the query; this month has none.
+export const COSTS_HASH = '#/business/costs';
+export const costsHash = (month = null) => (month ? `${COSTS_HASH}?month=${month}` : COSTS_HASH);
 
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');
@@ -91,6 +94,8 @@ export function parseRoute(hash) {
   const harvest = /^#\/harvest\/?(?:\?(.*))?$/.exec(hash ?? '');
   if (harvest) return { name: 'harvest', days: daysOf(harvest[1]) };
   // #/rooms (the Rooms list until 2026-10-28) is the Overview now: it holds every room and Add room.
+  const costs = /^#\/business\/costs\/?(?:\?(.*))?$/.exec(hash ?? ''); // ---- Costs ----
+  if (costs) return { name: 'costs', month: monthOf(new URLSearchParams(costs[1] ?? '').get('month')) };
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
 }
@@ -105,6 +110,7 @@ export function canonicalHash(route) {
   if (route.name === 'calendar') return calendarHash(route);
   if (route.name === 'harvest') return route.days === 30 ? HARVEST_HASH : `${HARVEST_HASH}?days=${route.days}`;
   if (route.name === 'sheet') return sheetHash(route.days);
+  if (route.name === 'costs') return costsHash(route.month); // ---- Costs ----
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 
