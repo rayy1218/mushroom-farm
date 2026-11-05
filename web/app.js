@@ -11,6 +11,8 @@ import * as today from './today-page.js';
 import * as calendar from './calendar-page.js';
 import * as harvest from './harvest-page.js';
 import * as taskSheet from './task-sheet.js';
+import * as batches from './batches-page.js';
+import * as batchSheet from './batches-sheet.js';
 import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
@@ -63,6 +65,9 @@ function show(before = '') {
     : route.name === 'harvest' ? harvest.mount(view, { days: route.days })
     : route.name === 'sheet' ? harvest.mountSheet(view, { days: route.days })
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
+    : route.name === 'batches' ? batches.mount(view, { run: route.run })
+    : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })
+    : route.name === 'batchSheet' ? batchSheet.mountSheet(view, { from: route.from, to: route.to })
     : overview.mount(view, {});
   // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet.
   const section = route.name === 'sheet' ? 'harvest' : ['settings', 'overview', 'today', 'calendar', 'harvest'].includes(route.name) ? route.name : null;

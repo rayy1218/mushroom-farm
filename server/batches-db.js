@@ -1,0 +1,319 @@
+// The Batches tables and their queries (spec 2026-11-05-batches-design.md 2 and 3.1): made by db.js's version-21 step and
+// reached as db.batches (createBatchStore). Rows go in and come out in camelCase; the rules are server/batches.js's.
+// Inventory's stock_items and stock_moves are Inventory's: they are written here only when they exist (contract section 7).
+
+export const BATCHES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS batches (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind            TEXT    NOT NULL DEFAULT 'bought' CHECK (kind IN ('bought', 'made')),
+  parent_id       INTEGER,
+  run_id          INTEGER,
+  room_id         INTEGER,
+  placed_at       INTEGER,
+  crop            TEXT    NOT NULL,
+  supplier        TEXT,
+  received_at     INTEGER NOT NULL,
+  blocks          INTEGER NOT NULL CHECK (blocks BETWEEN 1 AND 100000),
+  price_per_block REAL    CHECK (price_per_block BETWEEN 0 AND 1000),
+  spawn_batch     TEXT,
+  strain          TEXT,
+  delivery_ref    TEXT,
+  inoculated_at   INTEGER,
+  block_kg        REAL    CHECK (block_kg BETWEEN 0.2 AND 10),
+  water_pct       REAL    CHECK (water_pct BETWEEN 30 AND 80),
+  recipe_id       INTEGER,
+  mixed_at        INTEGER,
+  incubation      TEXT    CHECK (incubation IN ('room', 'area')),
+  incubated_from  INTEGER,
+  incubated_to    INTEGER,
+  note            TEXT,
+  created_at      INTEGER NOT NULL,
+  CHECK ((run_id IS NULL) = (room_id IS NULL) AND (run_id IS NULL OR placed_at IS NOT NULL)),
+  CHECK ((block_kg IS NULL) = (water_pct IS NULL))
+) STRICT;
+CREATE INDEX IF NOT EXISTS batches_by_run ON batches (run_id);
+CREATE INDEX IF NOT EXISTS batches_by_received ON batches (received_at);
+CREATE INDEX IF NOT EXISTS batches_by_parent ON batches (parent_id);
+CREATE TABLE IF NOT EXISTS batch_checks (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id   INTEGER NOT NULL,
+  at         INTEGER NOT NULL,
+  lost       INTEGER NOT NULL CHECK (lost BETWEEN 1 AND 100000),
+  cause      TEXT    NOT NULL CHECK (cause IN ('green', 'black', 'bacterial', 'pests', 'other')),
+  worker     TEXT,
+  note       TEXT,
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS batch_checks_by_batch ON batch_checks (batch_id, at);
+CREATE TABLE IF NOT EXISTS batch_recipes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT    NOT NULL,
+  crop        TEXT,
+  sawdust_pct REAL    NOT NULL CHECK (sawdust_pct BETWEEN 0 AND 100),
+  bran_pct    REAL    NOT NULL CHECK (bran_pct BETWEEN 0 AND 100),
+  lime_pct    REAL    NOT NULL CHECK (lime_pct BETWEEN 0 AND 100),
+  gypsum_pct  REAL    NOT NULL CHECK (gypsum_pct BETWEEN 0 AND 100),
+  other_pct   REAL    NOT NULL DEFAULT 0 CHECK (other_pct BETWEEN 0 AND 100),
+  other_name  TEXT,
+  water_pct   REAL    NOT NULL CHECK (water_pct BETWEEN 30 AND 80),
+  bag_kg      REAL    NOT NULL CHECK (bag_kg BETWEEN 0.2 AND 10),
+  archived    INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+  created_at  INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS batch_materials (
+  id            INTEGER PRIMARY KEY,
+  batch_id      INTEGER NOT NULL,
+  item          TEXT    NOT NULL CHECK (item IN ('sawdust', 'bran', 'lime', 'gypsum', 'other', 'spawn', 'bags')),
+  name          TEXT,
+  qty           REAL    NOT NULL CHECK (qty > 0 AND qty <= 100000),
+  unit          TEXT    NOT NULL CHECK (unit IN ('kg', 'bags', 'pcs')),
+  stock_item_id INTEGER
+) STRICT;
+CREATE INDEX IF NOT EXISTS batch_materials_by_batch ON batch_materials (batch_id);
+CREATE UNIQUE INDEX IF NOT EXISTS batch_materials_one ON batch_materials (batch_id, item);
+CREATE TABLE IF NOT EXISTS batch_loads (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id   INTEGER NOT NULL,
+  method     TEXT    NOT NULL CHECK (method IN ('steam', 'pressure', 'pasteurise')),
+  bags       INTEGER NOT NULL CHECK (bags BETWEEN 1 AND 100000),
+  hot_at     INTEGER NOT NULL,
+  hold_h     REAL    NOT NULL CHECK (hold_h BETWEEN 0.5 AND 24),
+  temp_c     REAL    NOT NULL CHECK (temp_c BETWEEN 60 AND 130),
+  worker     TEXT,
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS batch_loads_by_batch ON batch_loads (batch_id);`;
+
+// A batch's fields (camelCase) and their columns.
+const COLUMNS = {
+  kind: 'kind', parentId: 'parent_id', runId: 'run_id', roomId: 'room_id', placedAt: 'placed_at', crop: 'crop', supplier: 'supplier',
+  receivedAt: 'received_at', blocks: 'blocks', pricePerBlock: 'price_per_block', spawnBatch: 'spawn_batch', strain: 'strain',
+  deliveryRef: 'delivery_ref', inoculatedAt: 'inoculated_at', blockKg: 'block_kg', waterPct: 'water_pct', recipeId: 'recipe_id',
+  mixedAt: 'mixed_at', incubation: 'incubation', incubatedFrom: 'incubated_from', incubatedTo: 'incubated_to', note: 'note',
+  createdAt: 'created_at',
+};
+const CHECK_COLUMNS = { batchId: 'batch_id', at: 'at', lost: 'lost', cause: 'cause', worker: 'worker', note: 'note', createdAt: 'created_at' };
+
+// Part 2 (spec 5): a recipe's, a material line's and a sterilising load's fields and their columns.
+const RECIPE_COLUMNS = {
+  name: 'name', crop: 'crop', sawdustPct: 'sawdust_pct', branPct: 'bran_pct', limePct: 'lime_pct', gypsumPct: 'gypsum_pct', otherPct: 'other_pct',
+  otherName: 'other_name', waterPct: 'water_pct', bagKg: 'bag_kg', archived: 'archived', createdAt: 'created_at',
+};
+const MATERIAL_COLUMNS = { batchId: 'batch_id', item: 'item', name: 'name', qty: 'qty', unit: 'unit', stockItemId: 'stock_item_id' };
+const LOAD_COLUMNS = { batchId: 'batch_id', method: 'method', bags: 'bags', hotAt: 'hot_at', holdH: 'hold_h', tempC: 'temp_c', worker: 'worker', createdAt: 'created_at' };
+
+// Every batch with its lost blocks, its room's name and its run's times and crops; a made batch's last sterilising load and
+// its spawn line (both its first row's: spec 2.1).
+const SELECT = `
+SELECT b.*, rm.name AS room_name, ru.started_at AS run_started_at, ru.ended_at AS run_ended_at, ru.crops AS run_crops,
+       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id), 0) AS lost,
+       COALESCE((SELECT SUM(c.lost) FROM batch_checks c WHERE c.batch_id = b.id AND b.placed_at IS NOT NULL AND c.at <= b.placed_at), 0) AS lost_before,
+       (SELECT MAX(l.hot_at) FROM batch_loads l WHERE l.batch_id = COALESCE(b.parent_id, b.id)) AS sterilised_at,
+       s.qty AS spawn_qty, s.unit AS spawn_unit, s.stock_item_id AS spawn_item_id
+FROM batches b LEFT JOIN rooms rm ON rm.id = b.room_id LEFT JOIN runs ru ON ru.id = b.run_id
+     LEFT JOIN batch_materials s ON s.batch_id = COALESCE(b.parent_id, b.id) AND s.item = 'spawn'`;
+// The latest purchase price of the stock item i (Inventory's 'purchase' moves; contract section 5).
+const LATEST_PRICE = `SELECT m.unit_cost FROM stock_moves m WHERE m.item_id = i.id AND m.ref_kind = 'purchase' AND m.unit_cost IS NOT NULL
+  ORDER BY m.at DESC, m.id DESC LIMIT 1`;
+const MATERIAL_ORDER = "CASE item WHEN 'sawdust' THEN 0 WHEN 'bran' THEN 1 WHEN 'lime' THEN 2 WHEN 'gypsum' THEN 3 WHEN 'other' THEN 4 WHEN 'bags' THEN 5 ELSE 6 END";
+
+
+function batchOf(r) {
+  const out = {};
+  for (const [key, column] of Object.entries(COLUMNS)) out[key] = r[column];
+  out.id = r.id;
+  out.lost = r.lost;
+  out.lostBefore = r.lost_before;
+  out.roomName = r.room_name;
+  out.runStartedAt = r.run_started_at;
+  out.runEndedAt = r.run_ended_at;
+  out.runCrops = r.run_crops === null ? null : JSON.parse(r.run_crops);
+  out.sterilisedAt = r.sterilised_at;
+  out.spawnQty = r.spawn_qty;
+  out.spawnUnit = r.spawn_unit;
+  out.spawnItemId = r.spawn_item_id;
+  return out;
+}
+const checkOf = (r) => ({ id: r.id, batchId: r.batch_id, at: r.at, lost: r.lost, cause: r.cause, worker: r.worker, note: r.note, createdAt: r.created_at });
+const recipeOf = (r) => ({
+  id: r.id, name: r.name, crop: r.crop, sawdustPct: r.sawdust_pct, branPct: r.bran_pct, limePct: r.lime_pct, gypsumPct: r.gypsum_pct,
+  otherPct: r.other_pct, otherName: r.other_name, waterPct: r.water_pct, bagKg: r.bag_kg, archived: r.archived === 1, createdAt: r.created_at,
+});
+const materialOf = (r) => ({ id: r.id, batchId: r.batch_id, item: r.item, name: r.name, qty: r.qty, unit: r.unit, stockItemId: r.stock_item_id });
+const loadOf = (r) => ({ id: r.id, batchId: r.batch_id, method: r.method, bags: r.bags, hotAt: r.hot_at, holdH: r.hold_h, tempC: r.temp_c, worker: r.worker, createdAt: r.created_at });
+
+// The columns and values of the given fields of `map` (an unknown field throws: a typo is a bug, not a no-op).
+function columnsOf(fields, map) {
+  return Object.entries(fields).map(([key, value]) => {
+    if (!Object.hasOwn(map, key)) throw new Error(`No column for ${key}`);
+    if (value === undefined) throw new Error(`No value for ${key}`);
+    return [map[key], typeof value === 'boolean' ? Number(value) : value]; // true/false are stored as 1/0
+  });
+}
+
+// db: the DatabaseSync (not db.js's wrapper). → the store.
+export function createBatchStore(db) {
+  const q = {
+    all: db.prepare(`${SELECT} ORDER BY b.received_at DESC, b.id DESC`),
+    get: db.prepare(`${SELECT} WHERE b.id = ?`),
+    family: db.prepare(`${SELECT} WHERE b.id = ?1 OR b.parent_id = ?1 ORDER BY b.id`),
+    byRun: db.prepare(`${SELECT} WHERE b.run_id = ? ORDER BY b.id`),
+    remove: db.prepare('DELETE FROM batches WHERE id = ?'),
+    removeChecks: db.prepare('DELETE FROM batch_checks WHERE batch_id = ?'),
+    removeMaterials: db.prepare('DELETE FROM batch_materials WHERE batch_id = ?'),
+    removeLoads: db.prepare('DELETE FROM batch_loads WHERE batch_id = ?'),
+    checks: db.prepare('SELECT * FROM batch_checks WHERE batch_id = ? ORDER BY at, id'),
+    check: db.prepare('SELECT * FROM batch_checks WHERE id = ?'),
+    removeCheck: db.prepare('DELETE FROM batch_checks WHERE id = ?'),
+    moveChecks: db.prepare('UPDATE batch_checks SET batch_id = ? WHERE batch_id = ?'),
+    forgetRoom: db.prepare('UPDATE batches SET room_id = NULL, run_id = NULL WHERE room_id = ?'),
+    hasStock: db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name IN ('stock_items', 'stock_moves')"),
+    recipes: db.prepare('SELECT * FROM batch_recipes ORDER BY name COLLATE NOCASE, id'),
+    recipe: db.prepare('SELECT * FROM batch_recipes WHERE id = ?'),
+    materials: db.prepare(`SELECT * FROM batch_materials WHERE batch_id = ? ORDER BY ${MATERIAL_ORDER}, id`),
+    loads: db.prepare('SELECT * FROM batch_loads WHERE batch_id = ? ORDER BY hot_at, id'),
+    load: db.prepare('SELECT * FROM batch_loads WHERE id = ?'),
+    removeLoad: db.prepare('DELETE FROM batch_loads WHERE id = ?'),
+  };
+  const hasStock = () => q.hasStock.get().n === 2;
+
+  function insertRow(table, fields, map) {
+    const pairs = columnsOf(fields, map);
+    const sql = `INSERT INTO ${table} (${pairs.map(([c]) => c).join(', ')}) VALUES (${pairs.map(() => '?').join(', ')})`;
+    return Number(db.prepare(sql).run(...pairs.map(([, v]) => v)).lastInsertRowid);
+  }
+  function updateRow(table, id, fields, map) {
+    const pairs = columnsOf(fields, map);
+    if (!pairs.length) return;
+    db.prepare(`UPDATE ${table} SET ${pairs.map(([c]) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...pairs.map(([, v]) => v), id);
+  }
+
+  return {
+    // fn() inside one transaction; its value. Not nested: the callers of batches.js open one per write.
+    tx(fn) {
+      db.exec('BEGIN');
+      try {
+        const out = fn();
+        db.exec('COMMIT');
+        return out;
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+
+    // Every batch, newest received first.
+    all: () => q.all.all().map(batchOf),
+    // A batch, or null.
+    get(id) {
+      const r = q.get.get(id);
+      return r ? batchOf(r) : null;
+    },
+    // A delivery: its first row and its parts, by id.
+    family: (firstId) => q.family.all(firstId).map(batchOf),
+    // The batches put into a run.
+    byRun: (runId) => q.byRun.all(runId).map(batchOf),
+    // A new batch from its camelCase fields. → its id.
+    insert: (fields) => insertRow('batches', fields, COLUMNS),
+    // The given fields of a batch.
+    update: (id, fields) => updateRow('batches', id, fields, COLUMNS),
+    // A batch and its checks, materials and loads.
+    remove(id) {
+      q.removeChecks.run(id);
+      q.removeMaterials.run(id);
+      q.removeLoads.run(id);
+      q.remove.run(id);
+    },
+    // A deleted room's batches keep their records and the time they went in, without the room and its run (db.js deleteRoom; room and run ids are reused).
+    forgetRoom: (roomId) => q.forgetRoom.run(roomId),
+
+    // A batch's checks, oldest first.
+    checks: (batchId) => q.checks.all(batchId).map(checkOf),
+    check(id) {
+      const r = q.check.get(id);
+      return r ? checkOf(r) : null;
+    },
+    insertCheck: (fields) => insertRow('batch_checks', fields, CHECK_COLUMNS),
+    updateCheck: (id, fields) => updateRow('batch_checks', id, fields, CHECK_COLUMNS),
+    removeCheck: (id) => q.removeCheck.run(id),
+    // A folded part's checks go to its first row.
+    moveChecks: (fromId, toId) => q.moveChecks.run(toId, fromId),
+
+    // ---- making blocks (spec 5): recipes, a made batch's materials and its sterilising loads ----
+    // Every recipe (archived too), by name.
+    recipes: () => q.recipes.all().map(recipeOf),
+    recipe(id) {
+      const r = q.recipe.get(id);
+      return r ? recipeOf(r) : null;
+    },
+    insertRecipe: (fields) => insertRow('batch_recipes', fields, RECIPE_COLUMNS),
+    updateRecipe: (id, fields) => updateRow('batch_recipes', id, fields, RECIPE_COLUMNS),
+    // A batch's material lines: the mix's in the recipe's order, then the spawn.
+    materials: (batchId) => q.materials.all(batchId).map(materialOf),
+    // The lines of these items replaced by `lines` (the Mix sends its own, the Inoculate step the spawn).
+    setMaterials(batchId, items, lines) {
+      const stray = lines.find((m) => !items.includes(m.item));
+      if (stray) throw new Error(`A material line (${stray.item}) is not among the items replaced`);
+      db.prepare(`DELETE FROM batch_materials WHERE batch_id = ? AND item IN (${items.map(() => '?').join(', ')})`).run(batchId, ...items);
+      for (const m of lines) insertRow('batch_materials', { batchId, ...m }, MATERIAL_COLUMNS);
+    },
+    // A batch's loads, by the time they got hot.
+    loads: (batchId) => q.loads.all(batchId).map(loadOf),
+    load(id) {
+      const r = q.load.get(id);
+      return r ? loadOf(r) : null;
+    },
+    insertLoad: (fields) => insertRow('batch_loads', fields, LOAD_COLUMNS),
+    updateLoad: (id, fields) => updateRow('batch_loads', id, fields, LOAD_COLUMNS),
+    removeLoad: (id) => q.removeLoad.run(id),
+
+    // ---- Inventory's tables (contract section 7): only when they exist ----
+    hasStock,
+    // The items a made batch's materials may draw from (not the blocks items Batches makes), by name, with their latest
+    // purchase price (null: none yet); none without Inventory.
+    stockItems() {
+      if (!hasStock()) return [];
+      const archived = db.prepare('PRAGMA table_info(stock_items)').all().some((c) => c.name === 'archived') ? ' AND i.archived = 0' : '';
+      return db.prepare(`SELECT i.id, i.name, i.kind, i.unit, (${LATEST_PRICE}) AS unit_cost FROM stock_items i WHERE i.kind <> 'blocks'${archived} ORDER BY i.name COLLATE NOCASE, i.id`)
+        .all().map((r) => ({ id: r.id, name: r.name, kind: r.kind, unit: r.unit, unitCost: r.unit_cost }));
+    },
+    // A stock item, or null (and null without Inventory).
+    stockItem(id) {
+      if (!hasStock()) return null;
+      const r = db.prepare('SELECT id, name, kind, unit FROM stock_items WHERE id = ?').get(id);
+      return r ? { id: r.id, name: r.name, kind: r.kind, unit: r.unit } : null;
+    },
+    // A stock item's latest purchase price (RM per its unit), or null.
+    purchasePrice(itemId) {
+      if (!hasStock()) return null;
+      return db.prepare(`SELECT (${LATEST_PRICE}) AS unit_cost FROM (SELECT ? AS id) i`).get(itemId).unit_cost;
+    },
+    // The stock item of kind 'blocks' with this name, made when missing. → its id.
+    blocksItem(name) {
+      // Inventory keeps one item per name, whatever the kind: a name another kind has gets "(batches)" after it, and when that
+      // is taken too "(batches 2)", "(batches 3)"…
+      const find = (n) => db.prepare("SELECT id FROM stock_items WHERE kind = 'blocks' AND name = ? COLLATE NOCASE ORDER BY id LIMIT 1").get(n);
+      const taken = (n) => db.prepare('SELECT 1 FROM stock_items WHERE name = ? COLLATE NOCASE').get(n) !== undefined;
+      for (let n = 0; ; n += 1) {
+        const own = n === 0 ? name : n === 1 ? `${name} (batches)` : `${name} (batches ${n})`;
+        const found = find(own);
+        if (found) return found.id;
+        if (!taken(own)) return Number(db.prepare("INSERT INTO stock_items (name, kind, unit, reorder_at) VALUES (?, 'blocks', 'blocks', NULL)").run(own).lastInsertRowid);
+      }
+    },
+    insertMove({ itemId, at, qty, unitCost, refId, note }) {
+      db.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, ?, ?, 'batch', ?, ?)")
+        .run(itemId, at, qty, unitCost ?? null, refId, note ?? null);
+    },
+    // The 'batch' moves of these batch ids, by time.
+    moves(refIds) {
+      if (!refIds.length) return [];
+      return db.prepare(`SELECT * FROM stock_moves WHERE ref_kind = 'batch' AND ref_id IN (${refIds.map(() => '?').join(', ')}) ORDER BY at, id`)
+        .all(...refIds).map((r) => ({ id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refId: r.ref_id, note: r.note }));
+    },
+    deleteMoves(refIds) {
+      if (!refIds.length) return;
+      db.prepare(`DELETE FROM stock_moves WHERE ref_kind = 'batch' AND ref_id IN (${refIds.map(() => '?').join(', ')})`).run(...refIds);
+    },
+  };
+}

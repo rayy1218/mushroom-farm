@@ -14,6 +14,9 @@ import { el, taskRow, slotPart, keepFocus } from './task-list.js';
 import { DOT } from './text-math.js';
 import { cropLine } from './room-card-math.js';
 import { picture, emptyPicture } from './pictures.js';
+// ---- Batches ---- (contract 2026-11-05): the Blocks waiting card
+import { todayWaiting } from './batches-page.js';
+// ---- end Batches ----
 
 const REFRESH_MS = 30_000;
 
@@ -152,9 +155,13 @@ export function mount(container) {
     }),
   ];
   load();
+  // ---- Batches ---- the waiting batches received 3 or more days ago, each to its batch (web/batches-page.js)
+  const stopBatches = todayWaiting(container);
+  // ---- end Batches ----
 
   return function unmount() {
     mountSeq++;
+    stopBatches(); // ---- Batches ----
     clearTimeout(timer);
     reload.cancel();
     for (const off of offLive) off();

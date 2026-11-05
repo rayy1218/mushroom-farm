@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash, tasksHash, taskSheetHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash, tasksHash, taskSheetHash, BATCHES_HASH, batchHash, batchesRunHash, batchSheetHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -155,4 +155,23 @@ test("the month sheet of a room's daily tasks keeps its month in the query; a ba
   assert.equal(canonicalHash(parseRoute('#/rooms/7/tasks/sheet?month=nope')), '#/rooms/7/tasks/sheet');
   assert.ok(isCanonical('#/rooms/7/tasks/sheet?month=2026-11'));
   assert.ok(!isCanonical('#/rooms/7/tasks/sheet?month=2026-11&x=1'));
+});
+
+test('the Batches pages: the list (one run\'s with ?run=), a batch, the myGAP 4-2 sheet with its dates', () => {
+  assert.equal(BATCHES_HASH, '#/business/batches');
+  assert.deepEqual(parseRoute('#/business/batches'), { name: 'batches', run: null });
+  assert.deepEqual(parseRoute('#/business/batches?run=12'), { name: 'batches', run: 12 });
+  assert.deepEqual(parseRoute('#/business/batches?run=x'), { name: 'batches', run: null });
+  assert.equal(isCanonical('#/business/batches?run=x'), false);
+  assert.equal(batchesRunHash(12), '#/business/batches?run=12');
+  assert.deepEqual(parseRoute('#/business/batches/7'), { name: 'batch', id: 7 });
+  assert.equal(batchHash(7), '#/business/batches/7');
+  assert.deepEqual(parseRoute('#/business/batches/sheet?from=2026-08-08&to=2026-11-05'), { name: 'batchSheet', from: '2026-08-08', to: '2026-11-05' });
+  assert.deepEqual(parseRoute('#/business/batches/sheet'), { name: 'batchSheet', from: null, to: null });
+  assert.deepEqual(parseRoute('#/business/batches/sheet?from=2026-13-01&to=x'), { name: 'batchSheet', from: null, to: null });
+  assert.equal(batchSheetHash('2026-08-08', '2026-11-05'), '#/business/batches/sheet?from=2026-08-08&to=2026-11-05');
+  for (const h of ['#/business/batches', '#/business/batches?run=12', '#/business/batches/7', '#/business/batches/sheet?from=2026-08-08&to=2026-11-05']) {
+    assert.equal(isCanonical(h), true, h);
+  }
+  assert.deepEqual(parseRoute('#/business/batches/0'), { name: 'overview' });
 });

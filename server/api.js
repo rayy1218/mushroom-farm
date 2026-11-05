@@ -16,6 +16,8 @@ import { createTaskRoutes } from './tasks-api.js';
 import { createTasks } from './tasks.js';
 import { createHarvests } from './harvests.js';
 import { createHarvestRoutes } from './harvest-api.js';
+import { createBatches } from './batches.js';
+import { createBatchRoutes } from './batches-api.js';
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
@@ -82,14 +84,22 @@ export function createApi(db, machines = null, controller = null, poller = null,
     publishRoom(roomId, 'tasks');
     publishDue();
   }) : () => {};
+  // ---- Batches ---- (spec 2026-11-05-batches-design.md 3 and 6): every write tells the pages; the rooms of the placed
+  // batches it touched hear 'harvest' too (their BE may change, 3.2).
+  const batches = createBatches({ db });
+  const batchRoutes = createBatchRoutes({ batches });
+  const stopTellingBatches = batches.onChange(({ batchId, roomId, runId, harvestRooms }) => {
+    events?.publish('batches', { batchId, roomId, runId });
+    for (const id of harvestRooms) events?.publish('harvest', { roomId: id });
+  });
   // The harvests (spec 2026-11-04-harvest-design.md 6): a record, edit or delete here, or a Done that made harvests (the
   // tasks module's onHarvest), tells the pages. An edit or delete of a check's harvest changes its row's amount too (the room's
   // Tasks tab, and Today and Calendar, which hear 'tasks').
-  const harvests = createHarvests({ db });
+  const harvests = createHarvests({ db, batchDryKg: batches.dryKgFor });
   const publishHarvest = (roomId) => events?.publish('harvest', { roomId });
   const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
-  const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); harvests.stop(); };
+  const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); stopTellingBatches(); harvests.stop(); };
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -121,6 +131,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (await harvestRoutes(req, res, path, { send, readJson, HttpError, url })) return;
+    if (await batchRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
