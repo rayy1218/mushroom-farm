@@ -408,6 +408,21 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Keyboard | One Tab stop; arrow keys move, Home and End to the row's ends (with Ctrl, the grid's); the focus returns to the box after a dialog or the menu. Every box has a name for a screen reader: "Footbath, Wednesday 4 November: done by Sara at 08:12" |
 | Month sheet | `#/rooms/7/tasks/sheet?month=2026-11`, a print page in light colours with no top bar: A4 portrait for 12 columns or fewer, landscape above over two pages (1st to 15th, then the rest); every row 6.6 mm to write in, so a 31-day month keeps its foot on one portrait page. A "Farm:" line left blank and "Sheet reviewed by: ____ (Management) on ____" at the foot, the month's days down ("1 Su", each Sunday ruled off) and the tasks across with the unit in brackets ("Harvest AM (kg)") and their heads sideways when narrow, an Initials column for the pen (none in a month gone by). Days gone are filled from the app: "✓ AL"; "✓ 19.59" over the initials; ✗ the heaviest mark (1.3 em, 800; amber on screen, black on paper); —; shaded not due. Days ahead are blank with the planned boxes outlined (dashed on screen, square solid cells on paper). On a phone the day column stays while the rest scrolls sideways |
 
+
+### Costs
+(2026-11-05; spec `docs/superpowers/specs/2026-11-05-costs-design.md`.) `#/business/costs`, reached through the Business entry the integrator adds. Where each part lives:
+
+| Part | Design |
+|---|---|
+| Head | "Costs", a month stepper (‹ November 2026 ›, 44 px buttons, the next one off at this month; stepping keeps the page and its focus) and **Add a cost** |
+| Month card | Profit first, in display size (32 px, 28 px on a phone, its own row there); then Income, Costs, Cost per kg, Profit per kg. A loss is "−RM 340.00" in the critical text token with the word "Loss" under it, never colour alone; a negative profit per kg takes the same tone. Notes under the tiles: missing prices in the warning text token, the rest muted |
+| 12 months | "Profit, last 12 months (RM)": bars up from one zero line for a profit (`--good`), down for a loss (`--critical`), one scale both sides, bare tick numbers; the shown month outlined with its value printed; a pending month dashed; "No figures yet." when nothing is recorded. One Tab stop, ← → Home End move; a phone shows 6 months when 12 would be under 24 px a bar |
+| By category | Category, RM, share; the source in a muted line (from Batches, from Inventory, measured, bill − measured, entered); a Total row equal to the Costs tile |
+| Entries, Monthly items | Rows on a desk (date, what, for whom, RM, a quiet Edit; a "monthly" or "bill" tag; a bill's "adds RM 580.00 unmeasured" line); blocks on a phone or in a column under 560 px. Monthly items line up on a subgrid with Change and Stop |
+| Runs | Dates (a toggle that opens the run's breakdown, two columns on a phone), Container, Crops, Income, Costs (with "Some costs have no price" when so), Profit, Profit per kg; labelled blocks on a phone |
+| Dialogs | The tasks' dialog: the boxes follow the category (worker for labour, kind for utilities, the bill's period filled from its date); a room cost says where it lands; a bill says only the unmeasured part is added; Stop defaults to this month and names the charges a past month removes |
+| Layout | Two columns from 900 px (Entries and Monthly items, By category); one column below |
+
 ## Do's and Don'ts
 
 ### Do:
