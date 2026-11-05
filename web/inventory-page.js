@@ -8,6 +8,7 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { DOT } from './text-math.js';
 import { openItemDialog, openPurchaseDialog, openUseDialog } from './inventory-dialogs.js';
+import { createDoneLine, takeFlash } from './inventory-done.js';
 import { farmDate } from './tasks-math.js';
 import { groupItems, pillOf, attentionParts, countedText, qtyText } from './inventory-math.js';
 
@@ -32,6 +33,7 @@ const TEMPLATE = `
     <button type="button" data-retry>Retry</button>
   </div>
   <p class="iv-attention" data-attention hidden></p>
+  <p class="muted iv-done-line" role="status" data-done hidden></p>
   <div class="iv-groups" data-groups></div>
   <p class="none iv-all-archived" data-all-archived hidden>Every item is archived.</p>
   <section class="card iv-empty" data-empty hidden>
@@ -176,7 +178,11 @@ export function mount(container) {
     timer = setTimeout(load, fallbackMs(REFRESH_MS, live.connected()));
   }
 
-  const done = () => load();
+  const doneLine = createDoneLine(q('[data-done]'), { onUndone: () => load(), onError: showError });
+  const done = (result) => {
+    load();
+    if (result) doneLine.show(result);
+  };
   const add = () => openItemDialog({ onDone: done, onLost: showError });
   els.add.addEventListener('click', add);
   q('[data-add-empty]').addEventListener('click', add);
@@ -206,11 +212,13 @@ export function mount(container) {
     }),
   ];
   load();
+  doneLine.show(takeFlash()); // Count stock's save, said once here (it left for this page)
 
   return function unmount() {
     mountSeq++;
     clearTimeout(timer);
     reload.cancel();
+    doneLine.destroy();
     for (const off of offLive) off();
   };
 }

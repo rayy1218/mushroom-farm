@@ -139,6 +139,21 @@ export const itemGroups = (items) => KIND_ORDER.map((kind) => ({ kind, label: KI
 // Under the Item box: "1.20 L in stock" ('' with no item picked). In the hint, not the option, so a phone never cuts it.
 export const stockHint = (item) => (item ? `${qtyText(item.qty, item.unit)} in stock` : '');
 
+// The line a page shows after a record (audit #2), with Undo for a new purchase, use, throw-out or count for UNDO_MS.
+export const UNDO_MS = 60_000;
+export function doneText({ kind, qty, unit, name, room = null, worker = null, count = 0 }) {
+  const by = worker ? ` by ${worker}` : '';
+  if (kind === 'use') return `Used ${qtyText(qty, unit)} of ${name}${room ? ` in ${room}` : ''}${by}`;
+  if (kind === 'purchase') return `Bought ${qtyText(qty, unit)} of ${name}`;
+  if (kind === 'throwOut') return `Threw out ${qtyText(qty, unit)} of ${name}${by}`;
+  if (kind === 'count') return `Saved ${count} count${count === 1 ? '' : 's'}${by}`;
+  if (kind === 'added') return `Added ${name}`;
+  if (kind === 'deleted') return name ? `Deleted ${name}` : 'Deleted';
+  return 'Saved';
+}
+// What is left of Undo's minute for a record saved at `at` (ms), at `now`; 0 when over or unknown.
+export const undoLeft = (at, now) => (finite(at) ? Math.max(0, Math.min(UNDO_MS, UNDO_MS - (now - at))) : 0);
+
 // A lot's name: "Bought 1 Nov", "Batch 14", "Count 3 Nov".
 export function lotLabel(lot) {
   if (lot.refKind === 'batch') return `Batch ${lot.refId}`;

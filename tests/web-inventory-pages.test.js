@@ -139,7 +139,7 @@ test('audit #1: Record use and Purchase start on "Pick an item" unless asked for
   assert.ok(d.includes("document.createElement('optgroup')"));
   assert.ok(d.includes("startItem(list, itemId, 'use')") && d.includes("startItem(list, itemId, 'purchase')"));
   assert.ok(d.includes("use: 'farm.inventory.useItem', purchase: 'farm.inventory.purchaseItem'"));
-  assert.ok(d.includes("if (sent === true) keepItem('use', body.itemId);") && d.includes("if (sent === true) keepItem('purchase', body.itemId);"));
+  assert.ok(d.includes("if (sent.ok) keepItem('use', body.itemId);") && d.includes("if (sent.ok) keepItem('purchase', body.itemId);"));
   assert.ok(!d.includes('?? list[0]'), 'never the first item by default');
 });
 
@@ -149,4 +149,25 @@ test('audit #21: a qty box follows its unit: suffix, keypad and the unit spoken 
   assert.ok(d.includes("spoken.className = 'sr-only iv-unit-words';"));
   assert.ok(d.includes('`, in ${UNIT_WORDS[unit] ?? unit}`'));
   for (const call of ["setUnit(form, 'reorderAt', unit);", "setUnit(form, 'qty', item.unit);", "setUnit(form, 'qty', item?.unit ?? null);"]) assert.ok(d.includes(call), call);
+});
+
+test('audit #2: after a record the page says what was saved, with Undo for a minute on a new move; Count stock hands its result to the list', () => {
+  const line = src('inventory-done.js');
+  assert.ok(line.includes("request('DELETE', `/api/inventory/moves/${id}`)"));
+  assert.ok(line.includes("say('Undone'"));
+  assert.ok(line.includes("export const FLASH_KEY = 'farm.inventory.flash';"));
+  for (const page of ['inventory-page.js', 'inventory-item.js']) {
+    const p = src(page);
+    assert.ok(p.includes('<p class="muted iv-done-line" role="status" data-done hidden></p>'), page);
+    assert.ok(p.includes("createDoneLine(q('[data-done]')"), page);
+    assert.ok(p.includes('if (result) doneLine.show(result);'), page);
+    assert.ok(p.includes('doneLine.destroy();'), page);
+  }
+  assert.ok(src('inventory-page.js').includes('doneLine.show(takeFlash());'));
+  const c = src('inventory-count.js');
+  assert.ok(c.includes('keepFlash({') && c.includes("doneText({ kind: 'count'"));
+  const d = src('inventory-dialogs.js');
+  assert.ok(d.includes('onDone?.({ at: Date.now(), ...done(sent.reply) });'));
+  assert.ok(d.includes("made(doneText({ kind: 'use'") && d.includes("made(doneText({ kind: 'purchase'") && d.includes("made(doneText({ kind: 'throwOut'"));
+  assert.ok(d.includes("doneText({ kind: 'deleted' })"));
 });

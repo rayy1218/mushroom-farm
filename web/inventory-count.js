@@ -8,7 +8,8 @@ import { INVENTORY_HASH } from './route.js';
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
 import { loadWorkers, getWorker, setWorker, errorText } from './task-dialogs.js';
-import { groupItems, qtyText, countBody, WHOLE_UNITS } from './inventory-math.js';
+import { groupItems, qtyText, countBody, doneText, WHOLE_UNITS } from './inventory-math.js';
+import { keepFlash } from './inventory-done.js';
 
 const COMMAND_TIMEOUT = 15000;
 
@@ -235,8 +236,12 @@ export function mount(container) {
     busy = true;
     countTyped();
     try {
-      await request('POST', '/api/inventory/counts', body, COMMAND_TIMEOUT);
+      const reply = await request('POST', '/api/inventory/counts', body, COMMAND_TIMEOUT);
       setWorker(body.worker);
+      keepFlash({ // the list says it, with Undo for the minute (audit #2)
+        text: doneText({ kind: 'count', count: body.counts.length, worker: body.worker }),
+        moves: (reply?.moves ?? []).map((m) => m.id).filter(Number.isInteger), at: Date.now(),
+      });
       if (alive()) location.hash = INVENTORY_HASH;
     } catch (err) {
       if (!alive()) return;

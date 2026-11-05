@@ -12,6 +12,7 @@ import {
 } from './inventory-dialogs.js';
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
+import { createDoneLine } from './inventory-done.js';
 import { qtyText, countedText, lotLabel, lotPill, moveLine, dayText, useByLine, KIND_ONE } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
@@ -35,6 +36,7 @@ const TEMPLATE = `
     <span data-banner-text></span>
     <button type="button" data-retry>Retry</button>
   </div>
+  <p class="muted iv-done-line" role="status" data-done hidden></p>
   <div class="iv-item" data-body hidden>
     <section class="card iv-figures" aria-label="Figures">
       <div class="us-tiles iv-tiles" data-tiles></div>
@@ -101,7 +103,11 @@ export function mount(container, { id }) {
     els.bannerText.textContent = text;
     els.banner.hidden = false;
   };
-  const done = () => load();
+  const doneLine = createDoneLine(q('[data-done]'), { onUndone: () => load(), onError: showError });
+  const done = (result) => {
+    load();
+    if (result) doneLine.show(result);
+  };
 
   function paint() {
     const key = JSON.stringify([data, showAll, farmDate(Date.now())]);
@@ -222,8 +228,9 @@ export function mount(container, { id }) {
     els.archive.disabled = true;
     const r = await bringBack(data);
     els.archive.disabled = false;
-    if (r === true || r.stale) load();
-    if (r !== true) showError(r.message);
+    if (r.ok || r.stale) load();
+    if (r.ok) doneLine.show({ text: 'Brought back' });
+    else showError(r.message);
   });
   els.all.addEventListener('click', () => {
     const before = data.moves.length > HISTORY_SHOWN ? HISTORY_SHOWN : 0;
@@ -252,6 +259,7 @@ export function mount(container, { id }) {
     mountSeq++;
     clearTimeout(timer);
     reload.cancel();
+    doneLine.destroy();
     for (const off of offLive) off();
   };
 }

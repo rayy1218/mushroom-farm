@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -276,4 +276,22 @@ test('the 4-5 sheet: twelve columns; a row in the farm words; the range; the emp
 test("the pickers' options", () => {
   assert.deepEqual(KIND_OPTIONS.map(([k]) => k), ['spawn', 'bags', 'chemical', 'packaging', 'other']);
   assert.deepEqual(UNIT_OPTIONS.map(([u]) => u), ['pcs', 'kg', 'g', 'L', 'mL']);
+});
+
+test('the line after a record (audit #2): what was saved, in the farm words', () => {
+  assert.equal(plain(doneText({ kind: 'use', qty: 1, unit: 'L', name: 'Bleach', room: 'Container 1', worker: 'Sara' })), 'Used 1.00 L of Bleach in Container 1 by Sara');
+  assert.equal(plain(doneText({ kind: 'use', qty: 2, unit: 'pcs', name: 'Punnets', room: null, worker: 'Sara' })), 'Used 2 pcs of Punnets by Sara');
+  assert.equal(plain(doneText({ kind: 'purchase', qty: 10, unit: 'L', name: 'Bleach' })), 'Bought 10.00 L of Bleach');
+  assert.equal(plain(doneText({ kind: 'throwOut', qty: 4.5, unit: 'kg', name: 'Lime', worker: 'Ali' })), 'Threw out 4.50 kg of Lime by Ali');
+  assert.equal(doneText({ kind: 'count', count: 3, worker: 'Sara' }), 'Saved 3 counts by Sara');
+  assert.equal(doneText({ kind: 'count', count: 1, worker: 'Sara' }), 'Saved 1 count by Sara');
+  assert.equal(doneText({ kind: 'added', name: 'Bleach' }), 'Added Bleach');
+  assert.equal(doneText({ kind: 'deleted' }), 'Deleted');
+  assert.equal(doneText({ kind: 'deleted', name: 'Bleach' }), 'Deleted Bleach');
+  assert.equal(doneText({ kind: 'saved' }), 'Saved');
+  assert.equal(UNDO_MS, 60_000);
+  assert.equal(undoLeft(1000, 21_000), 40_000);
+  assert.equal(undoLeft(1000, 61_000), 0);
+  assert.equal(undoLeft(1000, 500), UNDO_MS, 'a clock behind: never more than the minute');
+  assert.equal(undoLeft(undefined, 500), 0);
 });
