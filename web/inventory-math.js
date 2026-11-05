@@ -316,6 +316,16 @@ export function countBody(entries, worker) {
   return { worker, counts };
 }
 
+// Count stock's typed boxes kept in this tab until saved (audit #3): of `saved` ({ itemId: text }, read back from
+// sessionStorage), the typed ones of items still to count (on the list, not archived).
+export function keptCounts(saved, items) {
+  if (!saved || typeof saved !== 'object') return {};
+  const open = new Set(items.filter((i) => !i.archived).map((i) => String(i.id)));
+  return Object.fromEntries(Object.entries(saved).filter(([id, text]) => open.has(id) && typeof text === 'string' && text.trim() !== ''));
+}
+// The question before leaving Count stock with typed boxes.
+export const leaveText = (n) => `Leave Count stock? ${n} typed count${n === 1 ? ' is' : 's are'} not saved yet.`;
+
 // ---- the myGAP 4-5 sheet (spec 5.1) ----
 
 export const SHEET_TITLE = 'myGAP 4-5 · Purchase and use of pesticides / chemicals (Pembelian dan penggunaan racun perosak / bahan kimia)';

@@ -171,3 +171,18 @@ test('audit #2: after a record the page says what was saved, with Undo for a min
   assert.ok(d.includes("made(doneText({ kind: 'use'") && d.includes("made(doneText({ kind: 'purchase'") && d.includes("made(doneText({ kind: 'throwOut'"));
   assert.ok(d.includes("doneText({ kind: 'deleted' })"));
 });
+
+test('audit #3 and #5: Count stock keeps typed figures until saved, asks before leaving, Save at the foot of a phone', () => {
+  const c = src('inventory-count.js');
+  assert.ok(c.includes("const KEPT_KEY = 'farm.inventory.count';"));
+  assert.ok(c.includes('keptCounts(readKept(), items)'));
+  assert.ok(c.includes('Your unsaved counts are back.') && c.includes('Clear them'));
+  assert.ok(c.includes('writeKept({});\n      if (alive()) {\n        leaving = true;'), 'cleared on a save, before leaving for the list');
+  assert.ok(c.includes("document.addEventListener('click', onClick, true);") && c.includes("document.removeEventListener('click', onClick, true);"));
+  assert.ok(c.includes("window.addEventListener('popstate', onPop);") && c.includes("window.removeEventListener('popstate', onPop);"));
+  assert.ok(c.includes("history.pushState(null, '', INVENTORY_COUNT_HASH);"));
+  assert.ok(c.includes("window.addEventListener('beforeunload', onUnload);") && c.includes("window.removeEventListener('beforeunload', onUnload);"));
+  assert.ok(c.includes('window.confirm(leaveText(n))'));
+  const css = src('styles.css');
+  assert.match(css, /\.iv-count-send \{ position: sticky; bottom: 0;/);
+});

@@ -1,17 +1,29 @@
 // Count stock, #/business/inventory/count (spec 2026-11-05-inventory-design.md 4 and 5): a box for every item not archived,
 // by kind, beside what the records say; who once at the top. Save sends the typed boxes as one count (POST
 // /api/inventory/counts) and goes back to the list. The records' figures follow the 'inventory' events; the boxes are never
-// touched by a refresh (a worker may be halfway along the shelves).
+// touched by a refresh (a worker may be halfway along the shelves). The typed boxes are kept in this tab (sessionStorage)
+// until saved, and leaving with some typed asks first (audit 2026-11-05 #3).
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { INVENTORY_HASH } from './route.js';
+import { INVENTORY_HASH, INVENTORY_COUNT_HASH } from './route.js';
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
 import { loadWorkers, getWorker, setWorker, errorText } from './task-dialogs.js';
-import { groupItems, qtyText, countBody, doneText, WHOLE_UNITS } from './inventory-math.js';
+import { groupItems, qtyText, countBody, doneText, keptCounts, leaveText, WHOLE_UNITS } from './inventory-math.js';
 import { keepFlash } from './inventory-done.js';
 
 const COMMAND_TIMEOUT = 15000;
+const KEPT_KEY = 'farm.inventory.count'; // { itemId: text }: the typed boxes, until a save
+
+function readKept() {
+  try { return JSON.parse(sessionStorage.getItem(KEPT_KEY) ?? 'null'); } catch { return null; }
+}
+function writeKept(map) {
+  try {
+    if (Object.keys(map).length) sessionStorage.setItem(KEPT_KEY, JSON.stringify(map));
+    else sessionStorage.removeItem(KEPT_KEY);
+  } catch { /* not kept: a slip loses them, as before */ }
+}
 
 const TEMPLATE = `
   <div class="page-head">
@@ -28,6 +40,7 @@ const TEMPLATE = `
   <p class="muted" data-loading role="status">Loading…</p>
   <form class="iv-count" data-form novalidate hidden>
     <div data-lead></div>
+    <p class="muted iv-count-back" data-back-line role="status" hidden>Your unsaved counts are back. <button type="button" class="iv-link" data-forget>Clear them</button></p>
     <div class="card iv-count-who">
       <div class="field">
         <label for="iv-count-worker">Who counted</label>
@@ -64,7 +77,7 @@ export function mount(container) {
   const els = {
     form: q('[data-form]'), worker: q('[data-worker]'), workerError: q('#iv-count-worker-error'), groups: q('[data-groups]'),
     error: q('[data-error]'), save: q('[data-save]'), typed: q('[data-typed]'), banner: q('.banner'), bannerText: q('[data-banner-text]'),
-    empty: q('[data-empty]'), loading: q('[data-loading]'), lead: q('[data-lead]'),
+    empty: q('[data-empty]'), loading: q('[data-loading]'), lead: q('[data-lead]'), backLine: q('[data-back-line]'),
   };
   q('[data-back]').href = INVENTORY_HASH;
   q('[data-empty-back]').href = INVENTORY_HASH;
@@ -77,12 +90,16 @@ export function mount(container) {
     els.bannerText.textContent = text;
     els.banner.hidden = false;
   };
+  let leaving = false; // a save is taking the page to the list: no question
   const entries = () => [...rows.values()].filter((r) => !r.gone).map((r) => ({ itemId: r.item.id, unit: r.item.unit, text: r.input.value }));
+  const typedCount = () => entries().filter((e) => e.text.trim() !== '').length;
   function countTyped() {
-    const n = entries().filter((e) => e.text.trim() !== '').length;
+    const n = typedCount();
     els.save.disabled = busy || n === 0;
     els.typed.textContent = n ? `${n} typed` : '';
   }
+  // Every typed box (a gone row's too: it may come back), kept until a save.
+  const keep = () => writeKept(Object.fromEntries([...rows].filter(([, r]) => r.input.value.trim() !== '').map(([id, r]) => [String(id), r.input.value])));
 
   // The worker picker from the names; the selection stays when it is still on the list. No names: the dialogs' line.
   function paintNames(names) {
@@ -139,6 +156,7 @@ export function mount(container) {
           error.textContent = '';
           input.removeAttribute('aria-invalid');
           countTyped();
+          keep();
         });
         row.append(label, records, box, error);
         card.append(row);
@@ -146,6 +164,12 @@ export function mount(container) {
       }
       return card;
     }));
+    const kept = keptCounts(readKept(), items);
+    for (const [id, text] of Object.entries(kept)) {
+      const r = rows.get(Number(id));
+      if (r) r.input.value = text;
+    }
+    els.backLine.hidden = Object.keys(kept).length === 0;
     countTyped();
   }
 
@@ -242,7 +266,11 @@ export function mount(container) {
         text: doneText({ kind: 'count', count: body.counts.length, worker: body.worker }),
         moves: (reply?.moves ?? []).map((m) => m.id).filter(Number.isInteger), at: Date.now(),
       });
-      if (alive()) location.hash = INVENTORY_HASH;
+      writeKept({});
+      if (alive()) {
+        leaving = true;
+        location.hash = INVENTORY_HASH;
+      }
     } catch (err) {
       if (!alive()) return;
       // the server names an entry 'counts.<index>' (of the counts sent) or 'worker'
@@ -256,6 +284,44 @@ export function mount(container) {
     }
   });
   q('[data-retry]').addEventListener('click', () => load());
+  q('[data-forget]').addEventListener('click', () => {
+    for (const r of rows.values()) r.input.value = '';
+    writeKept({});
+    els.backLine.hidden = true;
+    countTyped();
+    rows.values().next().value?.input.focus();
+  });
+
+  // Leaving with typed boxes asks first. A tap on an app link (the back link, the top bar: a capture listener on the
+  // document, before the link is followed) is cancelled on "Cancel". The phone's Back is heard as popstate, which comes
+  // before the router's hashchange but cannot be cancelled: on "Cancel" the address is put back, and the router shows Count
+  // stock again with the kept figures. A reload or a closed tab: beforeunload. The figures stay kept in every case.
+  const ask = () => {
+    const n = typedCount();
+    return leaving || n === 0 || window.confirm(leaveText(n));
+  };
+  const onClick = (event) => {
+    const a = event.target.closest?.('a[href^="#/"]');
+    if (!a || !alive() || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    if (a.getAttribute('href') === location.hash) return;
+    if (ask()) leaving = true;
+    else event.preventDefault();
+  };
+  const onPop = () => {
+    if (!alive() || ask()) {
+      leaving = true;
+      return;
+    }
+    history.pushState(null, '', INVENTORY_COUNT_HASH);
+  };
+  const onUnload = (event) => {
+    if (leaving || typedCount() === 0) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
+  document.addEventListener('click', onClick, true);
+  window.addEventListener('popstate', onPop);
+  window.addEventListener('beforeunload', onUnload);
 
   const reload = createThrottle(() => { if (alive()) load(); });
   const offLive = [live.on('inventory', () => reload.call()), live.onStatus((up) => { if (up) reload.call(); })];
@@ -266,6 +332,9 @@ export function mount(container) {
     mountSeq++;
     reload.cancel();
     window.removeEventListener('farm:worker', reloadNames);
+    document.removeEventListener('click', onClick, true);
+    window.removeEventListener('popstate', onPop);
+    window.removeEventListener('beforeunload', onUnload);
     for (const off of offLive) off();
   };
 }

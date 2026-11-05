@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -294,4 +294,14 @@ test('the line after a record (audit #2): what was saved, in the farm words', ()
   assert.equal(undoLeft(1000, 61_000), 0);
   assert.equal(undoLeft(1000, 500), UNDO_MS, 'a clock behind: never more than the minute');
   assert.equal(undoLeft(undefined, 500), 0);
+});
+
+test("Count stock's typed figures kept until saved (audit #3): only the items still to count, only typed ones", () => {
+  const items = [item({ id: 1 }), item({ id: 2 }), item({ id: 3, archived: true })];
+  assert.deepEqual(keptCounts({ 1: '3.5', 2: '  ', 3: '4', 9: '1' }, items), { 1: '3.5' });
+  assert.deepEqual(keptCounts(null, items), {});
+  assert.deepEqual(keptCounts('nonsense', items), {});
+  assert.deepEqual(keptCounts({ 1: 5 }, items), {}, 'text only');
+  assert.equal(leaveText(1), 'Leave Count stock? 1 typed count is not saved yet.');
+  assert.equal(leaveText(3), 'Leave Count stock? 3 typed counts are not saved yet.');
 });
