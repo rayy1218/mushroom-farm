@@ -35,19 +35,19 @@ leading with the month's profit; income from Sales only; the costs worked out on
 | `date` | TEXT | YYYY-MM-DD, a real date, not after today. A monthly item: the first month it charges, and the day of the month it charges on. |
 | `category` | TEXT | `'blocks'`, `'spawn'`, `'labour'`, `'rent'`, `'repairs'`, `'transport'`, `'packaging'`, `'utilities'`, `'other'` (the contract's list) |
 | `amount` | REAL | RM, over 0 up to 1,000,000, stored to 2 places |
-| `room_id` | INTEGER | Null: the whole farm. Else a room (`ON DELETE SET NULL`: a deleted room's costs become the farm's) |
-| `run_id` | INTEGER | A one-off room cost: the run open in that room on its date, set on save (null when none was open). A monthly item and a farm cost: null. `ON DELETE SET NULL`. |
+| `room_id` | INTEGER | Null: the whole farm. Else a room (a deleted room's costs become the farm's: the trigger `costs_room_gone`) |
+| `run_id` | INTEGER | A one-off room cost: the run open in that room on its date, set on save (null when none was open). A monthly item and a farm cost: null. A deleted run's costs lose it (the trigger `costs_run_gone`). |
 | `note` | TEXT | Up to 200 characters, trimmed; may be empty |
 | `source_kind` | TEXT | Always `'manual'` (the contract's column: nothing is copied in) |
 | `source_id` | INTEGER | Always null |
-| `repeat` | TEXT | Null, or `'monthly'` |
+| `repeat` | TEXT | Null, or `'monthly'`. An electricity or water bill cannot repeat (400 "An electricity or water bill is entered each month"). |
 | `repeat_until` | TEXT | YYYY-MM, the last month a monthly item charges; null: it keeps going. Not before the item's first month. Null on a one-off. |
 | `worker` | TEXT | Labour only (null otherwise): a worker by the tasks' rule (`checkWorker`: an active worker when the farm has a list) |
 | `utility` | TEXT | Utilities only (null otherwise): `'electricity'`, `'water'` or `'other'` |
 | `period_from`, `period_to` | TEXT | An electricity or water bill only (null otherwise): the dates the bill covers, YYYY-MM-DD, from ≤ to, up to 62 days. Default: the calendar month of the bill's date. |
 | `created_at` | INTEGER | ms |
 
-Indexes: `(date)`, `(room_id)`.
+Indexes: `(date)`, `(room_id)`. The database has no foreign keys (rooms and runs are deleted by hand in `deleteRoom`, another module's block), so the step also makes two triggers: `costs_room_gone` (after a room's delete: its costs' `room_id` and `run_id` null) and `costs_run_gone` (after a run's delete: its costs' `run_id` null).
 
 ### 2.1 A monthly item
 
@@ -61,8 +61,7 @@ Indexes: `(date)`, `(room_id)`.
 
 ## 3. Reading the other modules (`server/costs-sources.js`)
 
-One file reads the other modules' tables by the contract's column names (section 5). A table that does not exist yet
-(checked in `sqlite_master`) gives an empty list, never an error, so Costs works before Batches, Inventory and Sales merge.
+One file reads the other modules' tables by the contract's column names (section 5): `readSources(raw, fromMs, toMs)` on the raw `DatabaseSync` (the database object has no raw SQL), called by the one method `costSources(fromMs, toMs)` in `db.js`'s Costs block. A table that does not exist yet (checked in `sqlite_master`) gives an empty list, never an error, so Costs works before Batches, Inventory and Sales merge.
 
 | Source | Read | Rule |
 |---|---|---|
@@ -80,7 +79,7 @@ The ranges are farm dates (the usage days' zone). Tests make the three tables wi
 | Shared costs of a month | Farm costs (no room: one-offs and monthly charges), Inventory purchases in the month (`kind` not `'blocks'`), and the utilities top-up. A run's share: its block-days in the month ÷ every run's block-days in the month. A month with no block-days: they stay with the farm ("Not shared: no blocks in this month"). |
 | A room cost with no run | On the farm month; on no run; not shared |
 | Block cost | Batches: on the batch's run and the month of `received_at`. A batch with no price: left out and named ("Container 1's blocks of 3 Oct have no price"); the costs marked incomplete. |
-| Measured energy and water | Each room's usage days (`roomDays`, `cachedOnly`) at today's prices, as Harvest's cost per kg: on the farm month, and on the room's run open that day. Water only when a water price is set ("electricity only" then). A day not worked out yet: the figure `pending` and a warm of that room started (Harvest's pattern: one at a time a room), which publishes `costs` `{}` when done; shown as "Working out the energy cost…". |
+| Measured energy and water | Each room's usage days (`roomDays`, `cachedOnly`) at today's prices, as Harvest's cost per kg: on the farm month, and on the room's run open that day. Water only when a water price is set ("electricity only" then). A day not worked out yet: the figure `pending` and a warm of that room started (Harvest's pattern: one at a time a room), which publishes `costs` `{}` when done; shown as "Working out the energy cost…"; while pending, the month's (or run's) costs, profit, cost per kg and profit per kg are null ("—"), never a partial figure. |
 | Utilities top-up | Per electricity or water bill: the bill − the measured cost of that utility over all rooms over the bill's period. Over 0: a shared "Unmeasured electricity" (or water) cost in the month of the bill's `date`. 0 or under: nothing added, a note "Measured RM 612.40 is above the bill of RM 580.00: the estimate runs high". The bill's own amount is never counted as a cost (the measured part already is). A bill whose period has a pending day: the top-up pending too. A bill whose period starts before the usage days kept (400 days back): its whole amount counts as shared, noted. `'other'` utilities: a plain cost (shared, or the room's). |
 | Income | Sales: a month's income is its sales by `sold_at`. A run's: its sales with that `run_id`, plus sales with no `run_id` and that room's `room_id` sold while the run was open (up to today when open). Sales with neither: the month only. |
 | Not yet sold | Harvest's RM value of the kg picked (`valueOf` with the crop prices), shown as a note beside Income ("RM 840.00 picked, not yet sold"); never in profit. Shown when the kg picked exceed the kg sold. |
@@ -136,7 +135,7 @@ Works at 1440, 1024 and 390 px, both themes.
 | Test | Covers |
 |---|---|
 | `tests/costs-math.test.js` (pure) | Monthly charges (day 31 in a 30-day month and in February, a stop, a change from a month, never a future month or day); block-days across a month boundary and for an open run; the shared split with remainders, a month with no blocks; the top-up both ways and pending; income by run and by room; profit, cost per kg, profit per kg; the notes |
-| `tests/db-costs.test.js` | The step to 24 (STRICT, made once, upgrade from 20), add, edit, delete, `ON DELETE SET NULL` for a room and a run, the run found from room and date |
+| `tests/db-costs.test.js` | The step to 24 (STRICT, made once, upgrade from 20), add, edit, delete, change, stop, the triggers for a deleted room and run |
 | `tests/costs-sources.test.js` | The three tables missing (empty) and present (fixtures with the contract's columns): the `'blocks'` purchases left out, an unpriced batch, a purchase with no unit cost, sales in a range |
 | `tests/costs.test.js` | The month view and the summary shape against fixtures; change and stop; pending energy and the warm's event |
 | `tests/api-costs.test.js` | The routes, the 400s with `field`, the 404s, the `costs` event on each write |
