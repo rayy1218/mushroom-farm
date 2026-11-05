@@ -109,3 +109,16 @@ test('upkeep and long-term rows are refused; an open row, a cancelled row and no
   s.tasks.cancel(open.id, { reason: 'No need' });
   refused(() => s.tasks.undo(open.id), 409, 'Only a daily task can be undone');
 });
+
+test('a race lost after the in-window check (another undo, or the minute ran out, between the read and the write): 409, nothing told', (t) => {
+  const s = setup(t);
+  const row = s.row('footbath');
+  s.tasks.done(row.id, { worker: 'Ali' });
+  s.later(30_000);
+  const undoTask = s.db.undoTask;
+  s.db.undoTask = (id, since) => { undoTask(id, since); return undoTask(id, since); }; // someone else's undo lands first
+  s.changes.length = 0;
+  refused(() => s.tasks.undo(row.id), 409, 'Too late to undo: it was done at 08:12');
+  assert.deepEqual(s.changes, [], 'the loser tells no one (the winner did)');
+  assert.deepEqual(s.harvested, []);
+});

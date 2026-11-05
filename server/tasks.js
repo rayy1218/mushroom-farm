@@ -252,9 +252,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     return text;
   }
 
-  // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
-  // row makes its next row with it; a harvest check's kg (amounts: { crop: kg }) make harvests with it.
-  // Tells the room's listeners, and the harvest listeners too when harvests changed.
+  // Tells the harvest listeners (a Done's or an Undo's harvests changed); one that throws is logged, the rest still told.
   function tellHarvests(roomId) {
     for (const fn of [...harvestListeners]) {
       try {
@@ -265,6 +263,9 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     }
   }
 
+  // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
+  // row makes its next row with it; a harvest check's kg (amounts: { crop: kg }) make harvests with it.
+  // Tells the room's listeners, and the harvest listeners too when harvests changed.
   function close(row, fields, amounts = null) {
     const at = now();
     const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;

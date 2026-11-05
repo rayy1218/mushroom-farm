@@ -214,6 +214,7 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
         res.end(BOM + tasks.logCsv(room.id));
         return true;
       }
+      // (the page no longer reads this JSON since the grid took the Log's place, 2026-11-04; the CSV above it does)
       // ?before=<id>: the page older than that row; left out or empty: the newest page.
       const before = url.searchParams.get('before') || null;
       if (before !== null && !/^[1-9][0-9]{0,14}$/.test(before)) throw new HttpError(400, 'before must be a task id', 'before');
