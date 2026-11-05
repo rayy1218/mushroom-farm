@@ -45,8 +45,8 @@ test('GET /api/runs/:id: the run page\'s reply; 404 for no such run; no other me
   const one = await call('GET', `/api/runs/${runId}`);
   assert.equal(one.status, 200, JSON.stringify(one.body));
   assert.deepEqual(Object.keys(one.body), ['id', 'roomId', 'roomName', 'crops', 'partial', 'startedAt', 'endedAt', 'kg', 'perBlock',
-    'income', 'costs', 'profit', 'pending', 'incomplete', 'profitPerKg', 'kgSold', 'be', 'byCrop', 'flushes', 'missing', 'harvests',
-    'harvestCount', 'batches', 'blockCost', 'sales', 'costsByKind']);
+    'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete', 'kgSold', 'be', 'byCrop', 'flushes', 'missing', 'harvests',
+    'harvestCount', 'batches', 'blockCost', 'sales', 'costsByKind', 'prices']);
   assert.deepEqual(Object.keys(one.body.sales), ['kg', 'total', 'byCrop', 'lines']);
   assert.deepEqual(await call('GET', '/api/runs/999'), { status: 404, body: { error: 'Run not found' } });
   assert.equal((await call('GET', '/api/runs/0')).status, 404);

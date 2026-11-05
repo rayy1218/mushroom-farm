@@ -4,8 +4,9 @@
 // no state, no HTTP.
 
 import { CROP_KEYS } from '../web/crops.js';
+import { readSettings } from './settings.js';
 
-export const LATEST_HARVESTS = 8; // the run page's latest picks (the Harvest tab's own count)
+export const LATEST_HARVESTS = 3; // the run page's latest picks (the room's Harvest tab has them all)
 const ALL = [-8.64e15, 8.64e15]; // every sale, as Sales' summary reads them
 
 // A refused request: status 400 or 404, field the input it is about (the routes reply { error, field }).
@@ -45,7 +46,7 @@ export function createRuns({ db, harvests, batches, sales, costs }) {
     id: run.id, roomId: run.roomId, roomName: run.roomName, crops: run.crops, partial: run.partial,
     startedAt: run.startedAt, endedAt: run.endedAt,
     kg: h?.kg ?? 0, perBlock: h?.perBlock ?? null,
-    income: c?.income ?? 0, costs: c ? c.costs : null, profit: c ? c.profit : null,
+    income: c?.income ?? 0, costs: c ? c.costs : null, profit: c ? c.profit : null, profitPerKg: c?.profitPerKg ?? null,
     pending: c?.pending ?? false, incomplete: c?.incomplete ?? false,
   });
 
@@ -69,18 +70,22 @@ export function createRuns({ db, harvests, batches, sales, costs }) {
       const [c = null] = costs.runViews({ run: id });
       const { batches: list, blockCost } = batches.list({ run: id });
       const { kg, total, byCrop } = sales.summary({ run: id });
-      const lines = db.salesBetween(...ALL).filter((s) => s.runId === id).toReversed().map((s) => ({
+      const { electricityPrice, waterPrice } = readSettings(db);
+      // newest delivery first, a delivery's lines in the order entered (as Sales shows a delivery)
+      const lines = db.salesBetween(...ALL).filter((s) => s.runId === id)
+        .sort((x, y) => y.soldAt - x.soldAt || y.deliveryId - x.deliveryId || x.id - y.id).map((s) => ({
         id: s.id, deliveryId: s.deliveryId, soldAt: s.soldAt, buyer: s.buyer, invoiceNo: s.invoiceNo, crop: s.crop, kg: s.kg,
         priceKg: s.priceKg, total: s.total, paidAt: s.paidAt,
       }));
       return {
         ...rowOf(run, h, c),
-        profitPerKg: c?.profitPerKg ?? null, kgSold: c?.kgSold ?? 0,
+        kgSold: c?.kgSold ?? 0,
         be: h?.be ?? null, byCrop: h?.byCrop ?? [], flushes: h?.flushes ?? [], missing: h?.missing ?? { dryKg: [], price: [] },
         harvests: (h?.harvests ?? []).slice(0, LATEST_HARVESTS), harvestCount: h?.harvests.length ?? 0,
         batches: list, blockCost,
         sales: { kg, total, byCrop, lines },
         costsByKind: c ? { parts: c.parts, byCategory: c.byCategory, notes: c.notes } : null,
+        prices: { electricity: electricityPrice, water: waterPrice }, // a 0 energy or water with a price: nothing recorded yet
       };
     },
   };

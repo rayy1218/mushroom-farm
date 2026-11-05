@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
 import { createHarvests } from '../server/harvests.js';
 import { createBatches } from '../server/batches.js';
@@ -25,7 +26,8 @@ const ROOM = { name: 'Container 1', length: 6, width: 2.4, height: 2.4 };
 // run C from 10 Nov, 200 pink oyster blocks and nothing else.
 function setup(t) {
   const dir = mkdtempSync('/tmp/runs/svc-');
-  const db = openDb(join(dir, 'farm.db'));
+  const file = join(dir, 'farm.db');
+  const db = openDb(file);
   let clock = at('2026-09-28');
   const now = () => clock;
   const zone = fixedZone(480);
@@ -71,7 +73,7 @@ function setup(t) {
     runs.list();
     await Promise.all([harvests.warmed(), costs.warmed()]);
   };
-  return { db, runs, costs, one, two, a, b, c, pick, warm };
+  return { db, file, runs, costs, sales, buyer, one, two, a, b, c, pick, program, warm, setClock: (ms) => { clock = ms; } };
 }
 
 test('list: the open runs first, then the ended, each newest started first; a row\'s figures from each module', async (t) => {
@@ -80,11 +82,11 @@ test('list: the open runs first, then the ended, each newest started first; a ro
   const { runs } = s.runs.list();
   assert.deepEqual(runs.map((r) => r.id), [s.c.id, s.b.id, s.a.id]);
   assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'startedAt', 'endedAt', 'kg', 'perBlock',
-    'income', 'costs', 'profit', 'pending', 'incomplete']);
+    'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete']);
   const a = runs[2];
   assert.deepEqual([a.roomName, a.startedAt, a.endedAt, a.kg, a.perBlock], ['Container 1', at('2026-10-01', 9), at('2026-11-01', 9), 80, 0.13]);
   const [money] = s.costs.runViews({ run: s.a.id });
-  assert.deepEqual([a.income, a.costs, a.profit, a.pending], [480, money.costs, money.profit, false]);
+  assert.deepEqual([a.income, a.costs, a.profit, a.profitPerKg, a.pending], [480, money.costs, money.profit, money.profitPerKg, false]);
   assert.equal(a.costs, 1620, 'the batch RM 1,500.00 and the repair RM 120.00');
   assert.equal(a.profit, -1140);
   assert.deepEqual(runs[0].crops, [{ crop: 'pink', blocks: 200 }]);
@@ -125,6 +127,7 @@ test('view: an ended run\'s batches, flushes, harvests, sales and costs by kind'
   assert.deepEqual(v.costsByKind.byCategory, [{ category: 'blocks', amount: 1500 }, { category: 'repairs', amount: 120 }]);
   assert.ok(Array.isArray(v.costsByKind.notes));
   assert.equal(v.be, null, 'no dry kg for oyster (no block weight, nothing in Settings → Yield)');
+  assert.deepEqual(v.prices, { electricity: 0.55, water: null }, 'Settings\' prices: a 0 energy with a price is nothing recorded');
   assert.deepEqual(v.missing.dryKg, ['oyster']);
 });
 
@@ -153,4 +156,40 @@ test('view: 404 for a run that is not there; a deleted room\'s runs go with it',
   s.db.deleteRoom(s.two);
   assert.throws(() => s.runs.view(s.c.id), (e) => e.status === 404);
   assert.deepEqual(s.runs.list().runs.map((r) => r.id), [s.b.id, s.a.id]);
+});
+
+test('list: an ended run that started after an open one still comes after every open run', async (t) => {
+  const s = setup(t);
+  const three = s.db.createRoom({ ...ROOM, name: 'Container 3', trhAddress: 3 }, at('2026-09-28')).id;
+  s.program(three, [{ crop: 'oyster', blocks: 50 }], at('2026-11-12', 9), 'start');
+  const d = s.db.openRun(three);
+  s.program(three, [], at('2026-11-14', 9), 'end');
+  await s.warm();
+  const { runs } = s.runs.list();
+  assert.deepEqual(runs.map((r) => r.id), [s.c.id, s.b.id, d.id, s.a.id], 'open (newest started first), then ended (newest started first)');
+  assert.ok(d.startedAt > s.c.startedAt, 'the ended run started after both open ones');
+});
+
+test('a run whose room is not there (a database edited by hand): no room name, no figures, no money, never "working out"', async (t) => {
+  const s = setup(t);
+  const raw = new DatabaseSync(s.file);
+  t.after(() => raw.close());
+  const id = Number(raw.prepare('INSERT INTO runs (room_id, started_at, crops) VALUES (?, ?, ?)').run(99, at('2026-11-02'), '[{"crop":"oyster","blocks":10}]').lastInsertRowid);
+  await s.warm();
+  const row = s.runs.list().runs.find((r) => r.id === id);
+  assert.deepEqual([row.roomName, row.kg, row.perBlock, row.income, row.costs, row.profit, row.profitPerKg, row.pending, row.incomplete],
+    [null, 0, null, 0, null, null, null, false, false]);
+  const v = s.runs.view(id);
+  assert.deepEqual([v.roomName, v.costs, v.profit, v.pending, v.costsByKind, v.harvestCount, v.flushes], [null, null, null, false, null, 0, []]);
+});
+
+test('view: the sale lines, newest delivery first, each delivery\'s lines in the order entered', async (t) => {
+  const s = setup(t);
+  s.setClock(NOW);
+  s.sales.record({ soldAt: at('2026-11-14'), buyerId: s.buyer.id, invoiceNo: 'R-3', lines: [
+    { crop: 'lionsmane', kg: 2, priceKg: 30, roomId: s.one },
+    { crop: 'oyster', kg: 5, priceKg: 12, roomId: s.one },
+  ] });
+  const v = s.runs.view(s.b.id);
+  assert.deepEqual(v.sales.lines.map((l) => [l.invoiceNo, l.crop, l.kg]), [['R-3', 'lionsmane', 2], ['R-3', 'oyster', 5], [null, 'oyster', 8]]);
 });
