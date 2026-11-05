@@ -152,7 +152,7 @@ test('GET /api/batches/stock-items with Inventory lists its items with their lat
   inv.archive(old);
   const res = await fetch(`http://127.0.0.1:${server.address().port}/api/batches/stock-items`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35 }] });
+  assert.deepEqual(await res.json(), { items: [{ id: sawdust, name: 'Sawdust', kind: 'other', unit: 'kg', unitCost: 0.35, qty: 100 }] });
   const url = `http://127.0.0.1:${server.address().port}/api/batches`;
   const made = await (await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'made', crop: 'oyster', blocks: 100 }) })).json();
   assert.equal((await (await fetch(`${url}/${made.id}`)).json()).inventory, true, 'the detail says the farm has Inventory');

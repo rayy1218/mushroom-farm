@@ -162,10 +162,12 @@ export function beReason(crop, runBatches) {
   return `${grouped(n, 0)} ${n === 1 ? 'block' : 'blocks'} in this run ${n === 1 ? 'has' : 'have'} no weight`;
 }
 // The "This run" card of a placed or past batch: { title, tiles [{ label, title?, value }], cost, empty }, or null without a run
-// (a deleted room). A mixed run gives the batch's crop's own figures. cost: "Blocks cost RM 11.50 per kg picked" (the price per
-// block over the kg per block), only when both are known. reason: why the BE tile is a dash, under the tiles; runBatches: the
-// run's batches (GET /api/batches?run=), null when not read (then the reason is the general one).
-export function runYieldFacts(run, batch, runBatches = null) {
+// (a deleted room). A mixed run gives the batch's crop's own figures. cost: "Blocks cost RM 11.50 per kg picked", the run's
+// block cost over the run's kg (as Costs has it; joint audit C4), only when both are known; a mixed run's "The run's blocks
+// cost …" (its tiles are the crop's). reason: why the BE tile is a dash, under the tiles. runReply: the run's batches
+// (GET /api/batches?run= → { batches, blockCost }), null when not read (no cost line; the general reason).
+export function runYieldFacts(run, batch, runReply = null) {
+  const runBatches = Array.isArray(runReply?.batches) ? runReply.batches : null;
   if (!run) return null;
   const mixed = (run.crops?.length ?? 0) > 1;
   const own = mixed ? (run.byCrop ?? []).find((c) => c.crop === batch.crop) : null;
@@ -180,8 +182,22 @@ export function runYieldFacts(run, batch, runBatches = null) {
       { label: 'kg per block', value: perBlockText(src.perBlock, { cell: true }) },
       { label: 'BE', title: 'Biological efficiency', value: beText(src.be, { cell: true }) },
     ],
-    cost: finite(batch.pricePerBlock) && src.perBlock > 0 ? `Blocks cost ${costKgText(batch.pricePerBlock / src.perBlock)} per${NB}kg picked` : null,
+    cost: finite(runReply?.blockCost) && run.kg > 0 ? `${mixed ? "The run's blocks" : 'Blocks'} cost ${costKgText(runReply.blockCost / run.kg)} per${NB}kg picked` : null,
   };
+}
+
+// The Mix and Inoculate dialogs' amber note under a line drawing on an Inventory item for more than it has (joint audit C5):
+// "More than the 460 pcs in stock", or "None in stock"; not a refusal (Inventory may be counted later). qty: the amount box's
+// text; itemId: the picker's value; items: GET /api/batches/stock-items' (each with qty, the stock now); stored: an edit's
+// lines as stored, whose amounts already came off their items, so they count as there. → the words, or null.
+export function stockNote(qty, itemId, items, stored = []) {
+  const n = numberOf(qty);
+  const item = itemId ? (items ?? []).find((s) => String(s.id) === String(itemId)) : null;
+  if (!finite(n) || n <= 0 || !item || !finite(item.qty)) return null;
+  const own = (stored ?? []).filter((m) => String(m.stockItemId) === String(item.id)).reduce((sum, m) => sum + (finite(m.qty) ? m.qty : 0), 0);
+  const has = Math.round((item.qty + own) * 1000) / 1000;
+  if (n <= has) return null;
+  return has > 0 ? `More than the ${qtyText(has, item.unit)} in stock` : 'None in stock';
 }
 
 // ---- the Harvest tab's line (contract section 4; the integrator wires it into harvest-card.js) ----

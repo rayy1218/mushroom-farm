@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   rmText, blocksText, blockKgText, numberOf, overNotes, deliveryLine, waterText, dateText, agoText, goodText, countBlocks, weightText, pageGroups, pastIn, pastCells,
   detailFacts, overNote, batchLineFor, sheetRows, SHEET_COLUMNS, receiveBody, receiveValues, placeBody, roomChoices, checkBody,
-  checkLine, statusLine, roomRunText, figureLine, waitingLong, waitingLine, placedLine, BATCH_WAIT_DAYS, runOf, runYieldFacts, csvHref,
+  checkLine, statusLine, roomRunText, figureLine, waitingLong, waitingLine, placedLine, BATCH_WAIT_DAYS, runOf, runYieldFacts, csvHref, stockNote,
 } from '../web/batches-math.js';
 
 const nb = '\u00a0';
@@ -253,7 +253,7 @@ test('waitingLong: the waiting batches received BATCH_WAIT_DAYS or more ago, old
   assert.deepEqual(waitingLong(null, NOW), []);
 });
 
-test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield and the blocks' cost per kg picked", () => {
+test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield and the run's blocks' cost per kg picked", () => {
   const current = { id: 1, endedAt: null, crops: [{ crop: 'oyster', blocks: 950 }], kg: 190, perBlock: 0.2, be: 21.7, harvests: [{ id: 1 }],
     byCrop: [{ crop: 'oyster', blocks: 950, kg: 190, perBlock: 0.2, be: 21.7 }] };
   const past = { id: 2, endedAt: NOW - DAY, crops: [{ crop: 'oyster', blocks: 600 }], kg: 0, perBlock: 0, be: 0, harvests: [] };
@@ -262,8 +262,10 @@ test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield
   assert.equal(runOf(reply, 2), past);
   assert.equal(runOf(reply, 9), null);
   assert.equal(runOf(null, 1), null);
-  assert.equal(runYieldFacts(null, b({})), null, 'no run (a deleted room): nothing shown');
-  assert.deepEqual(runYieldFacts(current, b({ pricePerBlock: 2.3 })), {
+  // the run's batches (GET /api/batches?run=): blockCost RM 2,185.00 for its 950 blocks; 2,185 / 190 kg = RM 11.50 a kg, as Costs
+  const runReply = { batches: [b({ blocks: 950, pricePerBlock: 2.3 })], blockCost: 2185 };
+  assert.equal(runYieldFacts(null, b({}), runReply), null, 'no run (a deleted room): nothing shown');
+  assert.deepEqual(runYieldFacts(current, b({ pricePerBlock: 2.3 }), runReply), {
     title: 'This run', empty: null, reason: null,
     tiles: [
       { label: 'kg so far', value: `190.0${nb}kg` },
@@ -272,30 +274,54 @@ test("runOf and runYieldFacts: the batch's run in the room's harvests, its yield
     ],
     cost: `Blocks cost RM${nb}11.50 per${nb}kg picked`,
   });
-  const noPrice = runYieldFacts(current, b({ pricePerBlock: null }));
-  assert.equal(noPrice.cost, null, 'no price: no cost line');
-  assert.deepEqual(runYieldFacts(past, b({})), { title: 'This run', empty: 'No harvests in this run.', tiles: [], cost: null }, 'an ended run: no "yet"');
+  // C4 (joint audit): the run's block cost over the run's kg, not this batch's price over the kg per block
+  const two = { batches: [b({ blocks: 500, pricePerBlock: 2.3 }), b({ id: 2, blocks: 450, pricePerBlock: 3 })], blockCost: 2500 };
+  assert.equal(runYieldFacts(current, b({ pricePerBlock: 2.3 }), two).cost, `Blocks cost RM${nb}13.16 per${nb}kg picked`, '2,500 / 190 kg');
+  assert.equal(runYieldFacts(current, b({ pricePerBlock: 2.3 })).cost, null, 'the run\'s batches not read: no cost line');
+  assert.equal(runYieldFacts(current, b({ pricePerBlock: null }), { ...runReply, blockCost: null }).cost, null, 'a price unknown in the run: no cost line');
+  assert.deepEqual(runYieldFacts(past, b({}), runReply), { title: 'This run', empty: 'No harvests in this run.', tiles: [], cost: null }, 'an ended run: no "yet"');
   assert.equal(runYieldFacts({ ...current, kg: 0, byCrop: [] }, b({})).empty, 'No harvests in this run yet.');
-  const ended = runYieldFacts({ ...current, endedAt: NOW - DAY }, b({}));
+  const ended = runYieldFacts({ ...current, endedAt: NOW - DAY }, b({}), runReply);
   assert.equal(ended.tiles[0].label, 'kg', 'an ended run: its kg, not "so far"');
-  assert.equal(ended.cost, `Blocks cost RM${nb}11.50 per${nb}kg picked`, 'b() has RM 2.30 a block');
-  // a mixed run: the batch's crop's own figures
+  assert.equal(ended.cost, `Blocks cost RM${nb}11.50 per${nb}kg picked`);
+  // a mixed run: the batch's crop's own figures, the cost the whole run's (its blocks over all its kg, as Costs)
   const mixed = { ...current, crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'pink', blocks: 450 }], kg: 300, perBlock: 0.32,
     byCrop: [{ crop: 'oyster', blocks: 500, kg: 125, perBlock: 0.25, be: 27 }, { crop: 'pink', blocks: 450, kg: 175, perBlock: 0.39, be: 40 }] };
-  const m = runYieldFacts(mixed, b({ pricePerBlock: 2.5 }));
+  const m = runYieldFacts(mixed, b({ pricePerBlock: 2.5 }), { batches: [], blockCost: 2400 });
   assert.equal(m.title, "This run's Grey oyster");
   assert.deepEqual(m.tiles.map((t) => t.value), [`125.0${nb}kg`, `0.25${nb}kg`, `27${nb}%`]);
-  assert.equal(m.cost, `Blocks cost RM${nb}10.00 per${nb}kg picked`);
+  assert.equal(m.cost, `The run's blocks cost RM${nb}8.00 per${nb}kg picked`, '2,400 / 300 kg, the whole run');
   const noBe = runYieldFacts({ ...current, be: null, byCrop: [] }, b({}));
   assert.equal(noBe.tiles[2].value, '—', 'no BE: a dash');
   assert.equal(noBe.reason, 'Some batches in this run have no weight', 'batches not read: the general reason');
   const noBeRun = { ...current, be: null, byCrop: [] };
   const w = (blocks, blockKg) => ({ crop: 'oyster', blocks, blockKg });
-  assert.equal(runYieldFacts(noBeRun, b({}), [w(200, null), w(300, 2.3)]).reason, "200 blocks in this run have no weight", 'some unweighted: their blocks');
-  assert.equal(runYieldFacts(noBeRun, b({}), [w(1, null), w(300, 2.3)]).reason, '1 block in this run has no weight');
-  assert.equal(runYieldFacts(noBeRun, b({}), [w(200, null), { crop: 'pink', blocks: 5, blockKg: 2 }]).reason,
+  const of = (list) => ({ batches: list, blockCost: null });
+  assert.equal(runYieldFacts(noBeRun, b({}), of([w(200, null), w(300, 2.3)])).reason, "200 blocks in this run have no weight", 'some unweighted: their blocks');
+  assert.equal(runYieldFacts(noBeRun, b({}), of([w(1, null), w(300, 2.3)])).reason, '1 block in this run has no weight');
+  assert.equal(runYieldFacts(noBeRun, b({}), of([w(200, null), { crop: 'pink', blocks: 5, blockKg: 2 }])).reason,
     'Set the dry substrate per block of Grey oyster in Settings → Yield.', 'none weighted: Settings → Yield is the source');
-  assert.equal(runYieldFacts(current, b({}), [w(200, null)]).reason, null, 'a BE: no reason');
+  assert.equal(runYieldFacts(current, b({}), of([w(200, null)])).reason, null, 'a BE: no reason');
+});
+
+test('stockNote (C5): a line drawing on an Inventory item for more than it has in stock is told, in amber, not refused', () => {
+  const items = [{ id: 7, name: 'Plastic bags', kind: 'other', unit: 'pcs', qty: 460 }, { id: 8, name: 'Sawdust', kind: 'other', unit: 'kg', qty: 120.5 }];
+  assert.equal(stockNote('500', '7', items), `More than the 460${nb}pcs in stock`);
+  assert.equal(stockNote('460', '7', items), null, 'all of it: fine');
+  assert.equal(stockNote('121', '8', items), `More than the 120.5${nb}kg in stock`);
+  assert.equal(stockNote('1,000', '8', items), `More than the 120.5${nb}kg in stock`, 'a grouped amount reads');
+  assert.equal(stockNote('', '7', items), null, 'no amount');
+  assert.equal(stockNote('abc', '7', items), null, 'not a number: the box says so on Save');
+  assert.equal(stockNote('500', '', items), null, 'no item');
+  assert.equal(stockNote('500', '99', items), null, 'an item not offered (archived or gone)');
+  assert.equal(stockNote('5', '7', [{ ...items[0], qty: 0 }]), `None in stock`, 'none left');
+  assert.equal(stockNote('5', '7', [{ ...items[0], qty: -3 }]), `None in stock`, 'under 0 (not yet counted)');
+  // an edit: the batch's own line already came off the stock, so it counts as there
+  const stored = [{ item: 'bags', qty: 400, unit: 'pcs', stockItemId: 7 }];
+  assert.equal(stockNote('500', '7', items, stored), null, '460 + its own 400');
+  assert.equal(stockNote('900', '7', items, stored), `More than the 860${nb}pcs in stock`);
+  assert.equal(stockNote('500', '7', items, [{ ...stored[0], stockItemId: 9 }]), `More than the 460${nb}pcs in stock`, 'its line on another item');
+  assert.equal(stockNote('5', '7', [{ id: 7, name: 'x', unit: 'pcs' }]), null, 'an older server without qty: nothing said');
 });
 
 test('the rows\' lines keep a date and "40 days ago" whole at a wrap', () => {
