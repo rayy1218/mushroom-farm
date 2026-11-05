@@ -6,7 +6,8 @@ import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { INVENTORY_HASH, inventorySheetHash } from './route.js';
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
-import { SHEET_TITLE, SHEET_COLUMNS, SHEET_WRITE, SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, SHEET_DAYS, sheetCells, sheetRange, sheetEmpty } from './inventory-math.js';
+import { SHEET_TITLE, SHEET_COLUMNS, SHEET_WRITE, SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, SHEET_DAYS, sheetCells, sheetRange, sheetEmpty, sheetPeriod } from './inventory-math.js';
+import { farmDate } from './tasks-math.js';
 
 const TEMPLATE = `
   <div class="hv-sheet iv-sheet">
@@ -18,7 +19,7 @@ const TEMPLATE = `
     <h1 class="page-title hv-sheet-title" tabindex="-1"></h1>
     <dl class="hv-sheet-facts">
       <div><dt>Farm</dt><dd class="hv-write-line"></dd></div>
-      <div><dt>Period</dt><dd data-period>Loading…</dd></div>
+      <div><dt>Period</dt><dd data-period></dd></div>
     </dl>
     <div class="banner" role="alert" hidden>
       <span data-banner-text></span>
@@ -27,6 +28,7 @@ const TEMPLATE = `
     <p class="none" data-empty hidden></p>
     <div class="hv-sheet-wrap" data-wrap hidden>
       <table class="hv-sheet-table iv-sheet-table">
+        <caption class="sr-only">Chemicals bought and used</caption>
         <colgroup data-cols></colgroup>
         <thead><tr data-head></tr></thead>
         <tbody data-rows></tbody>
@@ -80,7 +82,10 @@ export function mount(container, { days = 30 } = {}) {
     els.range.append(b);
     return [n, b];
   });
+  // The Period line as the Batches sheet's: the dates at once (the last `period` farm days, today included), never a loading word
+  // nor a dash; the reply's own dates replace them.
   const showPeriod = () => {
+    els.period.textContent = sheetRange(sheetPeriod(period, farmDate(Date.now())));
     for (const [n, b] of buttons) b.setAttribute('aria-pressed', String(n === period));
     els.empty.textContent = sheetEmpty(period);
   };
@@ -123,7 +128,6 @@ export function mount(container, { days = 30 } = {}) {
       if (!alive() || mine !== seq) return;
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
       els.banner.hidden = false;
-      els.period.textContent = '—';
       els.wrap.hidden = true;
       els.foot.hidden = true;
       els.empty.hidden = true;

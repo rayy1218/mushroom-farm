@@ -2329,6 +2329,17 @@ export function openDb(path, { log = console.error } = {}) {
       for (const r of rows) out.set(r.id, r.room_id);
       return out;
     },
+    // Batches' rows as Inventory names them (joint audit B2, read only): Map batch id → { id, roomId, kind, crop, blocks,
+    // supplier, receivedAt, mixedAt }; empty without Batches' table.
+    batchRows(ids) {
+      const out = new Map();
+      if (!ids.length || !q.hasBatches.get()) return out;
+      const rows = db.prepare(`SELECT id, room_id, kind, crop, blocks, supplier, received_at, mixed_at FROM batches WHERE id IN (${ids.map(() => '?').join(', ')})`).all(...ids);
+      for (const r of rows) {
+        out.set(r.id, { id: r.id, roomId: r.room_id, kind: r.kind, crop: r.crop, blocks: r.blocks, supplier: r.supplier, receivedAt: r.received_at, mixedAt: r.mixed_at });
+      }
+      return out;
+    },
 
     // ---- Sales (spec 2026-11-05-sales-design.md 2). A sale line is { id, deliveryId, soldAt, crop, kg, priceKg, total,
     //      buyer, buyerId, invoiceNo, roomId, runId, note, paidAt, createdAt }; a buyer { id, name, phone, note, prices,

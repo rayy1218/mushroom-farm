@@ -27,7 +27,7 @@ function writeKept(map) {
 }
 
 const TEMPLATE = `
-  <div class="iv-page">
+  <div class="iv-page iv-detail">
   <div class="page-head">
     <div class="page-titles">
       <a class="back" data-back>Inventory</a>

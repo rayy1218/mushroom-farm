@@ -6,6 +6,8 @@ import { DOT } from './text-math.js';
 import { farmDate, farmTime, daysFrom } from './tasks-math.js';
 import { whenMs } from './harvest-math.js';
 import { normaliseClock } from './light-math.js';
+import { countBlocks, dateText } from './batches-math.js';
+import { batchHash, roomHash } from './route.js';
 
 const NB = ' ';
 const DASH = '—';
@@ -174,34 +176,61 @@ export function doneText({ kind, qty, unit, name, room = null, worker = null, co
 // What is left of Undo's minute for a record saved at `at` (ms), at `now`; 0 when over or unknown.
 export const undoLeft = (at, now) => (finite(at) ? Math.max(0, Math.min(UNDO_MS, UNDO_MS - (now - at))) : 0);
 
-// A lot's name under the head From: "1 Nov" (bought), "Batch 14", "Count 3 Nov"; another year's day with its year.
+// A batch as Batches names it (joint audit B2): "1,200 Grey oyster blocks from Agro Supplies", "400 Grey oyster blocks ·
+// made 24 Oct" (another year's day with its year). b: the batches row's { kind, crop, blocks, supplier, receivedAt, mixedAt };
+// today: the farm's 'YYYY-MM-DD'. The server names a batch move's batch with it (server/inventory.js).
+export function batchTitle(b, today) {
+  const name = countBlocks(b.blocks, b.crop);
+  if (b.kind === 'made') return `${name}${DOT}made ${dateText(b.mixedAt ?? b.receivedAt, today).replace(/ /g, NB)}`; // the day whole at a wrap
+  return b.supplier ? `${name} from ${b.supplier}` : name;
+}
+
+// A lot's name under the head From: "1 Nov" (bought), its batch's name ("Batch 14" when the batch is gone), "Count 3 Nov";
+// another year's day with its year. lotHref: a batch's lot links its batch.
 export function lotLabel(lot, today = null) {
-  if (lot.refKind === 'batch') return `Batch ${lot.refId}`;
+  if (lot.refKind === 'batch') return lot.batchTitle ?? `Batch ${lot.refId}`;
   if (lot.refKind === 'adjust') return `Count ${dayNear(farmDate(lot.at), today)}`;
   return dayNear(farmDate(lot.at), today);
 }
+export const lotHref = (lot) => (lot.refKind === 'batch' && lot.batchTitle ? batchHash(lot.refId) : null);
+
+// Record use's items (joint audit B1): not archived, and no block item (blocks go into a room from Batches: Put into a room).
+export const useItems = (items) => items.filter((i) => !i.archived && i.kind !== 'blocks');
 
 const joined = (...parts) => parts.filter(Boolean).join(DOT);
+// A room's link (its Harvest tab), or its words alone when it was deleted.
+const roomPart = (m) => (m.roomName ? { text: m.roomName, href: roomHash(m.roomId, 'harvest') } : { text: 'a deleted room' });
 
-// A history row: { when ("3 Nov" for a purchase, "3 Nov 08:12" else), what, qty (signed), edit: 'edit' (a purchase or a
-// use), 'delete' (a count: deleted, not edited) or null (a batch move: Batches') }.
+// A history row: { when ("3 Nov" for a purchase, "3 Nov 08:12" else), what, parts (what in pieces, a piece with href a link:
+// a batch move's batch and its room, a use's room), qty (signed), edit: 'edit' (a purchase or a use), 'delete' (a count:
+// deleted, not edited) or null (a batch move: Batches') }.
 export function moveLine(m, item, today = null) {
   const day = dayNear(farmDate(m.at), today); // another year's with its year
   const when = m.refKind === 'purchase' ? day : `${day} ${farmTime(m.at)}`;
-  let what;
-  if (m.refKind === 'purchase') what = joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayNear(m.useBy, today)}`);
-  else if (m.refKind === 'adjust') what = joined(`Counted ${qtyText(m.counted, item.unit)}`, m.worker);
+  let parts;
+  if (m.refKind === 'purchase') parts = [{ text: joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayNear(m.useBy, today)}`) }];
+  else if (m.refKind === 'adjust') parts = [{ text: joined(`Counted ${qtyText(m.counted, item.unit)}`, m.worker) }];
   else if (m.refKind === 'batch') {
     // Batches' note: 'contaminated' (blocks lost before placement), 'into a room' (the placement), 'spawn'/'mixed' (a material used on a making day).
-    const into = `into ${m.roomName ?? 'a room'}`;
-    const how = m.qty > 0 ? 'received' : m.note === 'contaminated' ? 'lost (contaminated)' : m.note === 'into a room' ? into
-      : m.note === 'spawn' || m.note === 'mixed' ? 'made' : item.kind === 'blocks' ? into : 'made';
-    what = joined(`Batch ${m.refId}`, how);
+    const batch = m.batchTitle ? { text: m.batchTitle, href: batchHash(m.refId) } : { text: `Batch ${m.refId}` };
+    const into = m.roomName ? [{ text: `${DOT}into ` }, roomPart(m)] : [{ text: `${DOT}into a room` }];
+    // its blocks in: "received", or nothing for a made batch (its name says "made 24 Oct")
+    const how = m.qty > 0 ? (m.batchKind === 'made' && m.batchTitle ? [] : [{ text: `${DOT}received` }]) : m.note === 'contaminated' ? [{ text: `${DOT}lost (contaminated)` }]
+      : m.note === 'into a room' ? into : m.note === 'spawn' || m.note === 'mixed' ? [{ text: `${DOT}made` }]
+        : item.kind === 'blocks' ? into : [{ text: `${DOT}made` }];
+    // a material used on a making day, its batch named: "Used for 400 Grey oyster blocks · made 24 Oct" (not "… · made")
+    const material = how.length === 1 && how[0].text === `${DOT}made` && m.batchTitle;
+    parts = material ? [{ text: 'Used for ' }, batch] : [batch, ...how];
   }
-  else if (m.lotId !== null && m.lotId !== undefined) what = joined('Thrown out', m.reason === 'Expired' ? 'expired' : null, m.worker);
-  else what = joined(m.roomId === null || m.roomId === undefined ? 'Used' : `Used in ${m.roomName ?? 'a deleted room'}`, m.reason, m.worker);
+  else if (m.lotId !== null && m.lotId !== undefined) parts = [{ text: joined('Thrown out', m.reason === 'Expired' ? 'expired' : null, m.worker) }];
+  else if (m.roomId === null || m.roomId === undefined) parts = [{ text: joined('Used', m.reason, m.worker) }];
+  else {
+    const rest = joined(m.reason, m.worker);
+    parts = m.roomName ? [{ text: 'Used in ' }, roomPart(m), ...(rest ? [{ text: `${DOT}${rest}` }] : [])]
+      : [{ text: joined('Used in a deleted room', m.reason, m.worker) }];
+  }
   const edit = m.refKind === 'batch' ? null : m.refKind === 'adjust' ? 'delete' : 'edit';
-  return { when, what, qty: qtyText(m.qty, item.unit, { signed: true }), edit };
+  return { when, what: parts.map((p) => p.text).join(''), parts, qty: qtyText(m.qty, item.unit, { signed: true }), edit };
 }
 
 // The Delete confirm: "Delete the purchase of 5.00 L of Bleach on 3 Nov?"; its lead (null for none).
@@ -388,4 +417,6 @@ export const sheetCells = (r) => [
   `${qtyText(r.qty, r.unit)} ${r.kind === 'purchase' ? 'bought' : 'used'}`, r.reason, '', r.operator, '', '',
 ];
 export const sheetRange = ({ from, to }) => `${longDayText(from)} – ${longDayText(to)}`;
+// The sheet's dates before its reply: the last `days` farm days up to today ('YYYY-MM-DD'), as the server reads them.
+export const sheetPeriod = (days, today) => ({ from: daysBefore(today, days - 1), to: today });
 export const sheetEmpty = (days) => `No chemical purchases or uses in the last ${days} days.`;

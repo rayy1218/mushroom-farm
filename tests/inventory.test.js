@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createInventory } from '../server/inventory.js';
 import { dayStart, addDays } from '../server/task-rules.js';
+import { createBatches } from '../server/batches.js';
 
 const NOW = Date.parse('2026-11-05T09:00:00+08:00');
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
@@ -190,7 +191,10 @@ test('a use: taken off, with the room, the reason and who; more than in stock is
   assert.equal(back.at, NOW - 3_600_000);
   assert.equal(back.roomId, null);
   const blocks = db.insertStockItem({ name: 'Grey oyster blocks', kind: 'blocks', unit: 'blocks' });
-  assert.equal(inv.use({ itemId: blocks.id, qty: 12, reason: 'Contaminated', worker: 'Ali' }).qty, -12, 'block items take uses');
+  // Blocks go into a room only through Batches (joint audit B1): a use of a block item is refused; Count stock still adjusts it
+  assert.throws(() => inv.use({ itemId: blocks.id, qty: 12, reason: 'Contaminated', worker: 'Ali' }),
+    { status: 409, message: 'Blocks go into a room from Batches: Put into a room' });
+  assert.equal(inv.count({ worker: 'Ali', counts: [{ itemId: blocks.id, qty: 5 }] }).moves[0].counted, 5, 'a count still adjusts blocks');
   assert.throws(() => inv.use({ itemId: bleach.id, qty: 1, roomId: 999, worker: 'Ali' }), refused(400, 'roomId'));
   assert.throws(() => inv.use({ itemId: bleach.id, qty: 1 }), refused(400, 'worker'));
   assert.throws(() => inv.use({ itemId: bleach.id, qty: 1, worker: 'Ali', at: NOW + 120_000 }), refused(400, 'at'));
@@ -357,4 +361,33 @@ test('the purchases read keeps the edges of the farm days', (t) => {
   const edges = [dayStart(from) - 1, dayStart(from), dayStart(addDays(to, 1)) - 1, dayStart(addDays(to, 1))];
   const moves = db.insertStockMoves(edges.map((at) => ({ itemId: spawn.id, at, qty: 1, refKind: 'purchase', total: 1, unitCost: 1 })));
   assert.deepEqual(inv.purchases(from, to).purchases.map((p) => p.id), [moves[1].id, moves[2].id]);
+});
+
+test("an item's batch moves and lots name the batch as Batches does, with its id and the room it went into (joint audit B2)", (t) => {
+  const { db, inv } = setup(t);
+  const roomId = db.createRoom(ROOM, 1000).id;
+  db.setProgram(roomId, { ...db.getProgram(roomId), crops: [{ crop: 'oyster', blocks: 950 }] }, { change: 'start', at: NOW - 5 * 86_400_000 });
+  const batches = createBatches({ db, now: () => NOW });
+  const a = batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', receivedAt: NOW - 2 * 86_400_000, blocks: 1200 });
+  const b = batches.receive({ crop: 'oyster', supplier: 'Farm Co', receivedAt: NOW - 86_400_000, blocks: 400 });
+  const part = batches.place(a.id, { roomId, blocks: 950 }); // a part goes in: the first row keeps 250, the receipt stays the delivery's 1,200
+  const itemId = db.stockItems().find((i) => i.kind === 'blocks').id;
+  const page = inv.item(itemId);
+  const said = (m) => [m.refId, m.batchTitle?.replace(/\u00a0/g, ' '), m.roomId, m.roomName];
+  assert.deepEqual(page.moves.map(said), [
+    [part.id, '950 Grey oyster blocks from Agro Supplies', roomId, 'Container 1'],
+    [b.id, '400 Grey oyster blocks from Farm Co', null, null],
+    [a.id, '1,200 Grey oyster blocks from Agro Supplies', null, null],
+  ]);
+  assert.deepEqual(page.moves.map((m) => m.batchKind), ['bought', 'bought', 'bought']);
+  assert.deepEqual(page.lots.map((l) => [l.refId, l.batchTitle]), [[a.id, '1,200 Grey oyster blocks from Agro Supplies'], [b.id, '400 Grey oyster blocks from Farm Co']],
+    'a lot is its delivery, named by its blocks in');
+  assert.equal(inv.list().items.find((i) => i.id === itemId).lots, undefined, 'the list has no lots');
+});
+
+test('a batch move whose batch is gone has no title (the page says "Batch 999")', (t) => {
+  const { db, inv } = setup(t);
+  const item = inv.addItem({ name: 'Grain spawn', kind: 'spawn', unit: 'kg' });
+  db.insertStockMoves([{ itemId: item.id, at: NOW, qty: -2, refKind: 'batch', refId: 999, note: 'spawn' }]);
+  assert.equal(inv.item(item.id).moves[0].batchTitle, null);
 });

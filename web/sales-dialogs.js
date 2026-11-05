@@ -4,12 +4,20 @@
 // opened it (or, that one gone, the page's title).
 
 import { request } from './api.js';
-import { openForm, errorText } from './task-dialogs.js';
+import { openForm as openTaskForm, errorText } from './task-dialogs.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { farmDate, dayTitle } from './tasks-math.js';
 import { rmText, whenMs } from './harvest-math.js';
 import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num, deliveryRow } from './sales-math.js';
 import { DOT } from './text-math.js';
+
+// The tasks' openForm with the Business dialogs' form class (bz-form: the footer sticks at the dialog's foot on a phone, a
+// Delete on its own row; DESIGN.md "Business").
+function openForm(options) {
+  const handle = openTaskForm(options);
+  document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');
+  return handle;
+}
 
 const TIMEOUT = 15000;
 const MAX_LINES = 9; // keep in step with server/sales-math.js
@@ -161,7 +169,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     busy = on;
     for (const b of held) b.disabled = on;
   };
-  const form = el('form', 'sl-form');
+  const form = el('form', 'sl-form bz-form'); // bz-form: the footer sticks at the dialog's foot on a phone (DESIGN.md "Business")
   form.noValidate = true;
   const title = el('h2', 'sl-dialog-title', delivery ? 'Edit sale' : 'Record a sale');
   title.id = 'sl-dialog-title';
@@ -321,7 +329,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     expected.hidden = true;
     price.input.after(expected);
     const total = el('span', 'num sl-line-total');
-    const remove = button('Remove', 'tk-quiet sl-remove');
+    const remove = button('Remove', 'tk-quiet bz-quiet sl-remove');
     // the total and Remove: one cell beside Room on a phone, the line's own columns wider (display: contents)
     const end = el('span', 'sl-line-end');
     end.append(total, remove);
@@ -538,7 +546,7 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     const more = [b.phone, pricesShort(b), b.owed > 0 ? `owes ${rmText(b.owed)}` : ''].filter(Boolean).join(' · ');
     text.append(el('strong', '', b.name));
     if (more) text.append(el('span', 'sl-buyer-more', more));
-    const edit = button(b.archived ? 'Restore' : 'Edit', 'tk-quiet sl-buyer-edit');
+    const edit = button(b.archived ? 'Restore' : 'Edit', 'tk-quiet bz-quiet sl-buyer-edit');
     edit.setAttribute('aria-label', `${b.archived ? 'Restore' : 'Edit'} ${b.name}`);
     edit.dataset.focusKey = `buyer-${b.id}`;
     edit.addEventListener('click', () => {

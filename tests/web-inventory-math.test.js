@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, decimalComma, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
-  useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, SHEET_WRITE, KIND_OPTIONS, UNIT_OPTIONS,
+  useEditBody, overStock, countBody, batchTitle, lotHref, useItems, sheetPeriod, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, SHEET_WRITE, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
 
 const plain = (s) => s.replace(/ /g, ' ');
@@ -120,7 +120,8 @@ test("a lot's name and a move's line", () => {
   const bleach = item();
   const line = (m) => {
     const l = moveLine({ roomId: null, roomName: null, reason: null, worker: null, lotId: null, supplier: null, useBy: null, ...m }, bleach);
-    return { ...l, what: l.what.replace(/\u00a0/g, ' '), qty: l.qty.replace(/\u00a0/g, ' ') };
+    const { parts, ...rest } = l; // the pieces: their own test below
+    return { ...rest, what: l.what.replace(/\u00a0/g, ' '), qty: l.qty.replace(/\u00a0/g, ' ') };
   };
   assert.deepEqual(line({ refKind: 'purchase', at: at('2026-11-03'), qty: 5, total: 25, supplier: 'Kedai Ali', useBy: '2026-12-01' }), {
     when: '3 Nov', what: 'Bought from Kedai Ali · RM 25.00 · use by 1 Dec', qty: '+5.00 L', edit: 'edit',
@@ -389,4 +390,53 @@ test("the 4-5 sheet's printed widths (audit #24): a width each, the write-in col
   assert.ok(SHEET_WIDTHS_MM.reduce((a, b) => a + b, 0) <= 273, '297 mm less the 12 mm margins');
   for (const i of SHEET_WRITE) assert.ok(SHEET_WIDTHS_MM[i] >= 14, SHEET_COLUMNS[i]);
   assert.equal(SHEET_BLANK_ROWS, 6);
+});
+
+test("a batch named as Batches names it (joint audit B2): bought with its supplier, made with its day", () => {
+  const today = '2026-11-05';
+  assert.equal(plain(batchTitle({ kind: 'bought', crop: 'oyster', blocks: 1200, supplier: 'Agro Supplies', receivedAt: at('2026-10-24') }, today)),
+    '1,200 Grey oyster blocks from Agro Supplies');
+  assert.equal(plain(batchTitle({ kind: 'bought', crop: 'oyster', blocks: 1, supplier: null, receivedAt: at('2026-10-24') }, today)), '1 Grey oyster block');
+  assert.equal(plain(batchTitle({ kind: 'made', crop: 'oyster', blocks: 400, supplier: 'Spawn Co', mixedAt: at('2026-10-24'), receivedAt: at('2026-10-20') }, today)),
+    '400 Grey oyster blocks · made 24 Oct');
+  assert.equal(plain(batchTitle({ kind: 'made', crop: 'oyster', blocks: 400, mixedAt: null, receivedAt: at('2025-12-30') }, today)),
+    '400 Grey oyster blocks · made 30 Dec 2025');
+});
+
+test("a batch move's line links its batch and the room it went into; a use links its room (joint audit B2)", () => {
+  const blocks = item({ kind: 'blocks', unit: 'blocks' });
+  const into = moveLine({ refKind: 'batch', refId: 14, batchTitle: '1,200 Grey oyster blocks from Agro Supplies', at: 0, qty: -480, note: 'into a room', roomId: 2, roomName: 'Container 2' }, blocks);
+  assert.deepEqual(into.parts.map((p) => [plain(p.text), p.href ?? null]), [
+    ['1,200 Grey oyster blocks from Agro Supplies', '#/business/batches/14'], [' · into ', null], ['Container 2', '#/rooms/2/harvest'],
+  ]);
+  assert.equal(plain(into.what), '1,200 Grey oyster blocks from Agro Supplies · into Container 2');
+  const gone = moveLine({ refKind: 'batch', refId: 14, batchTitle: null, at: 0, qty: 500, note: null, roomId: null, roomName: null }, blocks);
+  assert.deepEqual(gone.parts.map((p) => [plain(p.text), p.href ?? null]), [['Batch 14', null], [' · received', null]]);
+  const used = moveLine({ refKind: 'use', at: 0, qty: -1, roomId: 2, roomName: 'Container 2', reason: 'Footbath', worker: 'Ali', lotId: null }, item());
+  assert.deepEqual(used.parts.map((p) => [plain(p.text), p.href ?? null]), [['Used in ', null], ['Container 2', '#/rooms/2/harvest'], [' · Footbath · Ali', null]]);
+  const deleted = moveLine({ refKind: 'use', at: 0, qty: -1, roomId: 9, roomName: null, lotId: null }, item());
+  assert.deepEqual(deleted.parts.map((p) => p.href ?? null), [null], 'a deleted room is no link');
+  const made = moveLine({ refKind: 'batch', refId: 4, batchTitle: '400 Grey oyster blocks · made 24 Oct', batchKind: 'made', at: 0, qty: 400, note: null }, blocks);
+  assert.equal(plain(made.what), '400 Grey oyster blocks · made 24 Oct', 'a made batch in: its name says made, not "received"');
+  const spawn = moveLine({ refKind: 'batch', refId: 4, batchTitle: '400 Grey oyster blocks · made 24 Oct', batchKind: 'made', at: 0, qty: -24, note: 'spawn' }, item({ kind: 'spawn', unit: 'kg' }));
+  assert.deepEqual(spawn.parts.map((p) => [plain(p.text), p.href ?? null]), [['Used for ', null], ['400 Grey oyster blocks · made 24 Oct', '#/business/batches/4']]);
+  const bought = moveLine({ refKind: 'purchase', at: 0, qty: 5, total: 25, supplier: null, useBy: null }, item());
+  assert.deepEqual(bought.parts, [{ text: bought.what }]);
+});
+
+test("a batch lot is named and linked as its batch; others are not links", () => {
+  assert.equal(lotLabel({ refKind: 'batch', refId: 14, batchTitle: '400 Grey oyster blocks', at: 0 }), '400 Grey oyster blocks');
+  assert.equal(lotHref({ refKind: 'batch', refId: 14, batchTitle: '400 Grey oyster blocks' }), '#/business/batches/14');
+  assert.equal(lotHref({ refKind: 'batch', refId: 14, batchTitle: null }), null);
+  assert.equal(lotHref({ refKind: 'purchase', refId: null }), null);
+});
+
+test('Record use leaves block items out (joint audit B1): blocks go into a room from Batches', () => {
+  const list = [item({ id: 1, kind: 'blocks', unit: 'blocks' }), item({ id: 2 }), item({ id: 3, archived: true })];
+  assert.deepEqual(useItems(list).map((i) => i.id), [2]);
+});
+
+test("the 4-5 sheet's Period at once, as the Batches sheet's (joint audit B5): the last days up to today", () => {
+  assert.deepEqual(sheetPeriod(30, '2026-11-05'), { from: '2026-10-07', to: '2026-11-05' });
+  assert.equal(sheetRange(sheetPeriod(365, '2026-11-05')), '6 Nov 2025 – 5 Nov 2026');
 });

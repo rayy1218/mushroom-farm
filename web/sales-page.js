@@ -4,14 +4,14 @@
 // and on a timer.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { canonicalHash } from './route.js';
+import { canonicalHash, sheetHash, roomHash } from './route.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { tileNodes } from './harvest-card.js';
 import { picture } from './pictures.js';
 import { rangeText, periodWords, rmText } from './harvest-math.js';
 import {
-  pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS, emptyText, ageText, lineParts,
+  pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS, emptyText, ageText, lineParts, roomsOf,
 } from './sales-math.js';
 import { DOT } from './text-math.js';
 import { openSale, openPaid, openBuyers } from './sales-dialogs.js';
@@ -33,6 +33,7 @@ const TEMPLATE = `
       <button type="button" class="primary" data-record>Record a sale</button>
       <button type="button" data-buyers>Buyers</button>
       <a class="button" data-csv download>Export CSV</a>
+      <a class="button" data-sheet>myGAP 4-6 sheet</a>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -72,6 +73,25 @@ function linesNode(className, lines) {
   lineParts(lines).forEach((part, i) => {
     if (i) node.append(DOT);
     node.append(el('span', 'sl-line-part', part));
+  });
+  return node;
+}
+
+// Under a delivery's lines, its rooms (joint audit B3): "Container 1" a link to its Harvest tab, or "Mixed"; with several,
+// each with its crops ("Container 1: Grey oyster · Mixed: Pink oyster").
+function roomsNode(lines) {
+  const node = el('span', 'sl-rooms');
+  roomsOf(lines).forEach((r, i) => {
+    if (i) node.append(DOT);
+    const part = el('span', 'sl-room-part');
+    if (r.roomId === null) part.append(r.text);
+    else {
+      const a = el('a', 'sl-room', r.text);
+      a.href = roomHash(r.roomId, 'harvest');
+      part.append(a);
+    }
+    if (r.crops) part.append(`: ${r.crops}`);
+    node.append(part);
   });
   return node;
 }
@@ -121,7 +141,7 @@ export function mount(container, { days = 30 } = {}) {
   container.innerHTML = TEMPLATE;
   const q = (sel) => container.querySelector(sel);
   const els = {
-    range: q('[data-range]'), csv: q('[data-csv]'), record: q('[data-record]'), buyers: q('[data-buyers]'), banner: q('.banner'),
+    range: q('[data-range]'), csv: q('[data-csv]'), sheet: q('[data-sheet]'), record: q('[data-record]'), buyers: q('[data-buyers]'), banner: q('.banner'),
     bannerText: q('[data-banner-text]'), body: q('[data-body]'), totalsTitle: q('[data-totals-title]'), tiles: q('[data-tiles]'),
     owed: q('[data-owed]'), owedList: q('[data-owed-list]'), list: q('[data-list]'), more: q('[data-more]'), empty: q('[data-empty]'),
     emptyRecord: q('[data-empty-record]'),
@@ -154,6 +174,7 @@ export function mount(container, { days = 30 } = {}) {
   function showPeriod() {
     for (const [n, b] of buttons) b.setAttribute('aria-pressed', String(n === period));
     els.csv.href = `/api/sales.csv?days=${period}`;
+    els.sheet.href = sheetHash(period); // Harvest's 4-6 sheet holds the sales too (joint audit B4)
   }
 
   function pick(n) {
@@ -181,12 +202,14 @@ export function mount(container, { days = 30 } = {}) {
   function deliveryItem(d) {
     const r = deliveryRow(d);
     const li = el('li', 'sl-item');
-    const edit = el('button', 'tk-quiet sl-edit', 'Edit');
+    const edit = el('button', 'tk-quiet bz-quiet sl-edit', 'Edit');
     edit.type = 'button';
     edit.dataset.focusKey = `edit-${d.id}`;
     edit.setAttribute('aria-label', `Edit the sale of ${r.day} to ${r.buyer}`);
     edit.addEventListener('click', () => openSale({ ...ctx(), delivery: d }));
-    li.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer), linesNode('sl-lines', d.lines),
+    const lines = linesNode('sl-lines', d.lines);
+    lines.append(roomsNode(d.lines));
+    li.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer), lines,
       el('span', 'sl-total num', r.total), el('span', `sl-mark${r.paid.unpaid ? ' sl-unpaid' : ''}`, r.paid.text));
     if (r.reference) li.append(el('span', 'muted sl-ref', r.reference));
     li.append(edit);

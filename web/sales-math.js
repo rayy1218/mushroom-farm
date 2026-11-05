@@ -74,6 +74,23 @@ export const deliveryRow = (d) => ({
   day: shortDay(d.soldAt), buyer: d.buyer, lines: linesShort(d.lines), total: rmText(d.total), paid: paidMark(d), reference: d.invoiceNo ?? '',
 });
 
+// A delivery's rooms (joint audit B3), a line's room by name ("Mixed" for none, "a deleted room" for one gone): one entry when
+// every line is from one room; else each room once, in the lines' order, with its crops ("Grey oyster, Lion's mane"). roomId
+// only for a room that is there (the page links it to its Harvest tab). → [{ text, roomId, crops }]
+export function roomsOf(lines) {
+  const by = new Map();
+  for (const l of lines ?? []) {
+    const key = l.roomId ?? 'mixed';
+    if (!by.has(key)) {
+      const text = l.roomId === null || l.roomId === undefined ? 'Mixed' : l.roomName ?? 'a deleted room';
+      by.set(key, { text, roomId: l.roomName ? l.roomId : null, crops: [] });
+    }
+    by.get(key).crops.push(cropShortName(l.crop));
+  }
+  const list = [...by.values()];
+  return list.map((r) => ({ ...r, crops: list.length > 1 ? r.crops.join(', ') : null }));
+}
+
 // Sold (of harvested), Income, Owed (all time: said when the oldest unpaid sale is before the period).
 export function pageTiles(sales, now) {
   const { totals, owed } = sales;
