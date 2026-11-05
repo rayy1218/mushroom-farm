@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createBatches } from '../server/batches.js';
+import { createHarvests } from '../server/harvests.js';
 import { openWithStock } from './batches-fixture.js';
 
 const ROOM = { name: 'Container 1', length: 6, width: 4, height: 2.5 };
@@ -343,4 +344,24 @@ test('the CSV: the head, oldest first, the formula guard, the default 90 days', 
   assert.match(lines[2], /,"a, b"$/);
   assert.equal(batches.csv({ from: '2026-11-04', to: '2026-11-04' }).text.trimEnd().split('\r\n').length, 2);
   assert.equal(status(() => batches.csv({ from: 'x' }))[0], 400);
+});
+
+test("Harvest's BE uses the batches' dry kg when every batch of the crop in the run has a weight (spec 3.2)", async (t) => {
+  const { db, batches, room } = setup(t);
+  const roomId = room([{ crop: 'oyster', blocks: 1000 }]);
+  const harvests = createHarvests({ db, now: () => NOW, batchDryKg: batches.dryKgFor });
+  t.after(() => harvests.stop());
+  harvests.record(roomId, { crop: 'oyster', kg: 100, worker: 'Ali' });
+  const before = harvests.roomView(roomId).current;
+  assert.equal(before.be, null, 'no dry substrate in Settings and no batch');
+  const a = batches.receive({ ...GOOD, blocks: 600, blockKg: 2.5, waterPct: 60 }); // 1.0 kg dry
+  batches.place(a.id, { roomId });
+  const b = batches.receive({ ...GOOD, blocks: 400 });
+  batches.place(b.id, { roomId });
+  assert.equal(harvests.roomView(roomId).current.be, null, 'one batch has no weight: Settings stays');
+  batches.edit(b.id, { blockKg: 2.5, waterPct: 60 });
+  assert.equal(harvests.roomView(roomId).current.be, 10, '100 kg ÷ (1,000 blocks × 1.0 kg) × 100');
+  assert.deepEqual(harvests.roomView(roomId).current.missing.dryKg, []);
+  assert.equal(harvests.farmView({ days: 30 }).rooms[0].current.be, 10);
+  await harvests.warmed();
 });

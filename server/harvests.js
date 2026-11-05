@@ -53,7 +53,9 @@ const ordered = (crops) => CROP_KEYS.filter((k) => crops.has(k));
 
 // db: the farm database; now and zone are injectable. zone: the usage days are in the host's zone like the Usage tab; the
 // containers run on the farm's time (TZ in compose.yaml), so they are the farm's days.
-export function createHarvests({ db, now = Date.now, zone = localZone, log = console.error }) {
+// batchDryKg(runId): { <crop>: dry kg per block } from the run's batches (spec 2026-11-05-batches-design.md 3.2), which
+// replaces Settings → Yield's figure for that run and crop.
+export function createHarvests({ db, now = Date.now, zone = localZone, log = console.error, batchDryKg = () => ({}) }) {
   const listeners = new Set();
 
   function tell(roomId) {
@@ -106,6 +108,14 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     return { electricity: electricityPrice, water: waterPrice };
   };
 
+  // A run's yield figures: a crop whose batches in the run all have a weight takes their dry kg per block (spec
+  // 2026-11-05-batches-design.md 3.2); its price, and every other crop, as Settings → Yield.
+  function yieldOf(cropYield, runId) {
+    const out = { ...cropYield };
+    for (const [crop, dryKg] of Object.entries(batchDryKg(runId))) out[crop] = { priceKg: cropYield[crop]?.priceKg ?? null, dryKg };
+    return out;
+  }
+
   // Who picked it: the tasks' rule (an active worker when the farm has a list).
   function workerOf(worker) {
     try {
@@ -140,7 +150,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     const harvests = db.runHarvests(run.id);
     return {
       id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, partial: run.partial, crops: run.crops,
-      ...runFigures(run, harvests, cropYield, usage),
+      ...runFigures(run, harvests, yieldOf(cropYield, run.id), usage),
       harvests: harvests.toReversed(),
     };
   }
@@ -245,7 +255,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
         const run = db.openRun(room.id);
         let current = null;
         if (run) {
-          const f = runFigures(run, db.runHarvests(run.id), cropYield, null);
+          const f = runFigures(run, db.runHarvests(run.id), yieldOf(cropYield, run.id), null);
           for (const c of f.missing.dryKg) dryMissing.add(c);
           current = { kg: f.kg, perBlock: f.perBlock, be: f.be };
         }
