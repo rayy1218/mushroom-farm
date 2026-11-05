@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   RULE_ORDER, SHORT_NAMES, LEGEND, UNDO_MS, weekOf, shiftWeek, weekTitle, monthDays, shortName, initialsFor, gridColumns,
-  gridCells, boxWords, boxAmount, canUndo, sheetRows,
+  gridCells, boxWords, boxAmount, canUndo, sheetRows, sheetLayout, monthTitle,
 } from '../web/task-grid-math.js';
 import { DAILY_RULES, CLEAR_OUT } from '../server/task-rules.js';
 import { DOT } from '../web/text-math.js';
@@ -275,4 +275,15 @@ test('sheetRows: a month of 31 days; a month with no daily tasks has no columns'
   assert.equal(sheet.rows.length, 31);
   assert.deepEqual(sheet.columns, []);
   assert.deepEqual(sheet.rows[30], { date: '2026-12-31', day: 31, weekday: 'T', ahead: true, cells: [] });
+});
+
+test("sheetLayout: A4 portrait for 8 columns or fewer, landscape above; the heads sideways when a column is narrower than 22 mm", () => {
+  const at = (n) => { const l = sheetLayout(n); return `${l.landscape ? 'L' : 'P'}${l.sideways ? 's' : ''}`; };
+  assert.deepEqual([0, 1, 6, 7, 8].map(at), ['P', 'P', 'P', 'P', 'Ps'], 'portrait: 156 mm over the columns');
+  assert.deepEqual([9, 11, 12, 20].map(at), ['L', 'L', 'Ls', 'Ls'], 'landscape: 243 mm over them');
+});
+
+test('monthTitle: "November 2026"', () => {
+  assert.equal(monthTitle('2026-11'), 'November 2026');
+  assert.equal(monthTitle('2027-01-15'), 'January 2027', 'a date: its month');
 });

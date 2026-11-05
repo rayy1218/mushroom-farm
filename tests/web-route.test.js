@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash, tasksHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, sheetHash, tasksHash, taskSheetHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -95,6 +95,10 @@ test('#/calendar is the Calendar page, its room and day in the query (spec 2026-
   assert.deepEqual(parseRoute('#/calendar'), { name: 'calendar', room: null, day: null });
   assert.deepEqual(parseRoute('#/calendar?room=2&day=2026-11-04'), { name: 'calendar', room: 2, day: '2026-11-04' });
   assert.deepEqual(parseRoute('#/calendar?room=zz'), { name: 'calendar', room: null, day: null });
+  for (const bad of ['2026-13-01', '2026-02-30', '2026-00-10', '2026-11-32']) {
+    assert.deepEqual(parseRoute(`#/calendar?room=2&day=${bad}`), { name: 'calendar', room: 2, day: null }, `${bad}: no day, not a RangeError`);
+    assert.equal(isCanonical(`#/calendar?day=${bad}`), false, bad);
+  }
   assert.equal(isCanonical('#/calendar?room=2&day=2026-11-04'), true);
   assert.equal(isCanonical('#/calendar?day=2026-11-04&room=2'), false, 'one order');
   assert.equal(canonicalHash({ name: 'calendar', room: null, day: '2026-11-04' }), '#/calendar?day=2026-11-04');
@@ -124,7 +128,7 @@ test("the Tasks tab keeps its week in the query: its Monday; this week has none;
   assert.deepEqual(parseRoute('#/rooms/7/tasks?week=2026-11-04'), { name: 'detail', id: 7, tab: 'tasks', week: '2026-11-02' }, 'a Wednesday: its Monday');
   assert.deepEqual(parseRoute('#/rooms/7/tasks?week=2026-11-08'), { name: 'detail', id: 7, tab: 'tasks', week: '2026-11-02' }, 'a Sunday ends the week');
   assert.deepEqual(parseRoute('#/rooms/7/tasks?week=2027-01-01'), { name: 'detail', id: 7, tab: 'tasks', week: '2026-12-28' }, 'over the year');
-  for (const bad of ['', '?week=', '?week=2026-02-30', '?week=soon', '?day=2026-11-04']) {
+  for (const bad of ['', '?week=', '?week=2026-02-30', '?week=2026-13-01', '?week=2026-00-10', '?week=soon', '?day=2026-11-04']) {
     assert.deepEqual(parseRoute(`#/rooms/7/tasks${bad}`), { name: 'detail', id: 7, tab: 'tasks' }, bad);
   }
   assert.deepEqual(parseRoute('#/rooms/7/history?week=2026-11-02'), { name: 'detail', id: 7, tab: 'history' });
@@ -135,4 +139,20 @@ test("the Tasks tab keeps its week in the query: its Monday; this week has none;
   assert.ok(!isCanonical('#/rooms/7/tasks?week=2026-11-03'));
   assert.equal(tasksHash(7), '#/rooms/7/tasks');
   assert.equal(tasksHash(7, '2026-11-02'), '#/rooms/7/tasks?week=2026-11-02');
+});
+
+test("the month sheet of a room's daily tasks keeps its month in the query; a bad or missing month is this month (no query)", () => {
+  assert.deepEqual(parseRoute('#/rooms/7/tasks/sheet?month=2026-11'), { name: 'taskSheet', id: 7, month: '2026-11' });
+  assert.deepEqual(parseRoute('#/rooms/7/tasks/sheet/?month=2027-01'), { name: 'taskSheet', id: 7, month: '2027-01' });
+  for (const bad of ['', '?month=', '?month=2026-13', '?month=2026-00', '?month=2026-13-01', '?month=2026-02-30', '?month=2026-1', '?month=2026-11-04', '?month=soon', '?week=2026-11-02']) {
+    assert.deepEqual(parseRoute(`#/rooms/7/tasks/sheet${bad}`), { name: 'taskSheet', id: 7, month: null }, bad);
+  }
+  assert.deepEqual(parseRoute('#/rooms/0/tasks/sheet?month=2026-11'), { name: 'overview' });
+  assert.deepEqual(parseRoute('#/rooms/7/history/sheet?month=2026-11'), { name: 'overview' }, 'only the Tasks tab has a sheet');
+  assert.equal(taskSheetHash(7, '2026-11'), '#/rooms/7/tasks/sheet?month=2026-11');
+  assert.equal(taskSheetHash(7), '#/rooms/7/tasks/sheet');
+  assert.equal(canonicalHash(parseRoute('#/rooms/7/tasks/sheet/?month=2026-11')), '#/rooms/7/tasks/sheet?month=2026-11');
+  assert.equal(canonicalHash(parseRoute('#/rooms/7/tasks/sheet?month=nope')), '#/rooms/7/tasks/sheet');
+  assert.ok(isCanonical('#/rooms/7/tasks/sheet?month=2026-11'));
+  assert.ok(!isCanonical('#/rooms/7/tasks/sheet?month=2026-11&x=1'));
 });

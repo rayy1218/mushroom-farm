@@ -10,6 +10,7 @@ import * as overview from './overview.js';
 import * as today from './today-page.js';
 import * as calendar from './calendar-page.js';
 import * as harvest from './harvest-page.js';
+import * as taskSheet from './task-sheet.js';
 import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
@@ -30,7 +31,8 @@ let unmount = null;
 let mounted = null; // the route on show
 let shown = false;
 
-function show() {
+// before: the address shown until now (a hashchange's oldURL; a page's replaceState is in it), for a page's Back.
+function show(before = '') {
   if (!isCanonical(location.hash)) {
     const route = parseRoute(location.hash);
     // Tidy an empty or unknown hash without adding a history entry.
@@ -60,8 +62,9 @@ function show() {
     : route.name === 'calendar' ? calendar.mount(view, { room: route.room, day: route.day })
     : route.name === 'harvest' ? harvest.mount(view, { days: route.days })
     : route.name === 'sheet' ? harvest.mountSheet(view, { days: route.days })
+    : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
     : overview.mount(view, {});
-  // The Rooms entry stays current on a room's page; Harvest on its myGAP sheet.
+  // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet.
   const section = route.name === 'sheet' ? 'harvest' : ['settings', 'overview', 'today', 'calendar', 'harvest'].includes(route.name) ? route.name : null;
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
@@ -216,7 +219,7 @@ live.onStatus((up) => {
 window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknowledge
 
 // On the Today page the page asks for its own data; the tasks event keeps the count current.
-window.addEventListener('hashchange', () => { show(); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
+window.addEventListener('hashchange', (e) => { show(new URL(e.oldURL).hash); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
 show();
 refreshBadge();
 refreshToday();

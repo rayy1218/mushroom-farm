@@ -256,3 +256,20 @@ export function sheetRows({ month, days, today, todayRows = null, workers = [] }
     })),
   };
 }
+
+// The month's title on the sheet: "November 2026" (a 'YYYY-MM' or a date of it).
+export function monthTitle(month) {
+  const [y, m] = String(month).split('-').map(Number);
+  return `${MONTHS[m - 1]} ${y}`;
+}
+
+// The printed page of a sheet with n columns (spec 4): A4 portrait for 8 or fewer, landscape above; the heads written sideways
+// when a column gets less than 22 mm (the page less 12 mm margins, the day's 12 mm and Initials' 18 mm, over the columns).
+const PAGE_MM = { portrait: 210 - 24, landscape: 297 - 24 };
+const FIXED_MM = 12 + 18;
+const NARROW_MM = 22;
+export function sheetLayout(n) {
+  const landscape = n > 8;
+  const width = (landscape ? PAGE_MM.landscape : PAGE_MM.portrait) - FIXED_MM;
+  return { landscape, sideways: n > 0 && width / n < NARROW_MM };
+}

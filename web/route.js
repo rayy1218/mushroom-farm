@@ -30,7 +30,9 @@ export const suggestHash = (id) => `#/rooms/${id}/suggest`;
 export const TODAY_HASH = '#/today';
 
 // The Calendar page's address: its room and day in the query, in one order.
-const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+// (a month or day out of range, 2026-13-01, is not one: Date.parse gives NaN, which toISOString would throw on)
+const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? '') && Number.isFinite(Date.parse(`${s}T00:00:00Z`))
+  && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
 export function calendarHash({ room = null, day = null } = {}) {
   const q = [room ? `room=${room}` : '', day ? `day=${day}` : ''].filter(Boolean).join('&');
   return q ? `#/calendar?${q}` : '#/calendar';
@@ -45,8 +47,10 @@ export function parseCalendarQuery(query) {
 
 // The Tasks tab on a week (spec 2026-11-04-task-grid-design.md 2): its Monday in the query; this week (null) has none.
 export const tasksHash = (id, week = null) => (week ? `#/rooms/${id}/tasks?week=${week}` : roomHash(id, 'tasks'));
-// The month sheet of a room's daily tasks, for the pen ('YYYY-MM').
-export const taskSheetHash = (id, month) => `#/rooms/${id}/tasks/sheet?month=${month}`;
+// The month sheet of a room's daily tasks, for the pen ('YYYY-MM'); this month when none (the page puts it in the address).
+export const taskSheetHash = (id, month = null) => (month ? `#/rooms/${id}/tasks/sheet?month=${month}` : `#/rooms/${id}/tasks/sheet`);
+// A real month ('YYYY-MM') or null.
+const monthOf = (s) => (/^\d{4}-\d{2}$/.test(s ?? '') && isDate(`${s}-01`) ? s : null);
 // A week's Monday from any day of it ('YYYY-MM-DD'), or null for a date that is not one.
 function mondayOf(s) {
   if (!isDate(s)) return null;
@@ -69,6 +73,8 @@ export function parseRoute(hash) {
   if (run) return { name: 'simulation', id: Number(run[1]), runId: Number(run[2]) };
   const suggest = new RegExp(`^#/rooms/${ID}/suggest/?$`).exec(hash ?? '');
   if (suggest) return { name: 'suggest', id: Number(suggest[1]) };
+  const taskSheet = new RegExp(`^#/rooms/${ID}/tasks/sheet/?(?:\\?(.*))?$`).exec(hash ?? '');
+  if (taskSheet) return { name: 'taskSheet', id: Number(taskSheet[1]), month: monthOf(new URLSearchParams(taskSheet[2] ?? '').get('month')) };
   const m = new RegExp(`^#/rooms/${ID}(?:/([a-z]+))?/?(?:\\?(.*))?$`).exec(hash ?? '');
   const tab = m && m[2] !== undefined ? tabOf(m[2]) : 'now';
   if (m && (tab === 'now' || NAMED_TABS.includes(tab)) && m[2] !== 'now') {
@@ -93,6 +99,7 @@ export function parseRoute(hash) {
 export function canonicalHash(route) {
   if (route.name === 'simulation') return `#/rooms/${route.id}/simulations/${route.runId}`;
   if (route.name === 'suggest') return suggestHash(route.id);
+  if (route.name === 'taskSheet') return taskSheetHash(route.id, route.month);
   if (route.name === 'detail') return route.tab === 'tasks' ? tasksHash(route.id, route.week) : roomHash(route.id, route.tab);
   if (route.name === 'today') return TODAY_HASH;
   if (route.name === 'calendar') return calendarHash(route);
