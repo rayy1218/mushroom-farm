@@ -409,16 +409,21 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Month sheet | `#/rooms/7/tasks/sheet?month=2026-11`, a print page in light colours with no top bar: A4 portrait for 12 columns or fewer, landscape above over two pages (1st to 15th, then the rest); every row 6.6 mm to write in, so a 31-day month keeps its foot on one portrait page. A "Farm:" line left blank and "Sheet reviewed by: ____ (Management) on ____" at the foot, the month's days down ("1 Su", each Sunday ruled off) and the tasks across with the unit in brackets ("Harvest AM (kg)") and their heads sideways when narrow, an Initials column for the pen (none in a month gone by). Days gone are filled from the app: "✓ AL"; "✓ 19.59" over the initials; ✗ the heaviest mark (1.3 em, 800; amber on screen, black on paper); —; shaded not due. Days ahead are blank with the planned boxes outlined (dashed on screen, square solid cells on paper). On a phone the day column stays while the rest scrolls sideways |
 
 ### Batches
-(2026-11-05; spec `docs/superpowers/specs/2026-11-05-batches-design.md`.) `#/business/batches`. Where each part lives:
+(2026-11-05; spec `docs/superpowers/specs/2026-11-05-batches-design.md`; revised the same day after the UI/UX audit, `.impeccable/critique/2026-11-05T05-00-34Z__web-batches-page-js.md`.) `#/business/batches`. Where each part lives:
 
 | Part | Design |
 |---|---|
-| Page | Waiting, In rooms (a group per room's current run, the room a link to its Harvest tab) and Past (a range control 90 days · 12 months · All; on a phone each batch a block of labelled figures) |
-| Batch row | The crop picture, "Grey oyster blocks" as a link, a muted line (supplier · received · days ago), the good blocks at the right ("1,180 of 1,200 good" after a loss), and Put into a room |
-| Over-count | More batch blocks than the run's is said in amber on `--warning-soft` (a check, not a fault) |
-| Batch page | Details as a definition list (empty facts left out), Delivery (when split), Contamination (checks newest first, a quiet Edit each) |
+| Page | Waiting, In rooms (a group per room's current run, the room a link to its Harvest tab) and Past (a range control 90 days · 12 months · All; on a phone each batch a block of labelled figures). Each card says "Loading…" until the first read; the empty Waiting teaches: "No blocks waiting. Receive blocks when a delivery comes in." |
+| Batch row | The crop picture, "Grey oyster blocks" as a link whose hit area is the whole row (a stretched `::after`; the action above it), a muted line (supplier · received · days ago, a date and "40 days ago" never broken at a wrap), the good blocks at the right ("1,180 of 1,200 good" after a loss), and the action: **Put into a room** (Waiting; disabled with "Every block was lost" in words under it) or a quiet **Record a check** (In rooms). Waiting and In rooms share the column widths, so the counts line up. At least 44 px tall |
+| Past row | The whole row opens its batch; Lost "—" for none |
+| Over-count | More batch blocks than the run's is said in amber on `--warning-soft` (a check, not a fault), always on a card's surface (4.5 : 1 in light) |
+| Batch page | Head: "800 Grey oyster blocks", the figure line "788 good · 12 lost" (600, tabular), "Received 2 Nov · Agro Supplies · In Container 1" with the room a link to its Harvest tab; Put into a room or Take out, and Edit (Delete inside it, a quiet red button at its footer's start, as Harvest's; a placed or past batch's confirm says its run's block cost and BE change). From 900 px two columns, Details and Delivery left, Contamination and This run right; on a phone Contamination comes first |
+| This run | A placed or past batch's run, as Harvest's tiles: kg so far, kg per block, BE, then "Blocks cost RM 11.50 per kg picked" in a muted line; "No harvests in this run yet."; not shown for a deleted room |
+| Dialogs | Receive and Edit: section heads (`fs-sm` 600 `ink-2`, a hairline above) over The blocks, Spawn, Weight, Paperwork; pairs side by side from 600 px (Received and Blocks, Spawn batch No. and Strain, Block weight and Water). Put into a room names each room's blocks in batches. Record a check starts on Blocks lost |
+| Today | A **Blocks waiting** card, as Long-term: "400 Grey oyster blocks waiting 40 days", each a link, for batches waiting 3 days or more |
+| Links | Neutral `ink`, a `muted` underline (3 : 1 or more), the full ink on hover; one card-title size (14 px) |
 | Numbers | Money as Harvest's (RM 2 decimals, grouped), blocks grouped |
-| Sheet | The myGAP 4-2 sheet reuses the 4-6 sheet's print rules |
+| Sheet | The myGAP 4-2 sheet reuses the 4-6 sheet's print rules; a caption and row heads for screen readers, the app's date boxes, the Farm line at most a phone's width |
 | Styles | The `.bt-` block |
 
 ## Do's and Don'ts
