@@ -108,7 +108,7 @@ test('review: a late answer goes to the page, not a later dialog; the buttons he
   assert.ok(dialogs.includes('for (const b of held) b.disabled = on;'), 'Cancel, Delete this sale, the paid toggle and the primary held');
   assert.ok(dialogs.includes("input.addEventListener('input', () => clearBox({ input, error }));"));
   assert.ok(dialogs.includes('primary.textContent = label; // plain while sending'), 'a failed send does not still say "anyway"');
-  assert.ok(dialogs.includes("import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num } from './sales-math.js';"));
+  assert.ok(dialogs.includes("import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num, deliveryRow } from './sales-math.js';"));
   assert.ok(!dialogs.includes('function priceNumber'), 'the one number reader');
   assert.ok(dialogs.includes('date.input.max = farmDate(now);'), 'today as at the submit');
 });
@@ -121,4 +121,48 @@ test('review: a new buyer in A–Z, Delete buyer confirms, Restore and Archive h
   assert.ok(dialogs.includes('`${price.input.id}-expected`'));
   assert.ok(dialogs.includes("row.setAttribute('role', 'group');"));
   assert.ok(dialogs.includes('`Line ${i + 1}, ${cropShortName(l.crop.input.value)}`'));
+});
+
+test('audit: the desk list as columns (a subgrid a delivery), a line part kept whole, the reference its own phone row', () => {
+  assert.ok(page.includes("el('span', 'sl-line-part', part)"), 'a line part each');
+  assert.ok(page.includes("linesNode('sl-lines', d.lines)") && page.includes('lineParts(lines).forEach'));
+  assert.ok(/\.sl-line-part \{[^}]*white-space: nowrap/.test(block));
+  assert.ok(/@media \(min-width: 900px\) \{[^@]*\.sl-list \{[^}]*grid-template-columns: auto minmax\(8rem, 14rem\) minmax\(14rem, 1fr\) auto auto minmax\(0, 8rem\) auto/.test(block), 'the tracks on the list');
+  assert.ok(/\.sl-item \{[^}]*grid-column: 1 \/ -1;[^}]*grid-template-columns: subgrid/.test(block), 'a delivery a subgrid');
+  assert.ok(/\.sl-list \{[^}]*grid-template-columns: minmax\(6\.5rem, max-content\)/.test(block), 'a phone row: the first track fixed');
+  assert.ok(/\.sl-item:focus-visible \{ outline: 2px solid var\(--accent\); outline-offset: 2px; \}/.test(block));
+});
+
+test('audit: the phone tables leave out Sold (by crop) and kg (by buyer), said under the name', () => {
+  assert.ok(page.includes("el('span', 'sl-sub', r.sub)"));
+  assert.ok(/\.sl-table td\.num, \.sl-table th\.num \{[^}]*padding-left: 5px/.test(block) || /padding-left: 5px; padding-right: 5px/.test(block), '10 px between figures');
+  assert.ok(block.includes('.sl-crop-table th:nth-child(2)') && block.includes('.sl-buyer-table th:nth-child(2)'));
+});
+
+test('audit: no buyers: the empty card has its own Record a sale; Owed as columns', () => {
+  assert.ok(page.includes('data-empty-record'));
+  assert.ok(/\.sl-owed-list \{[^}]*max-width: 52rem/.test(block));
+  assert.ok(/\.sl-owed-item \+ \.sl-owed-item \{[^}]*border-top: 1px solid var\(--border\)/.test(block), 'a hairline between buyers');
+});
+
+test('audit: Record opens on "Pick a buyer" (prices filled once one is chosen); Edit keeps the sale\'s buyer', () => {
+  assert.ok(dialogs.includes("'Pick a buyer'"));
+  assert.ok(dialogs.includes('pick.disabled = true;'));
+  assert.ok(dialogs.includes("if (buyer.input.value === '') { l.price.input.value = ''; showExpected(l, false); return; }"), 'no price before a buyer');
+});
+
+test('audit: the amber question a line-wide note, still described by the box; the title unboxed; two columns from 900 px', () => {
+  assert.ok(dialogs.includes("el('p', 'sl-line-check')"));
+  assert.ok(dialogs.includes("check.setAttribute('aria-live', 'polite');"));
+  assert.ok(/\.sl-line-check \{[^}]*grid-column: 1 \/ -1/.test(block));
+  assert.ok(block.includes('.sl-dialog-title:focus { outline: none; }'));
+  assert.ok(/\.sl-dialog \.sl-form \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/.test(block));
+});
+
+test('audit: Buyers: Restore and Archive come back to the buyer with a status line; Cancel goes back to the list', () => {
+  assert.ok(dialogs.includes('`buyer-${b.id}`'));
+  assert.ok(dialogs.includes('`${b.name} restored.`') && dialogs.includes('`${b.name} archived.`'));
+  assert.ok(dialogs.includes("statusLine.setAttribute('role', 'status');"));
+  assert.ok(dialogs.includes('backToList'));
+  assert.ok(dialogs.includes('lead: [`${deliveryRow(delivery).day}${DOT}${delivery.buyer}${DOT}${rmText(delivery.total)}`]'), 'Mark paid names the day');
 });

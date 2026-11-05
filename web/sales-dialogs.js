@@ -8,7 +8,8 @@ import { openForm, errorText } from './task-dialogs.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { farmDate, dayTitle } from './tasks-math.js';
 import { rmText } from './harvest-math.js';
-import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num } from './sales-math.js';
+import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num, deliveryRow } from './sales-math.js';
+import { DOT } from './text-math.js';
 
 const TIMEOUT = 15000;
 const MAX_LINES = 9;
@@ -158,9 +159,9 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     busy = on;
     for (const b of held) b.disabled = on;
   };
-  const form = el('form');
+  const form = el('form', 'sl-form');
   form.noValidate = true;
-  const title = el('h2', '', delivery ? 'Edit sale' : 'Record a sale');
+  const title = el('h2', 'sl-dialog-title', delivery ? 'Edit sale' : 'Record a sale');
   title.id = 'sl-dialog-title';
   title.tabIndex = -1;
   const formError = el('p', 'form-error');
@@ -218,8 +219,16 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   const buyerOptions = active.map((b) => [String(b.id), b.archived ? `${b.name} (archived)` : b.name]);
   const buyer = field({
     id: 'sl-buyer', label: 'Buyer', kind: 'select', options: [...buyerOptions, [NEW, 'New buyer…']],
-    value: delivery ? String(delivery.buyerId) : active.length ? String(active[0].id) : NEW,
+    value: delivery ? String(delivery.buyerId) : NEW,
   });
+  // Record with buyers: "Pick a buyer" first (chosen, not choosable), the prices filled once one is picked; with none, New buyer….
+  if (!delivery && active.length) {
+    const pick = el('option', '', 'Pick a buyer');
+    pick.value = '';
+    pick.disabled = true;
+    buyer.input.prepend(pick);
+    buyer.input.value = '';
+  }
   const newName = field({ id: 'sl-new-name', label: 'Name', maxLength: 60 });
   const newPhone = field({ id: 'sl-new-phone', label: 'Phone (optional)', maxLength: 30 });
   const newBox = el('div', 'sl-new-buyer');
@@ -228,7 +237,13 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   showNew();
 
   const ref = field({ id: 'sl-ref', label: "Buyer's reference (optional)", value: delivery?.invoiceNo ?? '', hint: 'Their invoice or receipt number', maxLength: 40 });
-  form.append(keep('date', date), keep('buyerId', buyer), newBox, keep('invoiceNo', ref));
+  const note = field({ id: 'sl-note', label: 'Note (optional)', value: delivery?.note ?? '', maxLength: 200 });
+  // from 900 px two columns: Date | Buyer, Reference | Note (the note next to the reference, so the order is the same read or tabbed)
+  date.wrap.classList.add('sl-f-date');
+  buyer.wrap.classList.add('sl-f-buyer');
+  ref.wrap.classList.add('sl-f-ref');
+  note.wrap.classList.add('sl-f-note');
+  form.append(keep('date', date), keep('buyerId', buyer), newBox, keep('invoiceNo', ref), keep('note', note));
 
   // The lines.
   const linesBox = el('fieldset', 'sl-lines-box');
@@ -237,8 +252,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   const add = button('Add a crop', 'sl-add');
   linesBox.append(lineList, add);
   const foot = el('p', 'sl-foot');
-  const note = field({ id: 'sl-note', label: 'Note (optional)', value: delivery?.note ?? '', maxLength: 200 });
-  form.append(linesBox, foot, keep('note', note));
+  form.append(linesBox, foot);
 
   const lines = []; // { crop, kg, price, room, total, expected, row, remove, typed }
   const chosenBuyer = () => buyers.find((b) => String(b.id) === buyer.input.value) ?? null;
@@ -263,15 +277,21 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     foot.textContent = footText(lines.map((l) => ({ kg: l.kg.input.value, priceKg: l.price.input.value })));
   }
 
-  // The muted "expected" beside a pre-filled expected price, read with the box while it shows.
+  // The muted "expected" beside a pre-filled expected price, read with the box while it shows (and the line's question).
   function showExpected(l, on) {
     l.expected.hidden = !on;
-    l.price.input.setAttribute('aria-describedby', [on ? l.expected.id : null, l.price.error.id].filter(Boolean).join(' '));
+    l.price.input.setAttribute('aria-describedby', [on ? l.expected.id : null, l.price.error.id, l.check.id].filter(Boolean).join(' '));
   }
 
-  // The price from the buyer or Settings, unless one was typed.
+  // The line's question about a box (kg, priceKg) gone.
+  function clearCheck(l, which) {
+    for (const s of l.check.querySelectorAll(`[data-for="${which}"]`)) s.remove();
+  }
+
+  // The price from the buyer or Settings, unless one was typed; none before a buyer is picked.
   function fillPrice(l) {
     if (l.typed) return;
+    if (buyer.input.value === '') { l.price.input.value = ''; showExpected(l, false); return; }
     const p = prefill(l.crop.input.value, chosenBuyer(), cropYield);
     l.price.input.value = p.value;
     showExpected(l, p.expected);
@@ -296,13 +316,19 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     price.error.before(expected);
     const total = el('span', 'num sl-line-total');
     const remove = button('Remove', 'tk-quiet sl-remove');
+    // the amber question (an unlikely kg or price): a note the width of the line, under it, read with its box
+    const check = el('p', 'sl-line-check');
+    check.id = `sl-check-${n}`;
+    check.setAttribute('aria-live', 'polite');
+    kg.input.setAttribute('aria-describedby', `${kg.input.getAttribute('aria-describedby')} ${check.id}`);
     const row = el('div', 'sl-line');
     row.setAttribute('role', 'group');
-    row.append(crop.wrap, kg.wrap, price.wrap, room.wrap, total, remove);
-    const l = { crop, kg, price, room, total, expected, row, remove, typed: Boolean(value) };
+    row.append(crop.wrap, kg.wrap, price.wrap, room.wrap, total, remove, check);
+    const l = { crop, kg, price, room, total, expected, check, row, remove, typed: Boolean(value) };
+    showExpected(l, false);
     crop.input.addEventListener('change', () => { fillPrice(l); refresh(); });
-    price.input.addEventListener('input', () => { l.typed = true; showExpected(l, false); refresh(); });
-    kg.input.addEventListener('input', refresh);
+    price.input.addEventListener('input', () => { l.typed = true; showExpected(l, false); clearCheck(l, 'priceKg'); refresh(); });
+    kg.input.addEventListener('input', () => { clearCheck(l, 'kg'); refresh(); });
     remove.addEventListener('click', () => {
       lines.splice(lines.indexOf(l), 1);
       row.remove();
@@ -346,6 +372,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   function clearErrors() {
     formError.hidden = true;
     for (const box of boxes.values()) clearBox(box);
+    for (const l of lines) l.check.replaceChildren();
   }
   // A problem, or a list of them on their boxes (the unlikely questions: amber, warn), the cursor to the first.
   function show(problems) {
@@ -359,8 +386,15 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     }
     for (const p of boxed) {
       const { input, error } = boxes.get(p.field);
-      error.textContent = p.message;
-      error.classList.toggle('field-warn', Boolean(p.warn));
+      const lineOf = p.warn ? /^lines\.(\d+)\.(kg|priceKg)$/.exec(p.field) : null;
+      if (lineOf) { // a line's question: under the whole line, the box marked amber
+        const said = el('span', '', p.message);
+        said.dataset.for = lineOf[2];
+        lines[Number(lineOf[1])].check.append(said);
+      } else {
+        error.textContent = p.message;
+        error.classList.toggle('field-warn', Boolean(p.warn));
+      }
       if (p.warn) input.dataset.warn = '';
       else input.setAttribute('aria-invalid', 'true');
     }
@@ -424,7 +458,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   d.oncancel = (event) => { if (busy) event.preventDefault(); };
   d.onclose = () => giveBack(opener);
   d.showModal();
-  (delivery ? title : buyer.input.value === NEW ? newName.input : lines[0].kg.input).focus();
+  (delivery ? title : buyer.input.value === '' ? buyer.input : buyer.input.value === NEW ? newName.input : lines[0].kg.input).focus();
 }
 
 // The Delete confirm: "Delete the sale of 5 Nov to Kedai Ah Seng?" and what it held.
@@ -452,7 +486,7 @@ export function openPaid({ delivery, onChanged, onError, opener = document.activ
   const today = farmDate(Date.now());
   openForm({
     title: 'Mark paid',
-    lead: [`${delivery.buyer} · ${rmText(delivery.total)}`],
+    lead: [`${deliveryRow(delivery).day}${DOT}${delivery.buyer}${DOT}${rmText(delivery.total)}`],
     fields: [{ name: 'paidOn', label: 'Paid on', kind: 'date', value: today, min: farmDate(delivery.soldAt), max: today, hintOf: (v) => (DAY.test(v) ? dayTitle(v) : '') }],
     buttons: [{ value: 'paid', label: 'Mark paid', primary: true }],
     submit: async (v, _which, form) => {
@@ -472,8 +506,10 @@ export function openPaid({ delivery, onChanged, onError, opener = document.activ
   }).closed.then(() => giveBack(opener, [`owed-${delivery.buyerId}`]));
 }
 
-// Buyers: the list (active, then Archived), each with Edit (Restore when archived); Add a buyer.
-export async function openBuyers({ onChanged, onError, opener = document.activeElement }) {
+// Buyers: the list (active, then Archived), each with Edit (Restore when archived); Add a buyer. Opened again after a
+// write (or a Cancel in Edit / Add) with the cursor on that buyer's Edit (Restore) and, after a Restore or an Archive,
+// a polite line that says so.
+export async function openBuyers({ onChanged, onError, opener = document.activeElement, focus = null, status = '' }) {
   let buyers;
   try {
     ({ buyers } = await request('GET', '/api/buyers'));
@@ -491,10 +527,11 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     if (more) text.append(el('span', 'sl-buyer-more', more));
     const edit = button(b.archived ? 'Restore' : 'Edit', 'tk-quiet sl-buyer-edit');
     edit.setAttribute('aria-label', `${b.archived ? 'Restore' : 'Edit'} ${b.name}`);
+    edit.dataset.focusKey = `buyer-${b.id}`;
     edit.addEventListener('click', () => {
       if (!b.archived) { editBuyer(b); return; }
       edit.disabled = true; // one Restore at a time
-      save(b, { archived: false }).then((r) => { if (r !== true) { edit.disabled = false; said(r); } });
+      save(b, { archived: false }, `${b.name} restored.`).then((r) => { if (r !== true) { edit.disabled = false; said(r); } });
     });
     li.append(text, edit);
     return li;
@@ -509,12 +546,22 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     lead.push(el('h3', 'sl-archived-title', 'Archived'), old);
   }
   if (!buyers.length) lead.unshift(el('p', 'none', 'No buyers yet.'));
-  const again = () => { onChanged(); openBuyers({ onChanged, onError, opener }); };
+  // the line that says what was done (said once the dialog is open, so it is read out)
+  const statusLine = el('p', 'sl-status');
+  statusLine.setAttribute('role', 'status');
+  lead.unshift(statusLine);
+  let reopened = false; // a write opens the list again: a form's close then does not
+  const again = (id = null, said = '') => { reopened = true; onChanged(); openBuyers({ onChanged, onError, opener, focus: id, status: said }); };
+  // Cancel (or Esc) in Edit / Add a buyer: back to the list, the cursor on that buyer
+  const backToList = (id = null) => {
+    if (reopened || document.querySelector('dialog[open]')) { giveBack(opener); return; }
+    openBuyers({ onChanged, onError, opener, focus: id });
+  };
 
-  async function save(b, body) {
+  async function save(b, body, said = '') {
     try {
       await request('PUT', `/api/buyers/${b.id}`, body, TIMEOUT);
-      again();
+      again(b.id, said);
       return true;
     } catch (err) {
       return err.status === 400 || err.status === 409 ? { field: err.field?.replace('.', '-'), message: err.message } : { message: errorText(err) };
@@ -549,7 +596,7 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
       const aside = form.input('name').form.querySelector('.tk-aside');
       if (aside.disabled) return;
       aside.disabled = true; // one Archive at a time
-      save(b, { archived: true }).then((r) => { if (r !== true) { aside.disabled = false; said(r); } });
+      save(b, { archived: true }, `${b.name} archived.`).then((r) => { if (r !== true) { aside.disabled = false; said(r); } });
     };
     form = openForm({
       title: `Edit ${b.name}`,
@@ -564,7 +611,7 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
       },
       onLost: onError,
     });
-    form.closed.then(() => giveBack(opener));
+    form.closed.then(() => backToList(b.id));
   }
 
   // Delete a buyer with no sales, asked first.
@@ -586,7 +633,7 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
     }).closed.then(() => giveBack(opener));
   }
 
-  openForm({
+  const listForm = openForm({
     title: 'Buyers',
     lead,
     buttons: [{ value: 'add', label: 'Add a buyer', primary: true }],
@@ -601,17 +648,21 @@ export async function openBuyers({ onChanged, onError, opener = document.activeE
           const r = bodyOf(v);
           if (!r.body) return r;
           try {
-            await request('POST', '/api/buyers', r.body, TIMEOUT);
-            again();
+            const made = await request('POST', '/api/buyers', r.body, TIMEOUT);
+            again(made?.id ?? null);
             return true;
           } catch (err) {
             return err.status === 400 || err.status === 409 ? { field: err.field?.replace('.', '-'), message: err.message } : { message: errorText(err) };
           }
         },
         onLost: onError,
-      }).closed.then(() => giveBack(opener));
+      }).closed.then(() => backToList());
       return true;
     },
     onLost: onError,
-  }).closed.then(() => giveBack(opener));
+  });
+  listForm.closed.then(() => giveBack(opener));
+  // the cursor on the buyer just changed (else the title, as openForm leaves it), then the line said
+  if (focus !== null) document.querySelector(`dialog[open] [data-focus-key="buyer-${focus}"]`)?.focus();
+  if (status) setTimeout(() => { statusLine.textContent = status; }, 100);
 }

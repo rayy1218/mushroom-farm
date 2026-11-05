@@ -11,8 +11,9 @@ import { tileNodes } from './harvest-card.js';
 import { picture } from './pictures.js';
 import { rangeText, periodWords, rmText } from './harvest-math.js';
 import {
-  pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS, emptyText, ageText, linesShort,
+  pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS, emptyText, ageText, lineParts,
 } from './sales-math.js';
+import { DOT } from './text-math.js';
 import { openSale, openPaid, openBuyers } from './sales-dialogs.js';
 
 const REFRESH_MS = 60_000;
@@ -50,6 +51,7 @@ const TEMPLATE = `
     <section class="card sl-sales" aria-labelledby="sl-sales-title">
       <h2 id="sl-sales-title">Sales</h2>
       <p class="none" data-empty hidden></p>
+      <p class="sl-empty-record" data-empty-record hidden><button type="button">Record a sale</button></p>
       <ul class="sl-list" data-list></ul>
       <button type="button" class="tk-quiet sl-more" data-more hidden></button>
     </section>
@@ -64,8 +66,19 @@ function el(tag, className, content) {
   return node;
 }
 
+// A delivery's lines in short, a part a crop kept whole (no break inside "Lion's mane 2.20 kg"), joined by the dot.
+function linesNode(className, lines) {
+  const node = el('span', className);
+  lineParts(lines).forEach((part, i) => {
+    if (i) node.append(DOT);
+    node.append(el('span', 'sl-line-part', part));
+  });
+  return node;
+}
+
 // A card's table: the first column names the row (head(row) → nodes), the others are figures; a row's diff (by crop: the
-// average price against the expected one) goes under the Average figure, on a phone only (the Harvested and Expected columns are hidden there).
+// average price against the expected one) goes under the Average figure and its sub (the sold kg) under the name, on a
+// phone only (the Sold, Harvested and Expected columns, and by buyer the kg, are hidden there).
 function table(caption, columns, rows, head, extra = '') {
   const wrap = el('div', 'us-table-wrap');
   const t = el('table', `us-table sl-table${extra}`);
@@ -86,6 +99,7 @@ function table(caption, columns, rows, head, extra = '') {
     const name = el('span', 'sl-name');
     name.append(...head(r));
     th.append(name);
+    if (r.sub) th.append(el('span', 'sl-sub', r.sub));
     const tds = r.cells.map((c) => el('td', 'num', c));
     if (r.diff) tds[3].append(el('span', 'sl-diff', r.diff));
     row.append(th, ...tds);
@@ -107,6 +121,7 @@ export function mount(container, { days = 30 } = {}) {
     range: q('[data-range]'), csv: q('[data-csv]'), record: q('[data-record]'), buyers: q('[data-buyers]'), banner: q('.banner'),
     bannerText: q('[data-banner-text]'), body: q('[data-body]'), totalsTitle: q('[data-totals-title]'), tiles: q('[data-tiles]'),
     owed: q('[data-owed]'), owedList: q('[data-owed-list]'), list: q('[data-list]'), more: q('[data-more]'), empty: q('[data-empty]'),
+    emptyRecord: q('[data-empty-record]'),
     crops: q('[data-crops]'), buyersTable: q('[data-buyers-table]'),
   };
   document.title = 'Sales · Mushroom farm';
@@ -154,8 +169,8 @@ export function mount(container, { days = 30 } = {}) {
     els.banner.hidden = false;
   }
 
-  // One delivery in the Sales list, flat so the grid lays it as a block on a phone and as one row on a desk: day, buyer, the
-  // lines, the total, the paid mark, the reference; Edit opens it.
+  // One delivery in the Sales list, flat so the list's columns (each delivery a subgrid of them) lay it as a block on a
+  // phone and as one row on a desk: day, buyer, the lines, the total, the paid mark, the reference; Edit opens it.
   function deliveryItem(d) {
     const r = deliveryRow(d);
     const li = el('li', 'sl-item');
@@ -164,21 +179,22 @@ export function mount(container, { days = 30 } = {}) {
     edit.dataset.focusKey = `edit-${d.id}`;
     edit.setAttribute('aria-label', `Edit the sale of ${r.day} to ${r.buyer}`);
     edit.addEventListener('click', () => openSale({ ...ctx(), delivery: d }));
-    li.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer), el('span', 'sl-lines', r.lines),
+    li.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer), linesNode('sl-lines', d.lines),
       el('span', 'sl-total num', r.total), el('span', `sl-mark${r.paid.unpaid ? ' sl-unpaid' : ''}`, r.paid.text));
     if (r.reference) li.append(el('span', 'muted sl-ref', r.reference));
     li.append(edit);
     return li;
   }
 
-  // A buyer's row in Owed: the name (a button that opens their unpaid sales under it, in place), RM owed, the oldest.
+  // A buyer's row in Owed: the name (a button that opens their unpaid sales under it, in place), RM owed, the oldest; the
+  // sales as columns (day, lines, RM, reference, Mark paid), the reference's cell kept when there is none.
   function owedItem(b) {
     const li = el('li', 'sl-owed-item');
     const toggle = el('button', 'sl-owed-name', b.buyer);
     toggle.type = 'button';
     toggle.dataset.focusKey = `owed-${b.buyerId}`;
     const row = el('p', 'sl-owed-row');
-    row.append(toggle, el('span', 'num sl-owed-total', rmText(b.total)), el('span', 'muted', `oldest ${ageText(b.oldestAt, Date.now())}`));
+    row.append(toggle, el('span', 'num sl-owed-total', rmText(b.total)), el('span', 'muted sl-owed-age', `oldest ${ageText(b.oldestAt, Date.now())}`));
     const ul = el('ul', 'sl-owed-sales');
     for (const d of b.deliveries) {
       const r = deliveryRow(d);
@@ -188,9 +204,8 @@ export function mount(container, { days = 30 } = {}) {
       paid.dataset.focusKey = `paid-${d.id}`;
       paid.setAttribute('aria-label', `Mark the sale of ${r.day} to ${r.buyer} paid`);
       paid.addEventListener('click', () => openPaid({ ...ctx(), delivery: d }));
-      item.append(el('span', 'sl-day', r.day), el('span', 'sl-lines', linesShort(d.lines)), el('span', 'num', r.total));
-      if (r.reference) item.append(el('span', 'muted sl-ref', r.reference));
-      item.append(paid);
+      item.append(el('span', 'sl-day', r.day), linesNode('sl-lines', d.lines), el('span', 'num sl-owed-amount', r.total),
+        el('span', 'muted sl-ref', r.reference), paid);
       ul.append(item);
     }
     const show = (on) => {
@@ -224,6 +239,7 @@ export function mount(container, { days = 30 } = {}) {
     const limit = showAll ? list.length : phone() ? SHOWN_PHONE : SHOWN;
     els.empty.hidden = list.length > 0;
     els.empty.textContent = sales.buyerCount === 0 ? 'No buyers yet. Record a sale to add the first.' : emptyText(period);
+    els.emptyRecord.hidden = list.length > 0 || sales.buyerCount !== 0;
     els.list.replaceChildren(...list.slice(0, limit).map(deliveryItem));
     els.more.hidden = list.length <= limit;
     els.more.textContent = `Show all ${list.length}`;
@@ -235,7 +251,7 @@ export function mount(container, { days = 30 } = {}) {
       table('By crop', CROP_COLUMNS, crops, (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)], ' sl-crop-table'));
     const buyers = buyerRows(sales);
     els.buyersTable.hidden = buyers.length === 0;
-    els.buyersTable.replaceChildren(h2('sl-by-buyer-title', 'By buyer'), table('By buyer', BUYER_COLUMNS, buyers, (b) => [el('span', '', b.name)]));
+    els.buyersTable.replaceChildren(h2('sl-by-buyer-title', 'By buyer'), table('By buyer', BUYER_COLUMNS, buyers, (b) => [el('span', '', b.name)], ' sl-buyer-table'));
     if (focusKey) {
       const node = container.querySelector(`[data-focus-key="${focusKey}"]`);
       if (node && !node.closest('[hidden]')) node.focus();
@@ -274,6 +290,7 @@ export function mount(container, { days = 30 } = {}) {
   ];
 
   els.record.addEventListener('click', () => openSale({ ...ctx(), delivery: null }));
+  els.emptyRecord.firstElementChild.addEventListener('click', () => openSale({ ...ctx(), delivery: null }));
   els.buyers.addEventListener('click', () => openBuyers(ctx()));
   els.more.addEventListener('click', () => {
     const at = els.list.children.length;
