@@ -288,11 +288,11 @@ CREATE INDEX IF NOT EXISTS harvests_by_time ON harvests (picked_at);
 CREATE INDEX IF NOT EXISTS harvests_by_task ON harvests (task_id) WHERE task_id IS NOT NULL;`;
 
 // ---- Sales (spec 2026-11-05-sales-design.md 2) ----
-// A sale is one crop line of a delivery to a buyer; the lines of a delivery share delivery_id (its first line's id) and are
-// written together. buyer: the buyer's name at the sale (a rename rewrites it). room_id and run_id null: mixed, not tied.
+// A sale is one crop line of a delivery to a buyer; the lines of a delivery share delivery_id (its first line's id when
+// recorded; ids are never reused, AUTOINCREMENT) and are written together. buyer: the buyer's name at the sale (a rename rewrites it). room_id and run_id null: mixed, not tied.
 const SALES = `
 CREATE TABLE IF NOT EXISTS buyers (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
   phone      TEXT,
   note       TEXT,
@@ -301,7 +301,7 @@ CREATE TABLE IF NOT EXISTS buyers (
   created_at INTEGER NOT NULL
 ) STRICT;
 CREATE TABLE IF NOT EXISTS sales (
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
   delivery_id INTEGER NOT NULL,
   sold_at     INTEGER NOT NULL,
   crop        TEXT    NOT NULL,
@@ -2103,9 +2103,11 @@ export function openDb(path, { log = console.error } = {}) {
     // when id names no delivery.
     saveDelivery({ id = null, soldAt, buyerId, buyer, invoiceNo, note, lines }, at) {
       const s = salesQ(db);
+      if (!lines.length) throw new Error('A delivery needs lines');
       let deliveryId = id;
       inTransaction(() => {
         let paidAt = null;
+        let createdAt = at;
         if (id !== null) {
           const old = s.deliveryLines.all(id);
           if (!old.length) {
@@ -2113,11 +2115,12 @@ export function openDb(path, { log = console.error } = {}) {
             return;
           }
           paidAt = old[0].paid_at;
+          createdAt = old[0].created_at;
           s.deleteDelivery.run(id);
         }
         for (const l of lines) {
           const rowId = Number(s.insertSale.run(deliveryId ?? 0, soldAt, l.crop, l.kg, l.priceKg, l.total, buyer, buyerId,
-            invoiceNo, l.roomId, l.runId, note, paidAt, at).lastInsertRowid);
+            invoiceNo, l.roomId, l.runId, note, paidAt, createdAt).lastInsertRowid);
           if (deliveryId === null) {
             deliveryId = rowId;
             s.setDeliveryId.run(rowId, rowId);
@@ -2174,7 +2177,7 @@ export function openDb(path, { log = console.error } = {}) {
       const s = salesQ(db);
       const old = this.getBuyer(id);
       if (!old) return null;
-      const b = { ...old, ...fields };
+      const b = { ...old, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) };
       inTransaction(() => {
         s.updateBuyer.run(b.name, b.phone, b.note, JSON.stringify(b.prices ?? {}), b.archived ? 1 : 0, id);
         if (b.name !== old.name) s.renameSales.run(b.name, id);

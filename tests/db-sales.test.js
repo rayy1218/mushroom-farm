@@ -39,6 +39,10 @@ test('a version 20 file is upgraded to 23: buyers and sales made, nothing else c
   assert.equal(check.prepare('PRAGMA user_version').get().user_version, 23);
   const indexes = check.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sales' ORDER BY name").all().map((r) => r.name);
   assert.deepEqual(indexes, ['sales_by_buyer', 'sales_by_delivery', 'sales_by_run', 'sales_by_time', 'sales_unpaid']);
+  assert.deepEqual(check.prepare('PRAGMA table_info(sales)').all().map((c) => c.name), ['id', 'delivery_id', 'sold_at', 'crop', 'kg',
+    'price_kg', 'total', 'buyer', 'buyer_id', 'invoice_no', 'room_id', 'run_id', 'note', 'paid_at', 'created_at']);
+  db.insertBuyer({ name: 'Borong Lim', phone: null, note: null, prices: {} }, 1);
+  assert.throws(() => db.insertBuyer({ name: 'BORONG LIM', phone: null, note: null, prices: {} }, 2), /UNIQUE/);
 });
 
 test('buyers: added, listed A–Z without regard to case, a rename rewrites the name on their sales', (t) => {
@@ -109,4 +113,62 @@ test('a buyer with no sales can be deleted', (t) => {
   assert.equal(db.deleteBuyer(b.id), true);
   assert.equal(db.getBuyer(b.id), null);
   assert.equal(db.deleteBuyer(b.id), false);
+});
+
+const d = (buyer, soldAt, lines) => ({ soldAt, buyerId: buyer.id, buyer: buyer.name, invoiceNo: null, note: null, lines });
+
+test('ids are never reused: a new delivery does not merge into an edited one', (t) => {
+  const { db } = fresh(t);
+  const b = db.insertBuyer({ name: 'Borong Lim', phone: null, note: null, prices: {} }, 1);
+  const x = db.saveDelivery(d(b, 1000, [line('oyster', 1, 10)]), 1000);
+  const y = db.saveDelivery(d(b, 2000, [line('pink', 1, 10)]), 2000);
+  db.deleteDelivery(x);
+  db.saveDelivery({ id: y, ...d(b, 2000, [line('pink', 2, 10)]) }, 2500);
+  const z = db.saveDelivery(d(b, 3000, [line('black', 1, 10)]), 3000);
+  assert.notEqual(z, y);
+  assert.equal(db.deliveryLines(y).length, 1);
+  assert.equal(db.deliveryLines(z).length, 1);
+});
+
+test('ids are never reused: a deleted delivery or buyer keeps its id retired', (t) => {
+  const { db } = fresh(t);
+  const b = db.insertBuyer({ name: 'Borong Lim', phone: null, note: null, prices: {} }, 1);
+  const a = db.saveDelivery(d(b, 1000, [line('oyster', 1, 10)]), 1000);
+  db.deleteDelivery(a);
+  assert.notEqual(db.saveDelivery(d(b, 2000, [line('oyster', 1, 10)]), 2000), a);
+  db.deleteBuyer(b.id);
+  assert.notEqual(db.insertBuyer({ name: 'Other', phone: null, note: null, prices: {} }, 3).id, b.id);
+});
+
+test('runAt at the boundaries of a restart and an end', (t) => {
+  const { db, roomId } = fresh(t);
+  const prog = db.getProgram(roomId);
+  db.setProgram(roomId, { ...prog, crops: [{ crop: 'oyster', blocks: 100 }] }, { change: 'start', at: 10_000 });
+  const first = db.openRun(roomId).id;
+  db.setProgram(roomId, { ...prog, crops: [{ crop: 'pink', blocks: 50 }] }, { change: 'restart', at: 20_000 });
+  const second = db.openRun(roomId).id;
+  assert.equal(db.runAt(roomId, 19_999), first);
+  assert.equal(db.runAt(roomId, 20_000), second);
+  db.setProgram(roomId, { ...prog, crops: [] }, { change: 'end', at: 30_000 });
+  assert.equal(db.runAt(roomId, 29_999), second);
+  assert.equal(db.runAt(roomId, 30_000), null);
+});
+
+test('an edit keeps created_at; a delivery with no lines is refused before any write', (t) => {
+  const { db } = fresh(t);
+  const b = db.insertBuyer({ name: 'Borong Lim', phone: null, note: null, prices: {} }, 1);
+  const id = db.saveDelivery(d(b, 1000, [line('oyster', 1, 10)]), 1000);
+  db.saveDelivery({ id, ...d(b, 1000, [line('oyster', 2, 10)]) }, 9000);
+  assert.equal(db.deliveryLines(id)[0].createdAt, 1000);
+  assert.throws(() => db.saveDelivery({ id, ...d(b, 1000, []) }, 9500), /A delivery needs lines/);
+  assert.throws(() => db.saveDelivery(d(b, 1000, []), 9500), /A delivery needs lines/);
+  assert.equal(db.deliveryLines(id).length, 1);
+});
+
+test('updateBuyer ignores undefined fields', (t) => {
+  const { db } = fresh(t);
+  const b = db.insertBuyer({ name: 'Borong Lim', phone: '012', note: null, prices: {} }, 1);
+  const u = db.updateBuyer(b.id, { phone: undefined, note: 'x' });
+  assert.equal(u.phone, '012');
+  assert.equal(u.note, 'x');
 });

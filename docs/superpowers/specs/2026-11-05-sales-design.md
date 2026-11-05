@@ -32,13 +32,13 @@ approved the data, API and pages below (2026-11-05).
 | Table | Columns | Rules |
 |---|---|---|
 | `buyers` (new; contract change §9) | `id`, `name` TEXT, `phone` TEXT (null), `note` TEXT (null), `prices` TEXT (JSON `{ <crop>: RM per kg }`, `{}` when none), `archived` INTEGER 0/1, `created_at` (ms) | `name` 1–60 characters after trimming, unique without regard to case (`UNIQUE` on `name COLLATE NOCASE`); `phone` up to 30 characters; `note` up to 200; a price 0–1,000, a crop of the crop list (`CROP_KEYS`). |
-| `sales` (contract §5) | Contract: `id`, `sold_at` (ms), `crop`, `kg` REAL, `price_kg` REAL (RM), `total` REAL (RM), `buyer` TEXT, `invoice_no` TEXT (null), `room_id` (null = mixed), `run_id` (null = not tied), `note` (null). Sales' own: `delivery_id`, `buyer_id` (→ `buyers.id`), `paid_at` (ms, null = unpaid), `created_at` (ms) | One row per crop line. Index `(sold_at)`, `(delivery_id)`, `(buyer_id)`, `(run_id)`, and `(paid_at)` where null. STRICT, `CREATE TABLE IF NOT EXISTS`. |
+| `sales` (contract §5) | Contract: `id`, `sold_at` (ms), `crop`, `kg` REAL, `price_kg` REAL (RM), `total` REAL (RM), `buyer` TEXT, `invoice_no` TEXT (null), `room_id` (null = mixed), `run_id` (null = not tied), `note` (null). Sales' own: `delivery_id`, `buyer_id` (→ `buyers.id`), `paid_at` (ms, null = unpaid), `created_at` (ms) | One row per crop line. Index `(sold_at)`, `(delivery_id)`, `(buyer_id)`, `(run_id)`, and `(sold_at)` where `paid_at` is null. STRICT, `CREATE TABLE IF NOT EXISTS`. |
 
 ### 2.2 A delivery
 
 | Rule | Detail |
 |---|---|
-| What it is | The `sales` rows sharing a `delivery_id`; `delivery_id` is the first line's `id` (set in the same transaction as the insert). |
+| What it is | The `sales` rows sharing a `delivery_id`; `delivery_id` is its first line's `id` when recorded (ids are never reused: AUTOINCREMENT) (set in the same transaction as the insert). |
 | Shared fields | `sold_at`, `buyer`, `buyer_id`, `invoice_no`, `note`, `paid_at` are the same on every line of a delivery: written only together, in one transaction (`db.saveDelivery`, `db.setDeliveryPaid`). |
 | `buyer` | The buyer's name at the time of the sale, copied from `buyers.name`. Renaming a buyer rewrites `buyer` on that buyer's rows in the same transaction (one name per buyer in the history and the sheet). |
 | Lines | 1 to 9 lines; a crop at most once in a delivery; `crop` one of `CROP_KEYS`. |
