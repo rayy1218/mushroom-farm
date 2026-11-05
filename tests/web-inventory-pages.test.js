@@ -186,3 +186,20 @@ test('audit #3 and #5: Count stock keeps typed figures until saved, asks before 
   const css = src('styles.css');
   assert.match(css, /\.iv-count-send \{ position: sticky; bottom: 0;/);
 });
+
+test('audit list fixes: empty farm (#9), Count stock button (#10), pill by the name and a capped page (#11), the phone line (#12), attention filters (#13), archived rows (#14)', () => {
+  const page = src('inventory-page.js');
+  assert.ok(page.includes('<p class="muted" data-loading role="status">Loading…</p>'));
+  assert.ok(page.includes('els.use.hidden = nothing;') && page.includes('els.count.hidden = nothing;') && page.includes('els.add.hidden = nothing;'));
+  assert.ok(page.includes("if (pill) name.append(' ', pillNode(pill));"));
+  assert.ok(!page.includes("'iv-state-col'"), 'no fifth column');
+  assert.ok(page.includes("el('span', 'iv-meta', metaLine(item, now))"));
+  assert.ok(page.includes("b.setAttribute('aria-pressed', String(filter === p.key));"));
+  assert.ok(page.includes('items.filter((i) => needsLook(i, filter))'));
+  assert.ok(page.includes("'iv-row iv-row-archived'"));
+  assert.ok(page.includes('askedArchived = true;'));
+  const css = src('styles.css');
+  assert.ok(css.includes('.iv-page { max-width: 1040px; }'));
+  assert.ok(css.includes('.iv-tools a.button { min-height: 36px; padding: 7px 14px; background: var(--raised);'));
+  assert.ok(css.includes('.iv-table .iv-row-archived :is(th, td, a) { color: var(--muted); }'));
+});

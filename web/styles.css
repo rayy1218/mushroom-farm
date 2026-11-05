@@ -2113,11 +2113,19 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 @media (max-width: 600px) { .hv-sheet-tools .back { padding: 10px 0; } }
 
 /* ---- Inventory (spec 2026-11-05-inventory-design.md 5) ---- */
+.iv-page { max-width: 1040px; } /* audit #11: at 1440 px a name sat 600 to 900 px from its figures; the head, cards and lines keep one right edge */
 .iv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.iv-tools a.button { min-height: 36px; padding: 7px 14px; background: var(--raised); font-weight: 500; } /* Count stock looks like its neighbours (audit #10) */
+.iv-tools a.button:hover { background: color-mix(in srgb, var(--ink) 7%, var(--raised)); }
 .iv-sheet-link { color: var(--ink-2); font-size: var(--fs-sm); padding: 10px 4px; }
 .iv-attention { margin: 0 0 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.iv-attention .iv-att { min-height: 0; padding: 4px 0; border: 0; background: none; font: inherit; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 4px; }
+.iv-attention .iv-att:hover { background: none; text-decoration-style: solid; }
+.iv-attention .iv-att[aria-pressed="true"] { text-decoration-style: solid; text-decoration-thickness: 2px; }
 .iv-att[data-tone="amber"] { color: var(--warning-text); }
 .iv-att[data-tone="warn"] { color: var(--critical-text); }
+.iv-filter-line { margin: -8px 0 12px; font-size: var(--fs-sm); }
+.iv-filter-line .iv-link, .iv-archived .iv-link { color: var(--ink); }
 .iv-done-line { margin: -4px 0 12px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; } /* after a record: what was saved, Undo */
 .iv-done-line:focus { outline: none; }
 .iv-done-line .iv-undo { padding: 6px 2px; color: var(--ink); }
@@ -2129,7 +2137,6 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   .iv-table { table-layout: fixed; }
   .iv-table th:nth-child(2), .iv-table th:nth-child(3) { width: 130px; }
   .iv-table th:nth-child(4) { width: 150px; }
-  .iv-table th:nth-child(5) { width: 120px; }
 }
 .iv-row { cursor: pointer; }
 @media (hover: hover) {
@@ -2137,32 +2144,35 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
 }
 .iv-table .iv-name a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .iv-table .iv-name a:hover { text-decoration: underline; }
+.iv-table .iv-name .pill { margin-left: 4px; vertical-align: 1px; }
 .iv-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }
+.iv-meta { display: none; } /* the phone's line (the desk has its columns) */
 .iv-table .iv-qty { font-weight: 600; }
 .iv-counted { color: var(--ink-2); }
 .iv-stale { color: var(--muted); }
-.iv-state-col, .iv-state { white-space: nowrap; text-align: right; }
+.iv-table .iv-row-archived :is(th, td, a) { color: var(--muted); } /* archived rows read as set aside (audit #14) */
+.iv-table .iv-row-archived .iv-qty, .iv-table .iv-row-archived .iv-name a { font-weight: 500; }
 .iv-all-archived { margin: 0 0 8px; }
 .iv-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; background: transparent; border-style: dashed; border-color: var(--border-strong); }
 .iv-empty .none { margin: 0; }
 .iv-archived { margin: 12px 0 0; }
+.iv-archived .muted { display: block; font-size: var(--fs-sm); }
 .iv-link { background: none; border: 0; padding: 10px 0; color: var(--ink-2); text-decoration: underline; cursor: pointer; font: inherit; }
 @media (max-width: 600px) {
   .iv-tools { flex: 1 1 100%; margin-left: 0; }
   .iv-tools > :is(button, a.button) { flex: 1 1 calc(50% - 4px); justify-content: center; min-height: 44px; }
   .iv-sheet-link { flex: 1 1 100%; display: flex; align-items: center; min-height: 44px; }
+  .iv-attention .iv-att { min-height: 44px; }
+  .iv-filter-line .iv-link { min-height: 44px; }
   .iv-table { table-layout: auto; }
   .iv-table thead { display: none; }
-  .iv-table tr { display: grid; grid-template-columns: minmax(0, auto) auto 1fr; align-items: center; gap: 0 12px; padding: 4px 0; border-top: 1px solid var(--border); }
+  .iv-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 12px; padding: 6px 0; border-top: 1px solid var(--border); }
   .iv-table :is(th, td) { border: 0; padding: 0; }
-  .iv-table .iv-name { grid-column: 1; grid-row: 1; }
+  .iv-table .iv-name { grid-column: 1; }
   .iv-table .iv-name a { display: inline-flex; align-items: center; min-height: 44px; }
-  .iv-table .iv-state { grid-column: 2; grid-row: 1; text-align: left; }
-  .iv-table .iv-qty { grid-column: 3; grid-row: 1; text-align: right; }
-  .iv-table :is(.iv-state, .iv-qty) { align-self: start; min-height: 44px; display: flex; align-items: center; }
-  .iv-table .iv-qty { justify-content: flex-end; }
-  .iv-table :is(.iv-reorder, .iv-counted) { grid-column: 1 / -1; text-align: left; color: var(--muted); font-size: var(--fs-sm); padding-bottom: 2px; }
-  .iv-table :is(.iv-reorder, .iv-counted)::before { content: attr(data-label) ": "; }
+  .iv-table .iv-qty { grid-column: 2; grid-row: 1; display: flex; align-items: center; justify-content: flex-end; min-height: 44px; text-align: right; }
+  .iv-table :is(.iv-reorder, .iv-counted) { display: none; }
+  .iv-meta { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; padding-bottom: 2px; }
 }
 .iv-item { display: grid; gap: 16px; }
 .iv-tiles { margin: 0; }

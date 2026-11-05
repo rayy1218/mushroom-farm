@@ -99,25 +99,41 @@ export function lotPill(lot) {
   return null;
 }
 
-// Last counted in words; stale (muted) over 7 days or never: a reminder, not a fault, so never amber.
+// Last counted in words ("today", "3 days ago", "10 days ago": the column head says Last counted); stale (muted) over 7 days or never: a reminder, not a fault, so never amber.
 export function countedText(at, now) {
   if (!finite(at)) return { text: 'never', stale: true };
   const days = daysFrom(farmDate(at), farmDate(now));
   if (days <= 0) return { text: 'today', stale: false };
   if (days === 1) return { text: 'yesterday', stale: false };
   if (days <= 7) return { text: `${days} days ago`, stale: false };
-  return { text: `not counted for ${days} days`, stale: true };
+  return { text: `${days} days ago`, stale: true };
+}
+
+// The list's line under a name on a phone (audit #12): "Reorder at 2.00 L · counted today", "Counted 10 days ago".
+export function metaLine(item, now) {
+  const c = countedText(item.lastCountedAt, now);
+  const counted = c.text === 'never' ? 'never counted' : `counted ${c.text}`;
+  if (item.reorderAt === null || item.reorderAt === undefined) return counted[0].toUpperCase() + counted.slice(1);
+  return `Reorder at ${qtyText(item.reorderAt, item.unit)}${DOT}${counted}`;
+}
+
+// Whether an item (not archived) is one an attention part counts: 'low', 'soon' (its worst use-by), 'expired'; any item
+// for no key.
+export function needsLook(item, key) {
+  if (!key) return true;
+  if (item.archived) return false;
+  return key === 'low' ? Boolean(item.low) : item.useBy?.state === key;
 }
 
 // The attention line's parts: "2 low" and "1 to use by 12 Nov" amber, "1 expired" red. items: the list (a lone soon item's day).
 export function attentionParts(attention, items = []) {
   const parts = [];
-  if (attention?.low) parts.push({ text: `${attention.low} low`, tone: 'amber' });
+  if (attention?.low) parts.push({ key: 'low', text: `${attention.low} low`, tone: 'amber' });
   if (attention?.soon) {
     const dates = items.filter((i) => !i.archived && i.useBy?.state === 'soon').map((i) => i.useBy.date).sort();
-    parts.push({ text: attention.soon === 1 && dates.length ? `1 to use by ${dayText(dates[0])}` : `${attention.soon} to use within 7 days`, tone: 'amber' });
+    parts.push({ key: 'soon', text: attention.soon === 1 && dates.length ? `1 to use by ${dayText(dates[0])}` : `${attention.soon} to use within 7 days`, tone: 'amber' });
   }
-  if (attention?.expired) parts.push({ text: `${attention.expired} expired`, tone: 'warn' });
+  if (attention?.expired) parts.push({ key: 'expired', text: `${attention.expired} expired`, tone: 'warn' });
   return parts;
 }
 

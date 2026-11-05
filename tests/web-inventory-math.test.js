@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
+  metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, KIND_OPTIONS, UNIT_OPTIONS,
 } from '../web/inventory-math.js';
@@ -90,15 +90,15 @@ test("last counted in words; over 7 days or never is muted", () => {
   assert.deepEqual(countedText(at('2026-11-05', '08:00'), now), { text: 'today', stale: false });
   assert.deepEqual(countedText(at('2026-11-04'), now), { text: 'yesterday', stale: false });
   assert.deepEqual(countedText(at('2026-10-29'), now), { text: '7 days ago', stale: false });
-  assert.deepEqual(countedText(at('2026-10-27'), now), { text: 'not counted for 9 days', stale: true });
+  assert.deepEqual(countedText(at('2026-10-27'), now), { text: '9 days ago', stale: true }, 'the column head says Last counted (audit #11)');
 });
 
 test('the attention line: low and soon amber, expired red; one soon item names its day', () => {
   const soon = item({ useBy: { date: '2026-11-12', state: 'soon' } });
   assert.deepEqual(attentionParts({ low: 2, soon: 1, expired: 1 }, [soon]), [
-    { text: '2 low', tone: 'amber' }, { text: '1 to use by 12 Nov', tone: 'amber' }, { text: '1 expired', tone: 'warn' },
+    { key: 'low', text: '2 low', tone: 'amber' }, { key: 'soon', text: '1 to use by 12 Nov', tone: 'amber' }, { key: 'expired', text: '1 expired', tone: 'warn' },
   ]);
-  assert.deepEqual(attentionParts({ low: 0, soon: 2, expired: 0 }, [soon, soon]), [{ text: '2 to use within 7 days', tone: 'amber' }]);
+  assert.deepEqual(attentionParts({ low: 0, soon: 2, expired: 0 }, [soon, soon]), [{ key: 'soon', text: '2 to use within 7 days', tone: 'amber' }]);
   assert.deepEqual(attentionParts({ low: 0, soon: 0, expired: 0 }, []), []);
   const old = item({ archived: true, useBy: { date: '2026-11-08', state: 'soon' } });
   assert.equal(attentionParts({ low: 0, soon: 1, expired: 0 }, [old, soon])[0].text, '1 to use by 12 Nov');
@@ -304,4 +304,24 @@ test("Count stock's typed figures kept until saved (audit #3): only the items st
   assert.deepEqual(keptCounts({ 1: 5 }, items), {}, 'text only');
   assert.equal(leaveText(1), 'Leave Count stock? 1 typed count is not saved yet.');
   assert.equal(leaveText(3), 'Leave Count stock? 3 typed counts are not saved yet.');
+});
+
+test("the list's phone line (audit #12): the level and when counted in one muted line", () => {
+  const now = at('2026-11-05', '09:00');
+  assert.equal(plain(metaLine(item({ reorderAt: 2, lastCountedAt: at('2026-11-05', '08:00') }), now)), 'Reorder at 2.00 L · counted today');
+  assert.equal(metaLine(item({ lastCountedAt: at('2026-10-26') }), now), 'Counted 10 days ago');
+  assert.equal(metaLine(item(), now), 'Never counted');
+  assert.equal(plain(metaLine(item({ reorderAt: 2 }), now)), 'Reorder at 2.00 L · never counted');
+});
+
+test("the attention line's parts filter the list (audit #13): the items each part counts", () => {
+  const low = item({ id: 1, low: true });
+  const soon = item({ id: 2, useBy: { date: '2026-11-12', state: 'soon' } });
+  const expired = item({ id: 3, low: true, useBy: { date: '2026-11-01', state: 'expired', qty: 1 } });
+  const old = item({ id: 4, low: true, archived: true });
+  const all = [low, soon, expired, old];
+  assert.deepEqual(all.filter((i) => needsLook(i, 'low')).map((i) => i.id), [1, 3]);
+  assert.deepEqual(all.filter((i) => needsLook(i, 'soon')).map((i) => i.id), [2]);
+  assert.deepEqual(all.filter((i) => needsLook(i, 'expired')).map((i) => i.id), [3]);
+  assert.equal(needsLook(low, null), true, 'no filter: every item');
 });
