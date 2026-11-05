@@ -19,3 +19,23 @@ test('the dialogs: on the tasks openForm; the routes they send to; more than in 
   assert.ok(d.includes("closeLabel: 'Keep it'"));
   assert.ok(d.includes("label: 'Delete this record'"));
 });
+
+test('the list page: mounted by the router; reads the list on the inventory events; its buttons and links', () => {
+  const app = src('app.js');
+  assert.ok(app.includes("import * as inventory from './inventory-page.js';"));
+  assert.ok(app.includes(": route.name === 'inventory' ? inventory.mount(view, {})"));
+  const page = src('inventory-page.js');
+  assert.ok(page.includes("live.on('inventory', () => reload.call())"));
+  assert.ok(page.includes("request('GET', archived ? '/api/inventory?archived=1' : '/api/inventory')"));
+  for (const words of ['Record use', 'Purchase', 'Count stock', 'Add item', 'myGAP 4-5 sheet', 'No stock items yet.']) assert.ok(page.includes(words), words);
+});
+
+test('the styles: one Inventory block at the end, .iv- classes, tokens only', () => {
+  const css = src('styles.css');
+  const start = css.indexOf('/* ---- Inventory');
+  const end = css.indexOf('/* ---- end Inventory ---- */');
+  assert.ok(start > 0 && end > start);
+  const block = css.slice(start, end);
+  assert.doesNotMatch(block, /#[0-9a-fA-F]{3,8}\b/, 'no fixed colours: tokens only');
+  for (const sel of block.match(/^[^@\s/}][^{]*\{/gm) ?? []) assert.match(sel, /\.iv-/, sel);
+});
