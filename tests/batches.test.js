@@ -232,3 +232,54 @@ test('shared fields edited on a part are written to the whole delivery; a note s
   assert.deepEqual([batches.detail(a.id).pricePerBlock, batches.detail(a.id).spawnBatch, batches.detail(a.id).note], [2.5, '0913', null]);
   assert.equal(batches.detail(part.id).note, 'part note');
 });
+
+test('checks: record, list newest first, edit, delete; good blocks follow', (t) => {
+  const { batches, tick } = setup(t);
+  const a = batches.receive(GOOD);
+  const c1 = batches.addCheck(a.id, { lost: 20, cause: 'green', worker: 'Ali', note: 'top shelf' });
+  assert.deepEqual([c1.batchId, c1.at, c1.lost, c1.cause, c1.worker, c1.note], [a.id, NOW, 20, 'green', 'Ali', 'top shelf']);
+  tick(60_000);
+  const c2 = batches.addCheck(a.id, { lost: 5, cause: 'pests', worker: 'Siti' });
+  const d = batches.detail(a.id);
+  assert.equal(d.good, 1175);
+  assert.deepEqual(d.checks.map((c) => c.id), [c2.id, c1.id]);
+  const e = batches.editCheck(c1.id, { lost: 30 });
+  assert.deepEqual([e.lost, e.worker, e.note], [30, 'Ali', 'top shelf'], 'not given: kept');
+  batches.removeCheck(c2.id);
+  assert.equal(batches.detail(a.id).good, 1170);
+  assert.equal(status(() => batches.removeCheck(c2.id))[0], 404);
+  assert.equal(status(() => batches.editCheck(999, { lost: 1 }))[0], 404);
+});
+
+test('checks: the refusals', (t) => {
+  const { batches } = setup(t);
+  const a = batches.receive({ ...GOOD, blocks: 10 });
+  const cases = [
+    [{ lost: 11, cause: 'green', worker: 'Ali' }, 'lost'],
+    [{ lost: 0, cause: 'green', worker: 'Ali' }, 'lost'],
+    [{ lost: 1, cause: 'rot', worker: 'Ali' }, 'cause'],
+    [{ lost: 1, cause: 'green', worker: '' }, 'worker'],
+    [{ lost: 1, cause: 'green', worker: 'Ali', at: NOW + 60_000 }, 'at'],
+    [{ lost: 1, cause: 'green', worker: 'Ali', at: GOOD.receivedAt - 86_400_000 }, 'at'],
+  ];
+  for (const [body, field] of cases) assert.deepEqual(status(() => batches.addCheck(a.id, body)).slice(0, 2), [400, field], JSON.stringify(body));
+  const c = batches.addCheck(a.id, { lost: 10, cause: 'black', worker: 'Ali' });
+  assert.equal(status(() => batches.addCheck(a.id, { lost: 1, cause: 'green', worker: 'Ali' }))[0], 409, 'all lost already');
+  assert.equal(batches.editCheck(c.id, { lost: 10 }).lost, 10, 'its own lost blocks count back in');
+});
+
+test('checks: a name not on the workers list is refused when the farm has one', (t) => {
+  const { db, batches } = setup(t);
+  db.setWorkers([{ name: 'Ali', active: true }]);
+  const a = batches.receive(GOOD);
+  assert.deepEqual(status(() => batches.addCheck(a.id, { lost: 1, cause: 'green', worker: 'Bob' })).slice(0, 2), [400, 'worker']);
+  assert.equal(batches.addCheck(a.id, { lost: 1, cause: 'green', worker: 'ali' }).worker, 'Ali');
+});
+
+test('a batch whose blocks are all lost cannot be put into a room', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const a = batches.receive({ ...GOOD, blocks: 3 });
+  batches.addCheck(a.id, { lost: 3, cause: 'bacterial', worker: 'Ali' });
+  assert.deepEqual(status(() => batches.place(a.id, { roomId })), [409, null, 'Every block of this batch was lost']);
+});
