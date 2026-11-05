@@ -76,3 +76,20 @@ Counts: P0 0 · P1 4 · P2 21.
 | Detector, files | 0 findings on the seven `web/inventory-*.js` files |
 | Detector, in-page (1440 and 390 px) | `overused-font` Inter on every page: a false positive (DESIGN.md chose Inter). `line-length` on two Settings hints, the Inventory note (true, #25) and the older Task rules note. Nothing else: no side stripes, no low-contrast text, no raw colours |
 | Top-bar link | Not reported: the integrator adds the Business entry at the merge |
+
+## For the integrator (fixes that lie in shared code, 2026-11-05)
+
+The audit fixes above were made in Inventory's own files (`web/inventory*.js`, `server/inventory*.js`, its `db.js` block, the `.iv-` CSS block). These lie in shared code and are left for the merge:
+
+| # | Where | What to do |
+|---|---|---|
+| 23 | `web/styles.css` `.hv-sheet-facts .hv-write-line` (Harvest) | `min-width: min(40ch, 55vw)` so the Harvest 4-6 sheet's Farm line stays within a 390 px page too. Inventory overrides it for its own sheet (`.iv-sheet .hv-sheet-facts .hv-write-line`); that line can go then |
+| 24a | `web/styles.css`, the shared `@media print` block for `body.printing-sheet` | `html:root:has(body.printing-sheet) { color-scheme: light; background: Canvas; }`, so the 4-6 sheet and the task month sheet print light margins in the dark theme. `:root[data-theme="dark"]` is (0,2,0), so a plain `html:has(…)` loses. Inventory has its own for the 4-5 sheet (`html:root:has(.iv-sheet)`); it can go then |
+| 10 | `web/styles.css` line 811, `a.button` | App-wide, a link styled as a button is 40 px with the `surface` fill beside 36 px `raised` buttons. Give it the button's own look (check Suggest machines' 44 px rule at line 1396). Inventory scopes its own (`.iv-tools a.button`) |
+| 25 | `web/task-settings.js`, the Workers card | Its note still says the names are picked "on Done and Skip, on a room's Tasks tab and the Today page". Suggested: "The names to pick from on Done and Skip, Record use and Count stock. A removed name stays on what it recorded." |
+| 17 | `web/inventory-math.js` `lotLabel` and `moveLine`, `web/inventory-item.js` | Once the Batches route exists, make "Batch 14" (a lot's From, a history row) a link to `#/business/batches/14` (`moveLine` has the move's `refId`) |
+| 3 | `web/app.js`, the router | A page cannot cancel a hashchange: the router's listener on `window` is registered first and a capture listener there runs after it. Count stock guards its typed boxes with a capture `click` on app links (cancelled on Cancel) and `popstate` (the phone's Back: the address is put back and the router shows Count stock again, the figures restored from `sessionStorage`). A router hook, e.g. `unmount.canLeave?.(newHash)` asked before `show()`, would let it keep its place and scroll on Back |
+| — | Tasks' Settings card (`every-*` boxes) | Chrome's issue "A form field element should have an id or name attribute" (8 boxes). Inventory's checkbox now has `name="inventoryTelegram"` |
+| — | The top bar | The Business entry, as planned |
+
+Not done, by choice: the audit's #1 also suggested remembering the last Room. Record use opens on "Not in a room" every time: a remembered room would put a use in the wrong room as silently as the old first item did, while "Not in a room" is only missing information.
