@@ -14,6 +14,7 @@ import * as taskSheet from './task-sheet.js';
 import * as inventory from './inventory-page.js'; // ---- Inventory ----
 import * as inventoryItem from './inventory-item.js';
 import * as inventoryCount from './inventory-count.js';
+import * as inventorySheet from './inventory-sheet.js';
 import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
@@ -69,6 +70,7 @@ function show(before = '') {
     : route.name === 'inventory' ? inventory.mount(view, {})
     : route.name === 'inventoryItem' ? inventoryItem.mount(view, { id: route.id })
     : route.name === 'inventoryCount' ? inventoryCount.mount(view, {})
+    : route.name === 'inventorySheet' ? inventorySheet.mount(view, { days: route.days })
     : overview.mount(view, {});
   // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet.
   const section = route.name === 'sheet' ? 'harvest' : ['settings', 'overview', 'today', 'calendar', 'harvest'].includes(route.name) ? route.name : null;

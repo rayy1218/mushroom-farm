@@ -73,3 +73,15 @@ test('Count stock: mounted; one form of every item; sends the typed ones; a refr
   assert.ok(page.includes('By the records'));
   assert.ok(page.includes('location.hash = INVENTORY_HASH'));
 });
+
+test('the 4-5 sheet: mounted; the period in its address; printing as the 4-6 sheet does', () => {
+  const app = src('app.js');
+  assert.ok(app.includes("import * as inventorySheet from './inventory-sheet.js';"));
+  assert.ok(app.includes(": route.name === 'inventorySheet' ? inventorySheet.mount(view, { days: route.days })"));
+  const page = src('inventory-sheet.js');
+  assert.ok(page.includes("document.body.classList.add('printing-sheet')"));
+  assert.ok(page.includes("document.body.classList.remove('printing-sheet')"));
+  assert.ok(page.includes('request(\'GET\', `/api/inventory/sheet?days=${period}`)'));
+  assert.ok(page.includes("history.replaceState(null, '', inventorySheetHash(n))"));
+  assert.ok(page.includes('window.print()'));
+});

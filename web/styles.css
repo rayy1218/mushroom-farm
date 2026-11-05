@@ -2200,4 +2200,11 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   .iv-count-row { grid-template-columns: minmax(0, 1fr) 120px; }
   .iv-count-send button { flex: 1 1 auto; min-height: 44px; }
 }
+.iv-sheet .hv-sheet-tools .range-bar { margin: 0; }
+.iv-sheet-table { min-width: 1100px; } /* twelve columns: a phone scrolls the sheet sideways */
+.iv-sheet-table td:nth-child(4) { min-width: 12rem; }
+@media print {
+  body.printing-sheet .iv-sheet-table { min-width: 0; font-size: 8pt; }
+  body.printing-sheet .iv-sheet-table td { height: 8mm; }
+}
 /* ---- end Inventory ---- */
