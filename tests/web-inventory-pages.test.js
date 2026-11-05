@@ -50,3 +50,15 @@ test('the list page review fixes: the farm day in the paint key, all-archived li
   const css = src('styles.css');
   assert.match(css, /@media \(min-width: 900px\)[^}]*\n\s+\.iv-table \{ table-layout: fixed; \}/);
 });
+
+test("the item page: mounted; its tiles, lots and history; batch moves not edited; the item's own actions", () => {
+  const app = src('app.js');
+  assert.ok(app.includes("import * as inventoryItem from './inventory-item.js';"));
+  assert.ok(app.includes(": route.name === 'inventoryItem' ? inventoryItem.mount(view, { id: route.id })"));
+  const page = src('inventory-item.js');
+  assert.ok(page.includes('request(\'GET\', `/api/inventory/items/${id}`)'));
+  for (const words of ['In stock', 'Reorder at', 'Last counted', 'Lots', 'History', 'Change it in Batches', 'Throw out', 'Bring back', 'That item no longer exists.']) {
+    assert.ok(page.includes(words), words);
+  }
+  assert.ok(page.includes('HISTORY_SHOWN = 20'));
+});

@@ -2158,4 +2158,30 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   .iv-table :is(.iv-reorder, .iv-counted) { grid-column: 1 / -1; text-align: left; color: var(--muted); font-size: var(--fs-sm); padding-bottom: 2px; }
   .iv-table :is(.iv-reorder, .iv-counted)::before { content: attr(data-label) ": "; }
 }
+.iv-item { display: grid; gap: 16px; }
+.iv-tiles { margin: 0; }
+.iv-tiles .us-basis { text-transform: none; font-size: var(--fs-sm); }
+.iv-lots h2, .iv-history h2 { margin: 0 0 8px; font-size: var(--fs-md); font-weight: 600; }
+.iv-lot-action { text-align: right; }
+.iv-moves { list-style: none; margin: 0; padding: 0; }
+.iv-move { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 4px 16px; padding: 10px 0; border-top: 1px solid var(--border); }
+.iv-move:first-child { border-top: 0; }
+.iv-move-text { display: flex; flex-direction: column; min-width: 0; }
+.iv-move-when { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.iv-move-qty { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.iv-move-note { color: var(--muted); font-size: var(--fs-sm); }
+@media (max-width: 600px) {
+  .iv-back { display: inline-flex; align-items: center; min-height: 44px; }
+  .iv-lot-table thead { display: none; }
+  .iv-lot-table tr { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 12px; padding: 4px 0; border-top: 1px solid var(--border); }
+  .iv-lot-table :is(th, td) { border: 0; padding: 0; }
+  .iv-lot-table .iv-lot-qty { display: none; }
+  .iv-lot-table .iv-lot-left::before { content: "Left "; color: var(--muted); font-weight: 400; }
+  .iv-lot-table .iv-lot-useby { grid-column: 1; }
+  .iv-lot-table .iv-lot-action { grid-column: 2; }
+  .iv-lot-action button { white-space: nowrap; min-height: 44px; }
+  .iv-move { grid-template-columns: 1fr auto; }
+  .iv-move-text { grid-row: 1 / span 2; }
+  .iv-move :is(.iv-move-edit, .iv-move-note) { grid-column: 2; justify-self: end; }
+}
 /* ---- end Inventory ---- */
