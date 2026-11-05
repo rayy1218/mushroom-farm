@@ -15,19 +15,21 @@ import {
 const COMMAND_TIMEOUT = 15000;
 const BACK_DAYS = 400;
 
-// → true, or the problem for the dialog: { field, message } (the server's field; 'at' is the time box's) or { message }.
+// → true, or the problem for the dialog: { field, message } (the server's field; 'at' is the time box's) or { message }
+// ({ message, stale } on a 404 or 409: the record is gone or changed, so the page reads again).
 async function send(method, path, body) {
   try {
     await request(method, path, body, COMMAND_TIMEOUT);
     return true;
   } catch (err) {
+    if (err.status === 404 || err.status === 409) return { message: errorText(err), stale: true }; // gone or changed: the page reads again
     if (err.status === 400 && err.field === 'worker') window.dispatchEvent(new CustomEvent('farm:worker')); // renamed or removed
     if (err.status === 400 && err.field) return { field: err.field === 'at' ? 'time' : err.field, message: err.message };
     return { message: routeMissing(err) ? OUTDATED : errorText(err) };
   }
 }
 const finish = (result, onDone) => {
-  if (result === true) onDone?.();
+  if (result === true || result?.stale) onDone?.();
   return result;
 };
 
@@ -213,7 +215,7 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
 }
 
 // items: the list's items (archived ones left out; block items take uses); reasons: the item's earlier ones.
-export async function openUseDialog({ items, itemId = null, reasons = [], onDone, onLost }) {
+export async function openUseDialog({ items, itemId = null, reasons = [], onDone, onLost, alive = () => true }) {
   const list = items.filter((i) => !i.archived);
   if (!list.length) return null;
   let names;
@@ -221,9 +223,10 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
   try {
     [names, rooms] = await Promise.all([loadWorkers(), request('GET', '/api/rooms')]);
   } catch (err) {
-    onLost?.(errorText(err));
+    if (alive()) onLost?.(errorText(err));
     return null;
   }
+  if (!alive()) return null;
   let item = list.find((i) => i.id === itemId) ?? list[0];
   const shown = whenBoxes(Date.now());
   const guard = createOverGuard();
@@ -261,9 +264,10 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
 // ---- a record: Edit, Delete, Throw out ----
 
 // Edit a purchase or a use (a count is deleted, not edited; a batch move is Batches'). throwOuts: the purchase has some.
-export async function openMoveDialog({ move, item, suppliers = [], reasons = [], throwOuts = false, onDone, onLost }) {
+export async function openMoveDialog({ move, item, suppliers = [], reasons = [], throwOuts = false, onDone, onLost, alive = () => true }) {
   const remove = { label: 'Delete this record', action: () => openDeleteDialog({ move, item, throwOuts, onDone, onLost }) };
   if (move.refKind === 'purchase') {
+    const oldest = daysBefore(farmDate(Date.now()), BACK_DAYS); // a day stored older than this stays valid in the box
     const form = openForm({
       title: 'Edit a purchase',
       fields: [
@@ -273,7 +277,7 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
         {
           kind: 'group', className: 'tk-when',
           fields: [
-            { name: 'day', label: 'Day bought', kind: 'date', value: farmDate(move.at), max: farmDate(Date.now()), hintOf: dateHint },
+            { name: 'day', label: 'Day bought', kind: 'date', value: farmDate(move.at), ...(farmDate(move.at) >= oldest ? { min: oldest } : {}), max: farmDate(Date.now()), hintOf: dateHint },
             { name: 'useBy', label: 'Use by', kind: 'date', value: move.useBy ?? '', hintOf: (d) => (d ? dateHint(d) : 'Optional.') },
           ],
         },
@@ -295,19 +299,21 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
   try {
     [names, rooms] = await Promise.all([loadWorkers(), request('GET', '/api/rooms')]);
   } catch (err) {
-    onLost?.(errorText(err));
+    if (alive()) onLost?.(errorText(err));
     return null;
   }
+  if (!alive()) return null;
+  const throwOut = move.lotId !== null && move.lotId !== undefined; // a throw-out never has a room
   const shown = whenBoxes(move.at);
   const roomOptions = [['', 'Not in a room'], ...rooms.map((r) => [String(r.id), r.name])];
   if (move.roomId !== null && !rooms.some((r) => r.id === move.roomId)) roomOptions.push([String(move.roomId), 'A deleted room']);
   const form = openForm({
-    title: move.lotId === null ? 'Edit a use' : 'Edit a throw-out',
+    title: throwOut ? 'Edit a throw-out' : 'Edit a use',
     fields: [
-      { name: 'qty', label: 'Qty used', kind: 'number', value: String(-move.qty), suffix: item.unit },
-      { name: 'roomId', label: 'Room', kind: 'select', value: move.roomId === null ? '' : String(move.roomId), options: roomOptions },
+      { name: 'qty', label: throwOut ? 'Qty thrown out' : 'Qty used', kind: 'number', value: String(-move.qty), suffix: item.unit },
+      ...(throwOut ? [] : [{ name: 'roomId', label: 'Room', kind: 'select', value: move.roomId === null ? '' : String(move.roomId), options: roomOptions }]),
       { name: 'reason', label: 'Reason', kind: 'text', value: move.reason ?? '', maxLength: 60, hint: 'Optional.' },
-      workerFieldWith(names, 'Who used it', move.worker),
+      workerFieldWith(names, throwOut ? 'Who threw it out' : 'Who used it', move.worker),
       ...whenFields(shown),
     ],
     buttons: [remove, { value: 'save', label: 'Save', primary: true }],
@@ -334,14 +340,15 @@ export function openDeleteDialog({ move, item, throwOuts = false, onDone, onLost
   });
 }
 
-export async function openThrowOutDialog({ lot, item, onDone, onLost }) {
+export async function openThrowOutDialog({ lot, item, onDone, onLost, alive = () => true }) {
   let names;
   try {
     names = await loadWorkers();
   } catch (err) {
-    onLost?.(errorText(err));
+    if (alive()) onLost?.(errorText(err));
     return null;
   }
+  if (!alive()) return null;
   return openForm({
     title: throwOutTitle(lot, item),
     lead: [throwOutLead(lot), ...namesLead(names)],

@@ -197,6 +197,24 @@ test('the edit bodies carry only what changed', () => {
   assert.deepEqual(useEditBody({ qty: '2', roomId: '', reason: 'Footbath', worker: 'Ali', date: '2026-11-03', time: '08:12' }, use, bleach, { now: at('2026-11-05'), shown }), { qty: 2 });
 });
 
+test('an old purchase can be fixed, its day bound applies only when the day changes', () => {
+  const bleach = item();
+  const old = { qty: 5, total: 25, supplier: 'Kedai Ali', useBy: null, at: at('2025-01-10') };
+  const v = { qty: '5', total: '30', supplier: 'Kedai Ali', day: '2025-01-10', useBy: '' };
+  assert.deepEqual(purchaseEditBody(v, old, bleach, '2026-11-05'), { total: 30 });
+  const moved = purchaseEditBody({ ...v, day: '2025-02-01' }, old, bleach, '2026-11-05');
+  assert.equal(moved.field, 'day');
+  assert.equal(moved.error, 'Pick a day from the last 400 days up to today');
+});
+
+test('a throw-out edit without a Room box sends no roomId', () => {
+  const bleach = item();
+  const out = { qty: -1, roomId: null, lotId: 3, reason: 'Expired', worker: 'Ali', at: at('2026-11-03', '08:12') };
+  const shown = { date: '2026-11-03', time: '08:12' };
+  const v = { qty: '2', reason: 'Expired', worker: 'Ali', date: '2026-11-03', time: '08:12' };
+  assert.deepEqual(useEditBody(v, out, bleach, { now: at('2026-11-05'), shown }), { qty: 2 });
+});
+
 test('more than in stock asks', () => {
   assert.equal(overStock(5, item({ qty: 2 })).replace(/\u00a0/g, ' '), 'Only 2.00 L in stock. Record 5.00 L anyway?');
   assert.equal(overStock(2, item({ qty: 2 })), null);

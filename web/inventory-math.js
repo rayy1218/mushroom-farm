@@ -200,8 +200,8 @@ export function itemBody(values, item = null) {
   return body;
 }
 
-// Purchase: today is the farm's day (the latest a purchase may be).
-export function purchaseBody(values, item, today) {
+// Purchase: today is the farm's day (the latest a purchase may be). limitBack false: an Edit leaving the day as stored.
+export function purchaseBody(values, item, today, { limitBack = true } = {}) {
   const qty = numberIn(values.qty, item.unit);
   if (qty.error) return { error: qty.error, field: 'qty' };
   const t = String(values.total ?? '').trim();
@@ -211,7 +211,7 @@ export function purchaseBody(values, item, today) {
   if (tooLong(supplier)) return { error: `The supplier must be at most ${MAX_TEXT} characters`, field: 'supplier' };
   const day = String(values.day ?? '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > today) return { error: 'Pick a day up to today', field: 'day' };
-  if (day < daysBefore(today, 400)) return { error: 'Pick a day from the last 400 days up to today', field: 'day' };
+  if (limitBack && day < daysBefore(today, 400)) return { error: 'Pick a day from the last 400 days up to today', field: 'day' };
   const useBy = String(values.useBy ?? '');
   if (useBy && useBy < day) return { error: 'The use-by cannot be before the day it was bought', field: 'useBy' };
   return { itemId: item.id, qty: qty.value, total, supplier, useBy: useBy || null, day };
@@ -238,7 +238,7 @@ export function useBody(values, item, { now, shown }) {
 
 // The Edit dialogs: only what changed (an empty body: nothing to send).
 export function purchaseEditBody(values, m, item, today) {
-  const full = purchaseBody(values, item, today);
+  const full = purchaseBody(values, item, today, { limitBack: String(values.day ?? '') !== farmDate(m.at) });
   if (full.error) return full;
   const was = { qty: m.qty, total: m.total, supplier: m.supplier, useBy: m.useBy, day: farmDate(m.at) };
   return Object.fromEntries(Object.keys(was).filter((k) => full[k] !== was[k]).map((k) => [k, full[k]]));
