@@ -84,6 +84,8 @@ function show(before = '') {
   // ---- Business ---- the four pages under the strip of their tabs: the page mounts into its own box below it
   const tab = businessTabOf(route);
   if (tab) keepBusiness(tab);
+  // the look the four modules share (styles.css's .bz- block: card titles, head buttons) on every business page but a sheet
+  view.classList.toggle('bz-view', Boolean(tab) && !/Sheet$/.test(route.name));
   let page = view;
   if (businessStrip(route)) {
     page = document.createElement('div');
@@ -110,12 +112,13 @@ function show(before = '') {
     : route.name === 'inventoryCount' ? inventoryCount.mount(view, {})
     : route.name === 'inventorySheet' ? inventorySheet.mount(view, { days: route.days })
     : overview.mount(view, {});
-  // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet; Business on every business page.
+  // The Rooms entry stays current on a room's page and its tasks sheet; Harvest on its myGAP sheet; Business on every business page,
+  // as "true" (the section it is in; the strip's tab is the page itself, "page").
   const section = route.name === 'sheet' ? 'harvest' : ['settings', 'overview', 'today', 'calendar', 'harvest'].includes(route.name) ? route.name : null;
   const current = tab ? 'business' : section; // ---- Business ----
   for (const [name, links] of Object.entries(menuLinks)) {
     for (const a of links) {
-      if (name === current) a.setAttribute('aria-current', 'page');
+      if (name === current) a.setAttribute('aria-current', name === 'business' ? 'true' : 'page');
       else a.removeAttribute('aria-current');
     }
   }

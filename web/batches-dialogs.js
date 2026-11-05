@@ -65,7 +65,7 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
   // The Batches dialogs' form carries bt-form: their footer sticks at the dialog's foot and Delete gets its own row on a phone.
   const ask = (options) => {
     const handle = openForm({ ...options, onLost: onError });
-    document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bt-form');
+    document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bt-form', 'bz-form');
     return handle;
   };
   const today = () => farmDate(Date.now());
