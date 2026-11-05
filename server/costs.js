@@ -29,6 +29,7 @@ export class CostError extends Error {
 
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(`${s}T00:00:00Z`))
   && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
+const dayName = (d) => `${Number(d.slice(8))} ${monthName(d.slice(0, 7))}`;
 const isMonth = (s) => typeof s === 'string' && /^\d{4}-\d{2}$/.test(s) && isDate(`${s}-01`);
 const bodyOf = (body) => {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new CostError(400, 'Body must be a JSON object');
@@ -89,7 +90,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
   }
 
   // Everything the figures read from `from` (a date) to today (costs-math's data, section 4 of the plan's Task 4).
-  function dataFor(from) {
+  function dataFor(from, runs = runsOf()) {
     const t = today();
     const kept = keptFrom();
     const count = daysBetween(from < kept ? kept : from, t) + 1;
@@ -107,7 +108,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     const dated = (list) => list.map((x) => ({ ...x, date: zone.label(x.at) }));
     const { electricityPrice, waterPrice } = readSettings(db);
     return {
-      today: t, keptFrom: kept, prices: { electricity: electricityPrice, water: waterPrice }, rooms, runs: runsOf(),
+      today: t, keptFrom: kept, prices: { electricity: electricityPrice, water: waterPrice }, rooms, runs,
       costs: db.listCosts(), usage, batches: dated(src.batches), purchases: dated(src.purchases), sales: dated(src.sales),
       harvests: db.harvestsBetween(fromMs, toMs).map((h) => ({ roomId: h.roomId, runId: h.runId, date: zone.label(h.pickedAt), kg: h.kg, crop: h.crop })),
       cropYield: readCropYield(db),
@@ -155,7 +156,14 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     const pick = (k) => (b[k] !== undefined ? b[k] : old?.[k]);
     const t = today();
     const date = pick('date');
-    if (!isDate(date) || date > t) throw new CostError(400, 'Pick a date up to today', 'date');
+    if (!isDate(date)) throw new CostError(400, 'Pick a date up to today', 'date');
+    // The date's bounds apply to a date the body gives that differs from the stored one: a Change from this month can store a
+    // day later this month (31 → 30 Nov on 15 Nov), and an old cost stays editable whatever its date.
+    if (!old || date !== old.date) {
+      const lowest = firstDayOf(monthOf(keptFrom()));
+      if (date > t) throw new CostError(400, 'Pick a date up to today', 'date');
+      if (date < lowest) throw new CostError(400, `Pick a date from ${dayName(lowest)} to today`, 'date');
+    }
     const category = pick('category');
     if (!CATEGORIES.includes(category)) throw new CostError(400, 'Pick a category', 'category');
     const given = pick('amount');
@@ -167,6 +175,9 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     if (typeof text !== 'string') throw new CostError(400, 'The note must be text', 'note');
     const note = text.trim();
     if (note.length > MAX_NOTE) throw new CostError(400, `The note must be at most ${MAX_NOTE} characters`, 'note');
+    if (old && b.repeat !== undefined && (b.repeat ?? null) !== old.repeat) {
+      throw new CostError(400, 'Repeat changes through Change or Stop', 'repeat');
+    }
     const repeat = old ? old.repeat : (b.repeat ?? null);
     if (repeat !== null && repeat !== 'monthly') throw new CostError(400, 'Repeat must be monthly or none', 'repeat');
     const repeatUntil = old?.repeatUntil ?? null;
@@ -176,7 +187,9 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     const bill = category === 'utilities' && BILLS.includes(utility);
     if (bill && repeat) throw new CostError(400, 'An electricity or water bill is entered each month', 'repeat');
     if (bill && roomId !== null) throw new CostError(400, 'A bill is the whole farm’s', 'roomId');
-    const worker = category === 'labour' ? workerOf(pick('worker')) : null;
+    // the worker is checked when the body gives another or the cost becomes labour (a worker made inactive since keeps their old costs)
+    const w = pick('worker');
+    const worker = category !== 'labour' ? null : old && old.category === 'labour' && w === old.worker ? old.worker : workerOf(w);
     let periodFrom = null;
     let periodTo = null;
     if (bill) {
@@ -202,12 +215,12 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     if (c.repeat !== 'monthly') throw new CostError(400, 'This cost is not a monthly item');
     return c;
   }
-  // `from` (change): its first month (edited in place) to this month, or to its last month when stopped earlier. `after`
-  // (stop): its first month to this month.
+  // `from` (change): its first month (edited in place) to this month; `after` (stop): its first month to this month; both
+  // only to its last month when stopped earlier (a Stop only shortens).
   function monthIn(value, c, field) {
     const lowest = monthOf(c.date);
     const current = monthOf(today());
-    const last = field === 'from' && c.repeatUntil && c.repeatUntil < current ? c.repeatUntil : current;
+    const last = c.repeatUntil && c.repeatUntil < current ? c.repeatUntil : current;
     if (!isMonth(value) || value < lowest || value > last) throw new CostError(400, `Pick a month from ${monthName(lowest)} to ${monthName(last)}`, field);
     return value;
   }
@@ -241,6 +254,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const c = monthlyOf(id);
       const b = bodyOf(body);
       const from = monthIn(b.from, c, 'from');
+      if (b.amount === undefined) throw new CostError(400, 'RM must be a number over 0 up to 1,000,000', 'amount');
       const fields = fieldsOf({ amount: b.amount, note: b.note ?? c.note }, c);
       if (from === monthOf(c.date)) {
         const started = db.updateCost(id, fields);
@@ -269,9 +283,14 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const first = monthOf(keptFrom());
       const m = month ?? current;
       if (!isMonth(m) || m > current || m < first) throw new CostError(400, `Pick a month from ${monthName(first)} to ${monthName(current)}`, 'month');
-      const runs = runsOf().filter((r) => r.startDate <= lastDayOf(m) && runEnd(r, t) >= firstDayOf(m));
-      const earliest = [addMonths(m, -11), ...runs.map((r) => monthOf(r.startDate))].sort()[0];
-      const data = dataFor(addDays(firstDayOf(earliest), -MAX_BILL_DAYS));
+      const all = runsOf();
+      const inMonth = (r) => r.startDate <= lastDayOf(m) && runEnd(r, t) >= firstDayOf(m);
+      const shown = all.filter(inMonth);
+      // Not capped at the kept months: a run's totals sum its sales, batches and harvests from its start, so the window reaches
+      // the oldest shown run's start (the work is linear in that run's age; only the usage days are capped, in dataFor).
+      const earliest = [addMonths(m, -11), ...shown.map((r) => monthOf(r.startDate))].sort()[0];
+      const data = dataFor(addDays(firstDayOf(earliest), -MAX_BILL_DAYS), all);
+      const runs = data.runs.filter(inMonth);
       const figs = monthsOf(data);
       const f = figs(m);
       const months = Array.from({ length: 12 }, (_, i) => addMonths(m, i - 11)).filter((x) => x >= first);
@@ -313,7 +332,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const a = from ?? firstDayOf(monthOf(t));
       const b = to ?? t;
       if (!isDate(a) || a > t) throw new CostError(400, 'from must be a date up to today', 'from');
-      if (!isDate(b) || b < a || b > t) throw new CostError(400, 'to must be a date from `from` to today', 'to');
+      if (!isDate(b) || b < a || b > t) throw new CostError(400, 'to must be a date from the start date to today', 'to');
       return summaryOf(figuresOf(a, b, dataFor(addDays(a, -MAX_BILL_DAYS))));
     },
 

@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
@@ -13,7 +13,6 @@ import { fixedZone } from '../server/usage.js';
 import { add } from './costs-fixtures.js';
 
 mkdirSync('/tmp/costs', { recursive: true });
-const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 10, 15, 4); // 15 Nov 2026 12:00 on the farm's clock
 const OCT1 = Date.UTC(2026, 9, 1, 1);
 const ROOM = { name: 'Container 1', length: 6, width: 2.4, height: 2.4 };
@@ -21,7 +20,8 @@ const ROOM = { name: 'Container 1', length: 6, width: 2.4, height: 2.4 };
 // A farm in a file (so a second connection can make the other modules' tables): Container 1 with 100 oyster blocks since
 // 1 Oct, Container 2 with none.
 function setup(t) {
-  const file = join(mkdtempSync('/tmp/costs/svc-'), 'farm.db');
+  const dir = mkdtempSync('/tmp/costs/svc-');
+  const file = join(dir, 'farm.db');
   const db = openDb(file);
   let clock = OCT1;
   const now = () => clock;
@@ -36,9 +36,10 @@ function setup(t) {
     costs.stop();
     await costs.warmed();
     db.close();
+    rmSync(dir, { recursive: true, force: true });
   });
   const raw = () => new DatabaseSync(file);
-  return { db, costs, one, two, changes, raw, run: db.openRun(one), set: (ms) => { clock = ms; } };
+  return { db, costs, one, two, changes, raw, run: db.openRun(one) };
 }
 
 function refused(fn, status, message, field) {
@@ -116,7 +117,7 @@ test('edit, delete, change from a month and stop', (t) => {
   refused(() => s.costs.stopItem(plain.id, { after: '2026-11' }), 400, 'This cost is not a monthly item', undefined);
   refused(() => s.costs.stopItem(started.id, { after: '2026-09' }), 400, 'Pick a month from Oct 2026 to Nov 2026', 'after');
   assert.equal(s.costs.stopItem(started.id, { after: '2026-11' }).repeatUntil, '2026-11');
-  assert.ok(s.changes.length >= 6);
+  assert.equal(s.changes.length, 8, 'each of the 8 writes told once, the refusals none');
 });
 
 test('the month view: pending energy first, then the figures once the usage days are worked out', async (t) => {
@@ -128,7 +129,7 @@ test('the month view: pending energy first, then the figures once the usage days
   assert.equal(first.pending, true, 'a cold room: worked out in the background');
   assert.equal(first.tiles.profit, null);
   await s.costs.warmed();
-  assert.ok(s.changes.length >= 3, 'the warm done tells');
+  assert.equal(s.changes.length, 4, 'two adds and a warm done a room');
   const view = s.costs.monthView({ month: '2026-11' });
   assert.equal(view.pending, false);
   assert.equal(view.tiles.costs, 340, 'no readings: 0 kWh');
@@ -196,4 +197,83 @@ test('the month view says incomplete when a batch has no price', async (t) => {
   s.costs.monthView({});
   await s.costs.warmed();
   assert.equal(s.costs.monthView({}).tiles.incomplete, true);
+});
+
+test('a Change from this month may store a day later this month, and the item stays editable', (t) => {
+  const s = setup(t);
+  const rent = s.costs.add({ date: '2026-08-31', category: 'rent', amount: 1500, repeat: 'monthly' });
+  const { started } = s.costs.change(rent.id, { from: '2026-11', amount: 1600 });
+  assert.equal(started.date, '2026-11-30', 'the clamped day: 31 → 30 in a 30-day month, a day after today (15 Nov)');
+  assert.equal(s.costs.change(started.id, { from: '2026-11', amount: 1700 }).started.amount, 1700, 'in place again');
+  assert.equal(s.costs.edit(started.id, { note: 'Lot 7' }).note, 'Lot 7');
+  refused(() => s.costs.edit(started.id, { date: '2026-11-29' }), 400, 'Pick a date up to today', 'date');
+  refused(() => s.costs.add({ date: '2026-11-30', category: 'rent', amount: 1 }), 400, 'Pick a date up to today', 'date');
+});
+
+test('a Stop only shortens', (t) => {
+  const s = setup(t);
+  const rent = s.costs.add({ date: '2026-08-31', category: 'rent', amount: 1500, repeat: 'monthly' });
+  s.costs.change(rent.id, { from: '2026-11', amount: 1600 });
+  refused(() => s.costs.stopItem(rent.id, { after: '2026-11' }), 400, 'Pick a month from Aug 2026 to Oct 2026', 'after');
+  refused(() => s.costs.change(rent.id, { from: '2026-11', amount: 1 }), 400, 'Pick a month from Aug 2026 to Oct 2026', 'from');
+  assert.equal(s.costs.stopItem(rent.id, { after: '2026-09' }).repeatUntil, '2026-09');
+});
+
+test('the worker is checked only when it changes or the cost becomes labour', (t) => {
+  const s = setup(t);
+  s.db.setWorkers([{ name: 'Ali', active: true }]);
+  const one = s.costs.add({ date: '2026-11-03', category: 'labour', amount: 50, worker: 'Ali' });
+  const wage = s.costs.add({ date: '2026-09-01', category: 'labour', amount: 1000, worker: 'Ali', repeat: 'monthly' });
+  s.db.setWorkers([...s.db.listWorkers().map((w) => ({ ...w, active: false })), { name: 'Bob', active: true }]);
+  assert.equal(s.costs.edit(one.id, { note: 'Harvest' }).worker, 'Ali', 'an inactive worker keeps their past cost');
+  assert.equal(s.costs.change(wage.id, { from: '2026-10', amount: 1100 }).started.worker, 'Ali');
+  refused(() => s.costs.edit(one.id, { worker: 'Zed' }), 400, 'That name is not on the workers list', 'worker');
+});
+
+test('the checks of a Change, an edit and the date\'s lower bound', (t) => {
+  const s = setup(t);
+  const rent = s.costs.add({ date: '2026-08-31', category: 'rent', amount: 1500, repeat: 'monthly' });
+  refused(() => s.costs.change(rent.id, { from: '2026-10' }), 400, 'RM must be a number over 0 up to 1,000,000', 'amount');
+  refused(() => s.costs.edit(rent.id, { repeat: null }), 400, 'Repeat changes through Change or Stop', 'repeat');
+  const plain = s.costs.add({ date: '2026-11-03', category: 'repairs', amount: 10 });
+  refused(() => s.costs.edit(plain.id, { repeat: 'monthly' }), 400, 'Repeat changes through Change or Stop', 'repeat');
+  assert.equal(s.costs.edit(plain.id, { repeat: null, amount: 11 }).amount, 11, 'the stored repeat given again is fine');
+  refused(() => s.costs.add({ date: '2025-09-30', category: 'repairs', amount: 1 }), 400, 'Pick a date from 1 Oct 2025 to today', 'date');
+  assert.equal(s.costs.add({ date: '2025-10-01', category: 'repairs', amount: 1 }).date, '2025-10-01');
+  refused(() => s.costs.edit(plain.id, { date: '2025-09-30' }), 400, 'Pick a date from 1 Oct 2025 to today', 'date');
+});
+
+test('a one-off finds its run again when its date moves; a category switch clears the worker and the period', (t) => {
+  const s = setup(t);
+  const early = s.costs.add({ date: '2026-09-20', category: 'repairs', amount: 5, roomId: s.one });
+  assert.equal(early.runId, null, 'before the run');
+  assert.equal(s.costs.edit(early.id, { date: '2026-11-03' }).runId, s.run.id);
+  assert.equal(s.costs.edit(early.id, { date: '2026-09-21' }).runId, null);
+  const pay = s.costs.add({ date: '2026-11-03', category: 'labour', amount: 50, worker: 'Ali' });
+  const swapped = s.costs.edit(pay.id, { category: 'repairs' });
+  assert.equal(swapped.worker, null);
+  const bill = s.costs.add({ date: '2026-11-03', category: 'utilities', utility: 'electricity', amount: 80 });
+  const other = s.costs.edit(bill.id, { category: 'transport' });
+  assert.deepEqual([other.utility, other.periodFrom, other.periodTo], [null, null, null]);
+});
+
+test('a sale at 23:30 farm time on a range\'s first day counts; an explicit past month', async (t) => {
+  const s = setup(t);
+  const raw = s.raw();
+  add(raw, {
+    sales: [
+      { id: 1, sold_at: Date.UTC(2026, 10, 10, 15, 30), crop: 'oyster', kg: 20, price_kg: 15, total: 300, buyer: 'Pasar', room_id: s.one, run_id: s.run.id },
+      { id: 2, sold_at: Date.UTC(2026, 10, 9, 15, 30), crop: 'oyster', kg: 10, price_kg: 15, total: 150, buyer: 'Pasar', room_id: s.one, run_id: s.run.id },
+    ],
+  });
+  raw.close();
+  s.costs.summary({ from: '2026-11-10' });
+  await s.costs.warmed();
+  assert.equal(s.costs.summary({ from: '2026-11-10', to: '2026-11-15' }).income, 300, '23:30 on the 10th is the 10th, not the 11th');
+  s.costs.add({ date: '2026-10-05', category: 'repairs', amount: 40 });
+  const oct = s.costs.monthView({ month: '2026-10' });
+  assert.equal(oct.month, '2026-10');
+  assert.deepEqual(oct.entries.map((e) => e.date), ['2026-10-05']);
+  assert.equal(oct.last12.at(-1).month, '2026-10');
+  assert.equal(oct.runs.length, 1, 'the run open through October');
 });

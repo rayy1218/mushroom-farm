@@ -75,3 +75,40 @@ test('the month view and the summary', async (t) => {
   assert.equal((await call('GET', '/api/costs/summary?run=9999')).status, 404);
   assert.equal((await call('PATCH', '/api/costs/1')).status, 404);
 });
+
+test('the summary range, the past month and the wrong methods', async (t) => {
+  const { call } = await app(t);
+  const first = `${today().slice(0, 7)}-01`;
+  const ok = await call('GET', `/api/costs/summary?from=${first}&to=${today()}`);
+  assert.equal(ok.status, 200);
+  const future = await call('GET', '/api/costs/summary?from=2999-01-01');
+  assert.deepEqual([future.status, future.body.field], [400, 'from']);
+  const backwards = await call('GET', `/api/costs/summary?from=${today()}&to=${first === today() ? '2000-01-01' : first}`);
+  assert.deepEqual([backwards.status, backwards.body.field], [400, 'to']);
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  const past = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const view = await call('GET', `/api/costs/month?month=${past}`);
+  assert.equal(view.status, 200, JSON.stringify(view.body));
+  assert.equal(view.body.month, past);
+  assert.equal((await call('POST', '/api/costs/month', {})).status, 404);
+  assert.equal((await call('DELETE', '/api/costs')).status, 404);
+  assert.equal((await call('GET', '/api/costs/1/change')).status, 404);
+});
+
+test('change and stop each publish one costs event; a refused write none', async (t) => {
+  const { call, costEvents } = await app(t);
+  const month = today().slice(0, 7);
+  const rent = await call('POST', '/api/costs', { date: `${month}-01`, category: 'rent', amount: 100, repeat: 'monthly' });
+  assert.equal(costEvents().length, 1);
+  assert.equal((await call('POST', `/api/costs/${rent.body.id}/change`, { from: month, amount: 120 })).status, 200);
+  assert.equal(costEvents().length, 2, 'change');
+  assert.equal((await call('POST', `/api/costs/${rent.body.id}/stop`, { after: month })).status, 200);
+  assert.equal(costEvents().length, 3, 'stop');
+  assert.equal((await call('POST', `/api/costs/${rent.body.id}/stop`, { after: 'x' })).status, 400);
+  assert.equal((await call('POST', '/api/costs/9999/change', { from: month, amount: 1 })).status, 404);
+  assert.equal((await call('POST', '/api/costs', { category: 'nope' })).status, 400);
+  assert.equal((await call('DELETE', '/api/costs/9999')).status, 404);
+  assert.equal(costEvents().length, 3, 'refused writes publish nothing');
+});

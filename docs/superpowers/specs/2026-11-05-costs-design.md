@@ -32,7 +32,7 @@ leading with the month's profit; income from Sales only; the costs worked out on
 | Column | Type | Rule |
 |---|---|---|
 | `id` | INTEGER PRIMARY KEY | |
-| `date` | TEXT | YYYY-MM-DD, a real date, not after today. A monthly item: the first month it charges, and the day of the month it charges on. |
+| `date` | TEXT | YYYY-MM-DD, a real date, not after today and not before the first day of the oldest usage month kept (400 "Pick a date from 1 Oct 2025 to today"). The bounds are checked for a new cost and for an edit that gives a different date; an unchanged date is never re-checked. A monthly item: the first month it charges, and the day of the month it charges on; the new item of a Change may carry a date later this month (below). |
 | `category` | TEXT | `'blocks'`, `'spawn'`, `'labour'`, `'rent'`, `'repairs'`, `'transport'`, `'packaging'`, `'utilities'`, `'other'` (the contract's list) |
 | `amount` | REAL | RM, over 0 up to 1,000,000, stored to 2 places |
 | `room_id` | INTEGER | Null: the whole farm. Else a room (a deleted room's costs become the farm's: the trigger `costs_room_gone`) |
@@ -44,7 +44,7 @@ leading with the month's profit; income from Sales only; the costs worked out on
 | `repeat_until` | TEXT | YYYY-MM, the last month a monthly item charges; null: it keeps going. Not before the item's first month. Null on a one-off. |
 | `worker` | TEXT | Labour only (null otherwise): a worker by the tasks' rule (`checkWorker`: an active worker when the farm has a list) |
 | `utility` | TEXT | Utilities only (null otherwise): `'electricity'`, `'water'` or `'other'` |
-| `period_from`, `period_to` | TEXT | An electricity or water bill only (null otherwise): the dates the bill covers, YYYY-MM-DD, from ≤ to, up to 62 days. Default: the calendar month of the bill's date. |
+| `period_from`, `period_to` | TEXT | An electricity or water bill only (null otherwise): the dates the bill covers, YYYY-MM-DD, from ≤ to, up to 62 days. The period may reach past today (only the measured days up to today count). Default: the calendar month of the bill's date. |
 | `created_at` | INTEGER | ms |
 
 Indexes: `(date)`, `(room_id)`. The database has no foreign keys (rooms and runs are deleted by hand in `deleteRoom`, another module's block), so the step also makes two triggers: `costs_room_gone` (after a room's delete: its costs' `room_id` and `run_id` null) and `costs_run_gone` (after a run's delete: its costs' `run_id` null).
@@ -55,8 +55,8 @@ Indexes: `(date)`, `(room_id)`. The database has no foreign keys (rooms and runs
 |---|---|
 | Charges | Once a month on the day of its `date` (the month's last day when the month is shorter: 31 → 30 Nov, 28 or 29 Feb), from the month of `date` through `repeat_until`, or through the current month when null. Never a future month, never a future day of this month (charged on 25 Nov: not shown on 5 Nov). |
 | Its run | A monthly room item finds each charge's run on read: the room's run open on that charge's date. |
-| Change from a month | `POST /api/costs/:id/change { from: 'YYYY-MM', amount, note? }`: the item's `repeat_until` becomes the month before `from`, and a new monthly item starts on the same day in `from` with the new amount (the other fields copied), in one transaction. `from` must be after the item's first month and not after the current month; 400 otherwise. A `from` equal to the item's first month: the amount is edited in place (`PUT`). |
-| Stop | `POST /api/costs/:id/stop { after: 'YYYY-MM' }`: `repeat_until` becomes `after` (not before its first month, not after the current month). |
+| Change from a month | `POST /api/costs/:id/change { from: 'YYYY-MM', amount, note? }`: the item's `repeat_until` becomes the month before `from`, and a new monthly item starts on the same day in `from` with the new amount (the other fields copied), in one transaction. The new item charges on the clamped day (31 → 30 in a 30-day month) from then on, so its `date` may be later this month; editing it in place or changing it again keeps that date (an unchanged date is not re-checked). `amount` is required (400). `PUT` refuses a `repeat` different from the stored one (400 "Repeat changes through Change or Stop"). `from` must be after the item's first month and not after the current month; 400 otherwise. A `from` equal to the item's first month: the amount is edited in place (`PUT`). |
+| Stop | `POST /api/costs/:id/stop { after: 'YYYY-MM' }`: `repeat_until` becomes `after` (not before its first month, not after the current month, and not after its current `repeat_until`: a Stop only shortens). |
 | Delete | Removes every month: only for an item entered by mistake. The confirm says so: "Delete Rent, RM 1,500.00 a month, and every month it charged since Oct 2026?" |
 
 ## 3. Reading the other modules (`server/costs-sources.js`)

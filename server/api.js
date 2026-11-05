@@ -16,7 +16,6 @@ import { createTaskRoutes } from './tasks-api.js';
 import { createTasks } from './tasks.js';
 import { createHarvests } from './harvests.js';
 import { createHarvestRoutes } from './harvest-api.js';
-import { createCosts } from './costs.js'; // ---- Costs ----
 import { createCostRoutes } from './costs-api.js'; // ---- Costs ----
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
@@ -92,10 +91,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const harvestRoutes = createHarvestRoutes({ harvests, onTaskChange: (roomId) => { publishRoom(roomId, 'tasks'); publishDue(); } });
   const stopTellingHarvests = [harvests.onChange(publishHarvest), taskStore.onHarvest(publishHarvest)];
   const stopTelling = () => { stopTellingTasks(); stopTellingHarvests.forEach((stop) => stop()); harvests.stop(); };
-  // ---- Costs ---- (spec 2026-11-05-costs-design.md 5): a write here or a usage warm done tells the pages.
-  const costs = createCosts({ db });
-  const costRoutes = createCostRoutes({ costs });
-  const stopTellingCosts = costs.onChange(() => events?.publish('costs', {}));
+  const costRoutes = createCostRoutes({ db, events }); // ---- Costs ----
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -350,6 +346,6 @@ export function createApi(db, machines = null, controller = null, poller = null,
       }
     }
   }
-  api.close = () => { stopTelling(); stopTellingCosts(); costs.stop(); }; // ---- Costs ---- stops too
+  api.close = () => { stopTelling(); costRoutes.close(); }; // ---- Costs ----
   return api;
 }

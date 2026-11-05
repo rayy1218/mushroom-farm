@@ -5,9 +5,14 @@
 const ONE = /^\/api\/costs\/([1-9][0-9]{0,14})$/;
 const ACTION = /^\/api\/costs\/([1-9][0-9]{0,14})\/(change|stop)$/;
 
-// costs: from createCosts. → async (req, res, path, { send, readJson, HttpError, url }) that answers true when the path is one
-// of its routes.
-export function createCostRoutes({ costs }) {
+import { createCosts } from './costs.js';
+
+// Makes the service from the database, tells the pages ('costs' on events) after a write or a usage warm done. → async (req,
+// res, path, { send, readJson, HttpError, url }) that answers true when the path is one of its routes; its close() stops
+// telling and the usage warms.
+export function createCostRoutes({ db, events }) {
+  const costs = createCosts({ db });
+  const stopTelling = costs.onChange(() => events?.publish('costs', {}));
   async function route(req, res, path, { send, readJson, HttpError, url }) {
     const notFound = () => new HttpError(404, 'Not found');
     const q = (name) => url.searchParams.get(name);
@@ -56,7 +61,7 @@ export function createCostRoutes({ costs }) {
   }
 
   // A 4xx from server/costs.js (CostError) becomes the API's HttpError.
-  return async function costRoutes(req, res, path, helpers) {
+  async function costRoutes(req, res, path, helpers) {
     try {
       return await route(req, res, path, helpers);
     } catch (err) {
@@ -66,5 +71,7 @@ export function createCostRoutes({ costs }) {
       }
       throw err;
     }
-  };
+  }
+  costRoutes.close = () => { stopTelling(); costs.stop(); };
+  return costRoutes;
 }
