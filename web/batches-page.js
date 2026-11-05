@@ -11,6 +11,7 @@ import { DOT } from './text-math.js';
 import { farmDate } from './tasks-math.js';
 import { BATCHES_HASH, batchHash, batchSheetHash, roomHash } from './route.js';
 import { createBatchDialogs } from './batches-dialogs.js';
+import { closeTaskDialog } from './task-dialogs.js';
 import {
   pageGroups, pastIn, PAST_RANGES, PAST_COLUMNS, pastCells, waitingLine, placedLine, goodText, cropBlocks, detailFacts, overNote,
   statusLine, checkLine, deliveryLine, fullDate, dateText,
@@ -214,6 +215,7 @@ export function mount(container, { run = null } = {}) {
   return function unmount() {
     mountSeq++;
     read.stop();
+    closeTaskDialog(); // a dialog of this page closes with it
   };
 }
 
@@ -339,5 +341,6 @@ export function mountBatch(container, { id }) {
   return function unmount() {
     mountSeq++;
     read.stop();
+    closeTaskDialog(); // a dialog of this page closes with it
   };
 }
