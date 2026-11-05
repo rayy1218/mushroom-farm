@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, blockDays, split, firstDayOf, figuresOf, runTotals, summaryOf,
-  runFirstMonth, billTopUp,
+  runFirstMonth, billTopUp, csvRows, CSV_HEADER,
 } from '../server/costs-math.js';
 
 export const cost = (over = {}) => ({
@@ -430,4 +430,34 @@ test('two bills of one utility over the same days share those days\' measured co
   assert.equal(f.costs, 400, 'measured 155 + top-ups 245: the two bills, the overlap\'s measured part taken off once');
   const water = bill({ id: 7, utility: 'water', date: '2026-11-04', periodFrom: '2026-10-22', periodTo: '2026-10-31', amount: 100 });
   assert.deepEqual(billTopUp(a, data({ runs: d.runs, usage, costs: [a, water] })).amount, 145, 'another utility: no share');
+});
+
+// ---- the Business audit, 2026-11-05: Export CSV ----
+test("the month's CSV: every cost line and sale, the formula guard, measured lines last", () => {
+  const d = data({
+    runs: [run({ id: 1, roomId: 1 })],
+    usage: new Map([[1, days(...NOV, 10)], [2, days(...NOV, 0)]]), // Container 2 used nothing: no line of 0
+    costs: [
+      cost({ id: 1, amount: 300, note: '=SUM(A1)' }),
+      cost({ id: 2, category: 'labour', worker: 'Ali', amount: 1700, date: '2026-11-03', roomId: 1, runId: 1 }),
+      cost({ id: 5, category: 'utilities', utility: 'electricity', amount: 100, date: '2026-11-15', periodFrom: NOV[0], periodTo: NOV[1] }),
+    ],
+    batches: [{ batchId: 1, runId: 1, roomId: 1, date: '2026-11-02', blocks: 500, cost: 1175 }],
+    purchases: [{ id: 1, name: 'PP bags, 1 kg', kind: 'packaging', date: '2026-11-04', total: 45 }],
+    sales: [{ id: 1, date: '2026-11-10', crop: 'oyster', kg: 20, total: 500, roomId: 1, runId: 1 }],
+  });
+  const f = figuresOf(...NOV, d);
+  assert.deepEqual(csvRows(f, d), [
+    CSV_HEADER,
+    "2026-11-01,cost,Rent,'=SUM(A1),The farm,,entered,300.00",
+    '2026-11-02,cost,Blocks,500 blocks,Container 1,2026-10-01,Batches,1175.00',
+    '2026-11-03,cost,Labour,Ali,Container 1,2026-10-01,entered,1700.00',
+    '2026-11-04,cost,Packaging,"PP bags, 1 kg",The farm,,Inventory,45.00',
+    '2026-11-10,income,Sales,Grey oyster 20 kg,Container 1,2026-10-01,Sales,500.00',
+    '2026-11-15,cost,Utilities,"Unmeasured electricity, bill of 15 Nov",The farm,,bill − measured,25.00',
+    ',cost,Utilities,Electricity measured 1–15 Nov,Container 1,2026-10-01,measured,75.00',
+  ]);
+  assert.equal(CSV_HEADER, 'date,type,category,what,room,run started,source,amount');
+  const pending = data({ runs: [run()], usage: new Map([[1, days(...NOV, 10, { pending: true })]]), costs: [cost()] });
+  assert.deepEqual(csvRows(figuresOf(...NOV, pending), pending).at(-1), ',cost,Utilities,Electricity and water still being worked out: export again in a minute,,,measured,');
 });

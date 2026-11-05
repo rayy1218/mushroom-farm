@@ -1,11 +1,13 @@
 // The costs routes (spec 2026-11-05-costs-design.md 5), called from api.js: GET /api/costs, /api/costs/month?month=,
-// /api/costs/summary?from=&to=&run=; POST /api/costs; PUT and DELETE /api/costs/:id; POST /api/costs/:id/change and /stop.
+// /api/costs/summary?from=&to=&run=, /api/costs.csv?month=; POST /api/costs; PUT and DELETE /api/costs/:id; POST /api/costs/:id/change and /stop.
 // server/costs.js checks, writes and works out; this reads the query and the body and turns its errors into the API's.
 
 import { createCosts } from './costs.js';
+import { attachment } from './tasks-api.js';
 
 const ONE = /^\/api\/costs\/([1-9][0-9]{0,14})$/;
 const ACTION = /^\/api\/costs\/([1-9][0-9]{0,14})\/(change|stop)$/;
+const BOM = '\ufeff'; // Excel on Windows reads the CSV as UTF-8
 
 // Makes the service from the database, tells the pages ('costs' on events) after a write or a usage warm done. → async (req,
 // res, path, { send, readJson, HttpError, url }) that answers true when the path is one of its routes; its close() stops
@@ -26,6 +28,13 @@ export function createCostRoutes({ db, events }) {
     if (path === '/api/costs/month') {
       if (req.method !== 'GET') throw notFound();
       send(res, 200, costs.monthView({ month: q('month') }));
+      return true;
+    }
+    if (path === '/api/costs.csv') {
+      if (req.method !== 'GET') throw notFound();
+      const { name, text } = await costs.csv({ month: q('month') });
+      res.writeHead(200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': attachment(name) });
+      res.end(BOM + text);
       return true;
     }
     if (path === '/api/costs/summary') {

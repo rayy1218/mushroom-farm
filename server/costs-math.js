@@ -4,6 +4,8 @@
 
 import { addDays, daysBetween } from './task-rules.js';
 import { round, costPerKgOf, valueOf, unpricedOf } from './harvest-math.js';
+import { cell } from './csv.js';
+import { cropShortName } from '../web/crops.js';
 
 export const CATEGORIES = ['blocks', 'spawn', 'labour', 'rent', 'repairs', 'transport', 'packaging', 'utilities', 'other'];
 export const CATEGORY_LABELS = {
@@ -259,7 +261,7 @@ export function linesOf(from, to, data) {
     // no run (waiting to go in, or its container deleted): the farm month's, not shared (owner 2026-11-05); placed: its run's
     lines.push({
       key: 'blocks-batches', category: 'blocks', label: 'Blocks', source: 'batches', amount: b.cost, date: b.date, roomId,
-      runId: b.runId, shared: false,
+      runId: b.runId, shared: false, blocks: b.blocks ?? null,
     });
   }
   for (const p of data.purchases) {
@@ -272,7 +274,7 @@ export function linesOf(from, to, data) {
     const [category, label] = INVENTORY_LINES[kind];
     lines.push({
       key: `inventory-${kind}`, category, label, source: 'inventory', amount: p.total, date: p.date, roomId: null, runId: null,
-      shared: true,
+      shared: true, name: p.name,
     });
   }
   const m = measuredLines(from, to, data);
@@ -437,4 +439,45 @@ export function summaryOf(f) {
     water: f.pending || !f.waterPriced ? null : measured('water'),
     income: f.income, profit: f.profit, profitPerKg: f.profitPerKg,
   };
+}
+
+// ---- Export CSV (2026-11-05, the Business audit): GET /api/costs.csv?month= ----
+export const CSV_HEADER = 'date,type,category,what,room,run started,source,amount';
+const CSV_SOURCES = { manual: 'entered', batches: 'Batches', inventory: 'Inventory', measured: 'measured', bill: 'bill − measured' };
+const PENDING_ROW = ['', 'cost', 'Utilities', 'Electricity and water still being worked out: export again in a minute', '', '', 'measured', ''];
+
+// A period's lines (figuresOf's f over data) as the CSV's lines, the header first: each cost line and each sale (income) by
+// date, the measured electricity and water (one line per room and run, no date) last; a row saying so while they are worked out.
+export function csvRows(f, data) {
+  const runStart = (id) => data.runs.find((r) => r.id === id)?.startDate ?? '';
+  const roomName = (id) => (id === null ? 'The farm' : data.rooms.get(id) ?? '');
+  const costOf = (id) => data.costs.find((c) => c.id === id);
+  const span = `${Number(f.from.slice(8))}–${dayMonth(f.to)}`;
+  const whatOf = (l) => {
+    if (l.source === 'manual') {
+      const c = costOf(l.costId);
+      return [c?.worker, c?.note].filter(Boolean).join(' · ');
+    }
+    if (l.source === 'batches') return l.blocks === null || l.blocks === undefined ? '' : `${l.blocks} blocks`;
+    if (l.source === 'inventory') return l.name ?? '';
+    if (l.source === 'bill') return `${l.label}, bill of ${dayMonth(costOf(l.costId)?.date ?? l.date)}`;
+    return `${l.label} measured ${span}`;
+  };
+  // a line of 0 (a room that used nothing) is left out, as By category leaves it
+  const rows = f.lines.filter((l) => l.amount > 0).map((l, i) => ({
+    date: l.source === 'measured' ? '' : l.date, order: i,
+    cells: [l.source === 'measured' ? '' : l.date, 'cost', CATEGORY_LABELS[l.category] ?? l.label, whatOf(l), roomName(l.roomId),
+      runStart(l.runId), CSV_SOURCES[l.source] ?? l.source, l.amount.toFixed(2)],
+  }));
+  data.sales.filter((s) => s.date >= f.from && s.date <= f.to).forEach((s, i) => {
+    const runId = s.runId ?? (s.roomId === null ? null : runOn(data.runs, s.roomId, s.date, data.today)?.id ?? null);
+    rows.push({
+      date: s.date, order: f.lines.length + i,
+      cells: [s.date, 'income', 'Sales', `${cropShortName(s.crop)} ${s.kg} kg`, s.roomId === null ? '' : roomName(s.roomId),
+        runId === null ? '' : runStart(runId), 'Sales', s.total.toFixed(2)],
+    });
+  });
+  rows.sort((a, b) => (a.date === b.date ? a.order - b.order : a.date === '' ? 1 : b.date === '' ? -1 : a.date < b.date ? -1 : 1));
+  if (f.pending) rows.push({ cells: PENDING_ROW });
+  return [CSV_HEADER, ...rows.map((r) => r.cells.map(cell).join(','))];
 }
