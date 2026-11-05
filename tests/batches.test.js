@@ -76,6 +76,10 @@ test('receive: each bad field is a 400 naming it', (t) => {
     assert.deepEqual(got?.slice(0, 2), [400, field], JSON.stringify(change));
   }
   assert.equal(status(() => batches.receive(null))[0], 400);
+  for (const inoculatedAt of [1e300, 9e15, NOW + DAY, -1e300]) {
+    assert.deepEqual(status(() => batches.receive({ ...GOOD, inoculatedAt }))?.slice(0, 2), [400, 'inoculatedAt'], String(inoculatedAt));
+  }
+  assert.deepEqual(status(() => batches.receive({ ...GOOD, receivedAt: 9e15 }))?.slice(0, 2), [400, 'receivedAt']);
 });
 
 test('list: newest received first; by run, dates and status; blockCost; bad queries', (t) => {
@@ -217,7 +221,7 @@ test('delete: a first row with parts is refused; a part is deleted without givin
   const roomId = room();
   const a = batches.receive(GOOD);
   const part = batches.place(a.id, { roomId, blocks: 200 });
-  assert.deepEqual(status(() => batches.remove(a.id)), [409, null, 'Take its parts out of the rooms first']);
+  assert.deepEqual(status(() => batches.remove(a.id)), [409, null, 'Delete its parts first, or take them out of the rooms']);
   batches.remove(part.id);
   assert.equal(batches.detail(a.id).blocks, 1000);
   batches.remove(a.id);
@@ -364,4 +368,156 @@ test("Harvest's BE uses the batches' dry kg when every batch of the crop in the 
   assert.deepEqual(harvests.roomView(roomId).current.missing.dryKg, []);
   assert.equal(harvests.farmView({ days: 30 }).rooms[0].current.be, 10);
   await harvests.warmed();
+});
+
+test('checks: times far out of range are a 400 on at, never a crash', (t) => {
+  const { batches } = setup(t);
+  const a = batches.receive(GOOD);
+  for (const at of [-1e300, -9e15, 1e300, 9e15]) {
+    assert.deepEqual(status(() => batches.addCheck(a.id, { lost: 1, cause: 'green', worker: 'Ali', at }))?.slice(0, 2), [400, 'at'], String(at));
+  }
+  const c = batches.addCheck(a.id, { lost: 1, cause: 'green', worker: 'Ali' });
+  assert.deepEqual(status(() => batches.editCheck(c.id, { at: -9e15 }))?.slice(0, 2), [400, 'at']);
+});
+
+test('checks: every block lost is a 409 before the fields are looked at', (t) => {
+  const { batches } = setup(t);
+  const a = batches.receive({ ...GOOD, blocks: 2 });
+  batches.addCheck(a.id, { lost: 2, cause: 'green', worker: 'Ali' });
+  assert.equal(status(() => batches.addCheck(a.id, { lost: 0, cause: 'rot', worker: '', at: -1e300 }))[0], 409);
+});
+
+test('edit: receivedAt later than a check or a placement is refused', (t) => {
+  const { batches, room, tick } = setup(t);
+  const a = batches.receive({ ...GOOD, receivedAt: NOW - 5 * DAY });
+  batches.addCheck(a.id, { lost: 1, cause: 'green', worker: 'Ali', at: NOW - 3 * DAY });
+  assert.deepEqual(status(() => batches.edit(a.id, { receivedAt: NOW - DAY })), [400, 'receivedAt', 'Some contamination checks are before that day']);
+  assert.equal(batches.edit(a.id, { receivedAt: NOW - 3 * DAY }).receivedAt, NOW - 3 * DAY, 'the check day itself is fine');
+  const b = batches.receive({ ...GOOD, receivedAt: NOW - 5 * DAY });
+  const part = batches.place(b.id, { roomId: room(), blocks: 100 });
+  tick(0);
+  assert.deepEqual(status(() => batches.edit(part.id, { receivedAt: NOW + 0 - 0 })), null, 'placed today: received today is fine');
+  const c = batches.receive({ ...GOOD, receivedAt: NOW - 5 * DAY });
+  batches.place(c.id, { roomId: room() });
+  assert.equal(batches.edit(c.id, { receivedAt: NOW }).receivedAt, NOW);
+});
+
+test('edit: a later receivedAt than the placed day is refused', (t) => {
+  const { batches, room, tick } = setup(t);
+  const a = batches.receive({ ...GOOD, receivedAt: NOW - 5 * DAY });
+  batches.place(a.id, { roomId: room() });
+  tick(2 * DAY);
+  assert.deepEqual(status(() => batches.edit(a.id, { receivedAt: NOW + DAY })), [400, 'receivedAt', 'Some blocks went into a room before that day']);
+});
+
+test('place on a row whose run has ended says so; a deleted room keeps its own text and its stock move out', (t) => {
+  const { db, batches, room, tick } = setup(t, { stock: true });
+  const one = room();
+  const a = batches.receive(GOOD);
+  batches.place(a.id, { roomId: one });
+  tick(DAY);
+  db.setProgram(one, { ...db.getProgram(one), crops: [] }, { change: 'end', at: NOW + DAY });
+  assert.deepEqual(status(() => batches.place(a.id, { roomId: one })), [409, null, "Container 1's run has ended"]);
+  const two = room();
+  const b = batches.receive(GOOD);
+  batches.place(b.id, { roomId: two });
+  assert.equal(db.deleteRoom(two), true);
+  assert.equal(batches.detail(b.id).status, 'past');
+  assert.deepEqual(status(() => batches.place(b.id, { roomId: one })), [409, null, 'These blocks went into a room that was deleted']);
+  assert.deepEqual(movesOf(db, [b.id]), [[b.id, 1200, 2.3, null], [b.id, -1200, null, 'into a room']]);
+});
+
+test('a folded part keeps its own note, appended on a new line, at most 500 characters', (t) => {
+  const { batches, room } = setup(t);
+  const roomId = room();
+  const a = batches.receive({ ...GOOD, note: 'first' });
+  const part = batches.place(a.id, { roomId, blocks: 100 });
+  batches.edit(part.id, { note: 'part note' });
+  assert.equal(batches.unplace(part.id).note, 'first\npart note');
+  const b = batches.receive({ ...GOOD, note: 'f'.repeat(450) });
+  const p2 = batches.place(b.id, { roomId, blocks: 100 });
+  batches.edit(p2.id, { note: 'p'.repeat(100) });
+  assert.equal(batches.unplace(p2.id).note.length, 500);
+  const c = batches.receive(GOOD);
+  const p3 = batches.place(c.id, { roomId, blocks: 100 });
+  batches.edit(p3.id, { note: 'only part' });
+  assert.equal(batches.unplace(p3.id).note, 'only part');
+});
+
+test('harvestRooms: unplace (fold and not) and removing a placed row tell the room', (t) => {
+  const { batches, room, told } = setup(t);
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const part = batches.place(a.id, { roomId, blocks: 100 });
+  batches.unplace(part.id);
+  assert.deepEqual(told.at(-1).harvestRooms, [roomId], 'fold');
+  const whole = batches.place(a.id, { roomId });
+  batches.unplace(whole.id);
+  assert.deepEqual(told.at(-1).harvestRooms, [roomId], 'not a fold');
+  const p = batches.place(a.id, { roomId, blocks: 100 });
+  batches.remove(p.id);
+  assert.deepEqual(told.at(-1).harvestRooms, [roomId], 'removing a placed row');
+  batches.remove(a.id);
+  assert.deepEqual(told.at(-1).harvestRooms, [], 'a waiting row');
+});
+
+test('a listener that throws is logged and does not undo or fail the write', (t) => {
+  const { db } = setup(t);
+  const logged = [];
+  const batches = createBatches({ db, now: () => NOW, log: (e) => logged.push(e) });
+  batches.onChange(() => { throw new Error('listener'); });
+  const heard = [];
+  batches.onChange((c) => heard.push(c));
+  const a = batches.receive(GOOD);
+  assert.equal(batches.detail(a.id).id, a.id);
+  assert.equal(logged.length, 1);
+  assert.equal(heard.length, 1, 'the next listener still hears');
+});
+
+test('stock moves: a crop edit on a delivery whose part waits moves every move to the new crop\'s item', (t) => {
+  const { db, batches, room } = setup(t, { stock: true });
+  const roomId = room();
+  const a = batches.receive(GOOD);
+  const part = batches.place(a.id, { roomId, blocks: 100 });
+  batches.place(a.id, { roomId });
+  batches.unplace(part.id); // the first row is placed: the part waits on its own
+  assert.equal(status(() => batches.edit(part.id, { crop: 'pink' }))[0], 409, 'the first row is placed');
+  batches.unplace(a.id); // now both rows wait (no fold: the part was not folded)
+  assert.equal(batches.detail(a.id).delivery.length, 2);
+  batches.addCheck(part.id, { lost: 3, cause: 'green', worker: 'Ali' });
+  batches.edit(part.id, { crop: 'pink' });
+  const pink = db.batches.blocksItem('Pink oyster blocks');
+  const moves = db.batches.moves([a.id, part.id]);
+  assert.ok(moves.length >= 2, JSON.stringify(moves));
+  assert.ok(moves.every((m) => m.itemId === pink), JSON.stringify([pink, moves]));
+});
+
+test('list: status past and waiting with data', (t) => {
+  const { db, batches, room, tick } = setup(t);
+  const roomId = room();
+  const wait = batches.receive(GOOD);
+  const placed = batches.receive(GOOD);
+  const past = batches.receive(GOOD);
+  batches.place(placed.id, { roomId });
+  const other = room();
+  batches.place(past.id, { roomId: other });
+  tick(DAY);
+  db.setProgram(other, { ...db.getProgram(other), crops: [] }, { change: 'end', at: NOW + DAY });
+  assert.deepEqual(batches.list({ status: 'waiting' }).batches.map((x) => x.id), [wait.id]);
+  assert.deepEqual(batches.list({ status: 'placed' }).batches.map((x) => x.id), [placed.id]);
+  assert.deepEqual(batches.list({ status: 'past' }).batches.map((x) => x.id), [past.id]);
+});
+
+test('list and csv: from after to is a 400 on from', (t) => {
+  const { batches } = setup(t);
+  assert.deepEqual(status(() => batches.list({ from: '2026-11-05', to: '2026-11-04' })), [400, 'from', 'from must be on or before to']);
+  assert.deepEqual(status(() => batches.csv({ from: '2026-11-05', to: '2026-11-04' })).slice(0, 2), [400, 'from']);
+});
+
+test('the CSV: a note with a line break is quoted; no BOM', (t) => {
+  const { batches } = setup(t);
+  batches.receive({ ...GOOD, note: 'line one\nline two' });
+  const { text } = batches.csv();
+  assert.ok(text.includes('"line one\nline two"'));
+  assert.notEqual(text.charCodeAt(0), 0xfeff);
 });

@@ -60,10 +60,10 @@ All tables `CREATE TABLE IF NOT EXISTS … STRICT`, made in the `if (version < 2
 | Take out of the room | Only while the run is open (else 409 "Container 1's run has ended"). A part whose first row is waiting folds back into it: its blocks are added to the first row, its checks move to it, the part is deleted. Otherwise the row clears its room, run and `placed_at` and waits. |
 | Contamination check | Date and time (not in the future; not before received), blocks lost, cause, who (`checkWorker`, as Tasks), note. Edit (the same checks) and delete. |
 | Edit | Every Receive field; crop only while the whole delivery waits; `blocks` (a waiting first row with no parts only) not below its lost blocks. |
-| Delete | With a confirm. A first row with parts: 409 "Take its parts out of the rooms first". A part: deleted, its blocks are not given back (it was a wrong record). Its checks, materials and loads go with it. |
+| Delete | With a confirm. A first row with parts: 409 "Delete its parts first, or take them out of the rooms". A part: deleted, its blocks are not given back (it was a wrong record). Its checks, materials and loads go with it. |
 | The run ends (New blocks, crops cleared) | Nothing: the batch stays tied to that run. Batches of an ended run are listed under Past. |
 | A room deleted | The room's batches clear `room_id` and `run_id` in `deleteRoom`'s transaction (one line, section 9): room and run ids are reused, so a stale id would point at the next room. The batch keeps its `placed_at` and is past ("a deleted room"): it is not put into a room again, and its stock move out stays. The batch itself is kept (the delivery and its cost happened). |
-| Events | Every write publishes `batches` `{ batchId, roomId, runId }` (`'batches'` added to `EVENT_TYPES`). A write that changes a placed batch's weight, water, blocks, room or run also publishes `harvest` `{ roomId }`, so the BE shown reads again. |
+| Events | Every write publishes `batches` `{ batchId, roomId, runId }` (`'batches'` added to `EVENT_TYPES`). A write that touches a placed row (before or after it) also publishes `harvest` `{ roomId }` for that room. |
 
 ### 3.1 Stock moves (contract section 7, 2026-11-05)
 

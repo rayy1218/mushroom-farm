@@ -83,7 +83,7 @@ function checkFields(body, now, was = null) {
   if (asked('note')) out.note = textOf(body.note, 'note', 'Note', MAX_NOTE);
   if (asked('inoculatedAt')) {
     const v = body.inoculatedAt ?? null;
-    if (v !== null && !(Number.isInteger(v) && v >= EARLIEST)) throw bad('Pick the day inoculated', 'inoculatedAt');
+    if (v !== null && !(Number.isInteger(v) && v >= EARLIEST && v <= now)) throw bad('Pick the day inoculated', 'inoculatedAt');
     out.inoculatedAt = v;
   }
   if (asked('blockKg') || asked('waterPct')) {
@@ -107,6 +107,7 @@ function queryOf({ run = null, from = null, to = null, status = null } = {}) {
   if (run !== null && !/^[1-9][0-9]{0,14}$/.test(String(run))) throw bad('run must be a run id', 'run');
   if (from !== null && !isDate(from)) throw bad('from must be a date, YYYY-MM-DD', 'from');
   if (to !== null && !isDate(to)) throw bad('to must be a date, YYYY-MM-DD', 'to');
+  if (from !== null && to !== null && from > to) throw bad('from must be on or before to', 'from');
   if (status !== null && !STATUSES.includes(status)) throw bad('status must be waiting, placed or past', 'status');
   return { run: run === null ? null : Number(run), from, to, status };
 }
@@ -123,7 +124,7 @@ function viewOf(b) {
 }
 
 // db: the farm database (db.batches is the store); now is injectable.
-export function createBatches({ db, now = Date.now }) {
+export function createBatches({ db, now = Date.now, log = console.error }) {
   const store = db.batches;
   const listeners = new Set();
   const firstOf = (b) => b.parentId ?? b.id;
@@ -137,7 +138,13 @@ export function createBatches({ db, now = Date.now }) {
       batchId: touched[0]?.id ?? null, roomId: placed?.roomId ?? null, runId: placed?.runId ?? null,
       harvestRooms: [...new Set(touched.filter((b) => b.roomId != null).map((b) => b.roomId))],
     };
-    for (const fn of [...listeners]) fn(change);
+    for (const fn of [...listeners]) {
+      try {
+        fn(change);
+      } catch (err) {
+        log(err);
+      }
+    }
   }
 
   function batchOf(id) {
@@ -162,10 +169,10 @@ export function createBatches({ db, now = Date.now }) {
     if (!isPlain(body)) throw bad('Body must be a JSON object');
     const t = now();
     const given = (k) => Object.hasOwn(body, k);
-    const at = given('at') ? body.at : was?.at ?? t;
-    if (!Number.isInteger(at) || at > t || localDate(at) < localDate(b.receivedAt)) throw bad('Pick a time from the day received to now', 'at');
-    const lost = given('lost') ? body.lost : was?.lost;
     if (max < 1) throw conflict('Every block of this batch is lost already');
+    const at = given('at') ? body.at : was?.at ?? t;
+    if (!(Number.isInteger(at) && at >= EARLIEST && at <= t) || localDate(at) < localDate(b.receivedAt)) throw bad('Pick a time from the day received to now', 'at');
+    const lost = given('lost') ? body.lost : was?.lost;
     if (!intIn(lost, 1, max)) throw bad(`Blocks lost must be a whole number from 1 to ${grouped(max)}`, 'lost');
     const cause = given('cause') ? body.cause : was?.cause;
     if (!CAUSES.includes(cause)) throw bad('Pick a cause', 'cause');
@@ -231,6 +238,11 @@ export function createBatches({ db, now = Date.now }) {
         if (b.parentId != null || family.length > 1 || b.placedAt != null) throw conflict('Blocks change only on a waiting batch with no parts', 'blocks');
         if (fields.blocks < b.lost) throw bad(`Blocks can't be fewer than the ${grouped(b.lost)} lost`, 'blocks');
       }
+      if ('receivedAt' in fields && fields.receivedAt !== b.receivedAt) {
+        const day = localDate(fields.receivedAt);
+        if (family.some((x) => store.checks(x.id).some((c) => localDate(c.at) < day))) throw bad('Some contamination checks are before that day', 'receivedAt');
+        if (family.some((x) => x.placedAt != null && localDate(x.placedAt) < day)) throw bad('Some blocks went into a room before that day', 'receivedAt');
+      }
       const shared = Object.fromEntries(Object.entries(fields).filter(([k]) => SHARED.includes(k)));
       const own = Object.fromEntries(Object.entries(fields).filter(([k]) => !SHARED.includes(k)));
       store.tx(() => {
@@ -246,7 +258,7 @@ export function createBatches({ db, now = Date.now }) {
     // Delete (spec 3): a first row with parts is refused; a part's blocks are not given back.
     remove(id) {
       const b = batchOf(id);
-      if (b.parentId == null && store.family(b.id).length > 1) throw conflict('Take its parts out of the rooms first');
+      if (b.parentId == null && store.family(b.id).length > 1) throw conflict('Delete its parts first, or take them out of the rooms');
       store.tx(() => {
         store.remove(id);
         sync(firstOf(b), [id]);
@@ -259,7 +271,10 @@ export function createBatches({ db, now = Date.now }) {
     place(id, body) {
       if (!isPlain(body)) throw bad('Body must be a JSON object');
       const b = batchOf(id);
-      if (b.placedAt != null) throw conflict(b.runId != null ? `These blocks are in ${b.roomName} already` : 'These blocks went into a room that was deleted');
+      if (b.placedAt != null) {
+        if (b.runId == null) throw conflict('These blocks went into a room that was deleted');
+        throw conflict(b.runEndedAt != null ? `${b.roomName}'s run has ended` : `These blocks are in ${b.roomName} already`);
+      }
       const room = Number.isInteger(body.roomId) ? db.getRoom(body.roomId) : null;
       if (!room) throw bad('Pick a room', 'roomId');
       const good = goodOf(b);
@@ -296,7 +311,8 @@ export function createBatches({ db, now = Date.now }) {
       const first = b.parentId == null ? null : store.get(b.parentId);
       const waitingId = store.tx(() => {
         if (first && first.placedAt == null) {
-          store.update(first.id, { blocks: first.blocks + b.blocks });
+          const note = [first.note, b.note].filter(Boolean).join('\n').slice(0, MAX_NOTE).trim() || null;
+          store.update(first.id, { blocks: first.blocks + b.blocks, note });
           store.moveChecks(b.id, first.id);
           store.remove(b.id);
           sync(first.id, [b.id]);

@@ -4,7 +4,7 @@
 
 export const BATCHES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS batches (
-  id              INTEGER PRIMARY KEY,
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
   kind            TEXT    NOT NULL DEFAULT 'bought' CHECK (kind IN ('bought', 'made')),
   parent_id       INTEGER,
   run_id          INTEGER,
@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS batches_by_run ON batches (run_id);
 CREATE INDEX IF NOT EXISTS batches_by_received ON batches (received_at);
 CREATE INDEX IF NOT EXISTS batches_by_parent ON batches (parent_id);
 CREATE TABLE IF NOT EXISTS batch_checks (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   batch_id   INTEGER NOT NULL,
   at         INTEGER NOT NULL,
   lost       INTEGER NOT NULL CHECK (lost BETWEEN 1 AND 100000),
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS batch_checks (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS batch_checks_by_batch ON batch_checks (batch_id, at);
 CREATE TABLE IF NOT EXISTS batch_recipes (
-  id          INTEGER PRIMARY KEY,
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT    NOT NULL,
   crop        TEXT,
   sawdust_pct REAL    NOT NULL CHECK (sawdust_pct BETWEEN 0 AND 100),

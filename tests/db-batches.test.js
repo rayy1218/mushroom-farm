@@ -137,3 +137,16 @@ test('update: an undefined value or an unknown field throws; tx commits, rolls b
   assert.equal(s.all().length, 1);
   assert.throws(() => s.tx(() => s.tx(() => 1)));
 });
+
+test('ids are never reused after a delete', (t) => {
+  const s = fresh(t).batches;
+  const a = s.insert(BATCH);
+  const b = s.insert(BATCH);
+  s.remove(b);
+  const c = s.insert(BATCH);
+  assert.ok(c > b && c > a);
+  const k1 = s.insertCheck({ batchId: a, at: 2000, lost: 1, cause: 'green', worker: null, note: null, createdAt: 2000 });
+  s.removeCheck(k1);
+  const k2 = s.insertCheck({ batchId: a, at: 2000, lost: 1, cause: 'green', worker: null, note: null, createdAt: 2000 });
+  assert.ok(k2 > k1);
+});
