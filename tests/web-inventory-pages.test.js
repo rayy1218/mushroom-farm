@@ -96,3 +96,18 @@ test('the Settings card: one switch, saved at once; says so while Telegram is no
   assert.ok(card.includes("request('PUT', '/api/settings', { inventoryTelegram:"));
   assert.ok(card.includes('Nothing is sent until Telegram is set up above.'));
 });
+
+test('review fixes: the item page paint key has the farm day; the row click ignores selections and modifiers', () => {
+  const item = src('inventory-item.js');
+  assert.ok(item.includes("import { farmDate } from './tasks-math.js';"));
+  assert.ok(item.includes('JSON.stringify([data, showAll, farmDate(Date.now())])'));
+  assert.ok(item.includes("document.title = 'Inventory · Mushroom farm';\n        return;") || /els\.banner\.hidden = true;\s*document\.title = 'Inventory/.test(item));
+  assert.ok(item.includes('els.archive.disabled = true'));
+  assert.ok(item.includes('tabindex="-1" data-history-title') || item.includes('id="iv-history-title" tabindex="-1"'));
+  assert.ok(item.includes("dataset.tone = 'warn'") && item.includes("dataset.tone = 'amber'"));
+  const page = src('inventory-page.js');
+  assert.ok(page.includes('e.button !== 0 || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || window.getSelection()?.toString()'));
+  const css = src('styles.css');
+  assert.ok(css.includes('@media (hover: hover) {\n  .iv-row:hover'));
+  assert.ok(css.includes('.iv-move-edit { min-width: 44px'));
+});

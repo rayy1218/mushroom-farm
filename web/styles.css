@@ -2128,7 +2128,9 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   .iv-table th:nth-child(5) { width: 120px; }
 }
 .iv-row { cursor: pointer; }
-.iv-row:hover :is(th, td) { background: var(--raised); }
+@media (hover: hover) {
+  .iv-row:hover :is(th, td) { background: var(--raised); }
+}
 .iv-table .iv-name a { color: var(--ink); font-weight: 600; text-decoration: none; }
 .iv-table .iv-name a:hover { text-decoration: underline; }
 .iv-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }
@@ -2183,6 +2185,7 @@ td.tg-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: -2p
   .iv-move { grid-template-columns: 1fr auto; }
   .iv-move-text { grid-row: 1 / span 2; }
   .iv-move :is(.iv-move-edit, .iv-move-note) { grid-column: 2; justify-self: end; }
+  .iv-move-edit { min-width: 44px; min-height: 44px; }
 }
 .iv-count { display: grid; gap: 16px; }
 .iv-count-who .field { max-width: 320px; margin: 0; }

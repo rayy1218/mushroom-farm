@@ -189,6 +189,7 @@ export function mount(container) {
   els.groups.addEventListener('click', (e) => {
     const row = e.target.closest?.('tr.iv-row');
     if (!row || e.target.closest('a, button')) return;
+    if (e.button !== 0 || e.defaultPrevented || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || window.getSelection()?.toString()) return;
     row.querySelector('.iv-name a')?.click();
   });
   q('[data-retry]').addEventListener('click', () => load());

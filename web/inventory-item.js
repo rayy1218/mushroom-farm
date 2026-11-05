@@ -10,6 +10,7 @@ import { DOT } from './text-math.js';
 import {
   openItemDialog, openPurchaseDialog, openUseDialog, openMoveDialog, openDeleteDialog, openThrowOutDialog, openArchiveDialog, bringBack,
 } from './inventory-dialogs.js';
+import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
 import { qtyText, countedText, lotLabel, lotPill, moveLine, dayText, KIND_ONE } from './inventory-math.js';
 
@@ -47,7 +48,7 @@ const TEMPLATE = `
       </table></div>
     </section>
     <section class="card iv-history" aria-labelledby="iv-history-title">
-      <h2 id="iv-history-title">History</h2>
+      <h2 id="iv-history-title" tabindex="-1" data-history-title>History</h2>
       <p class="none" data-no-history hidden>Nothing recorded yet.</p>
       <ul class="iv-moves" data-moves></ul>
       <button type="button" class="iv-link" data-all hidden></button>
@@ -103,7 +104,7 @@ export function mount(container, { id }) {
   const done = () => load();
 
   function paint() {
-    const key = JSON.stringify([data, showAll]);
+    const key = JSON.stringify([data, showAll, farmDate(Date.now())]);
     if (key === painted) return;
     painted = key;
     const it = data;
@@ -120,8 +121,12 @@ export function mount(container, { id }) {
 
     const counted = countedText(it.lastCountedAt, Date.now());
     const pill = it.useBy ? `${it.useBy.state === 'expired' ? 'Expired' : 'Use by'} ${dayText(it.useBy.date)}` : null;
+    const stockTile = tile('In stock', qtyText(it.qty, it.unit), [it.low ? 'Low' : null, pill].filter(Boolean).join(DOT) || null);
+    const expired = it.useBy?.state === 'expired' || it.lots.some((l) => l.state === 'expired');
+    if (expired) stockTile.querySelector('.us-kwh').dataset.tone = 'warn';
+    else if (it.low) stockTile.querySelector('.us-kwh').dataset.tone = 'amber';
     els.tiles.replaceChildren(
-      tile('In stock', qtyText(it.qty, it.unit), [it.low ? 'Low' : null, pill].filter(Boolean).join(DOT) || null),
+      stockTile,
       tile('Reorder at', it.reorderAt === null ? '—' : qtyText(it.reorderAt, it.unit), it.reorderAt === null ? 'No level set' : null),
       tile('Last counted', counted.text),
     );
@@ -188,6 +193,8 @@ export function mount(container, { id }) {
         els.tools.hidden = true;
         els.gone.hidden = false;
         els.title.textContent = 'Item';
+        els.banner.hidden = true;
+        document.title = 'Inventory · Mushroom farm';
         return;
       }
       showError(routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message);
@@ -207,13 +214,18 @@ export function mount(container, { id }) {
       openArchiveDialog({ item: data, onDone: done, onLost: showError });
       return;
     }
+    els.archive.disabled = true;
     const r = await bringBack(data);
+    els.archive.disabled = false;
     if (r === true || r.stale) load();
     if (r !== true) showError(r.message);
   });
   els.all.addEventListener('click', () => {
+    const before = data.moves.length > HISTORY_SHOWN ? HISTORY_SHOWN : 0;
     showAll = true;
     paint();
+    const rows = [...els.moves.children].slice(before);
+    (rows.map((r) => r.querySelector('button')).find(Boolean) ?? q('[data-history-title]')).focus();
   });
   q('[data-retry]').addEventListener('click', () => load());
 
