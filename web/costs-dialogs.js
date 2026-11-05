@@ -1,10 +1,10 @@
 // The Costs page's dialogs (spec 2026-11-05-costs-design.md 6), through the tasks' openForm: Add a cost, Edit a one-off (with
 // a quiet Delete), Change a monthly item from a month (with its Delete), Stop it, and the Delete confirm. Each sends one
 // request and calls onDone() when it went through; the page reloads on the costs event too.
-//   openAddDialog({ rooms, today, runsIn, onDone, onLost }) · openEditDialog({ cost, rooms, today, runsIn, onDone, onLost })
+//   openAddDialog({ rooms, today, first, runsIn, onDone, onLost }) · openEditDialog({ cost, rooms, today, first, runsIn, onDone, onLost })
 //   openChangeDialog({ cost, month, today, onDone, onLost }) · openStopDialog({ cost, month, today, onDone, onLost })
 //   openDeleteDialog({ cost, onDone, onLost })
-// rooms: [{ id, name }]; today: 'YYYY-MM-DD'; month: the month on show (the From or Last month picked first); runsIn(month)
+// rooms: [{ id, name }]; today: 'YYYY-MM-DD'; first: the oldest month kept ('YYYY-MM', the dates' least); month: the month on show (the From or Last month picked first); runsIn(month)
 // → a promise of the month's runs (GET /api/costs/month's runs), for the line saying where a one-off room cost lands.
 
 import { request } from './api.js';
@@ -125,9 +125,9 @@ function workerBox(workers, c) {
 }
 
 // The shared boxes of Add and Edit. c: the cost (Edit) or null.
-function costFields(c, { rooms, workers, today }) {
+function costFields(c, { rooms, workers, today, first }) {
   return [
-    { name: 'date', label: 'Date', kind: 'date', value: c?.date ?? today, max: today },
+    { name: 'date', label: 'Date', kind: 'date', value: c?.date ?? today, max: today, ...(first ? { min: `${first}-01` } : {}) },
     { name: 'category', label: 'Category', kind: 'select', value: c?.category ?? 'labour', options: CATEGORY_OPTIONS },
     { name: 'amount', label: 'Amount', kind: 'number', value: c ? String(c.amount) : '', suffix: 'RM' },
     { name: 'roomId', label: 'For', kind: 'select', value: c?.roomId ? String(c.roomId) : '', options: [['', 'The farm (shared)'], ...rooms.map((r) => [String(r.id), r.name])] },
@@ -151,12 +151,12 @@ const sender = (send, onDone) => async (...args) => {
 };
 
 // Add a cost.
-export async function openAddDialog({ rooms, today, runsIn, onDone, onLost }) {
+export async function openAddDialog({ rooms, today, first, runsIn, onDone, onLost }) {
   const workers = await loadWorkers().catch(() => []);
   const form = openForm({
     title: 'Add a cost',
     fields: [
-      ...costFields(null, { rooms, workers, today }),
+      ...costFields(null, { rooms, workers, today, first }),
       { name: 'repeat', label: 'Every month (rent, a base wage)', kind: 'check', value: false, hint: 'Charged on the same day each month from the date’s month until you stop it.' },
     ],
     buttons: [{ value: 'add', label: 'Add', primary: true }],
@@ -168,11 +168,11 @@ export async function openAddDialog({ rooms, today, runsIn, onDone, onLost }) {
 }
 
 // Edit a one-off, with a quiet Delete at the footer's start.
-export async function openEditDialog({ cost, rooms, today, runsIn, onDone, onLost }) {
+export async function openEditDialog({ cost, rooms, today, first, runsIn, onDone, onLost }) {
   const workers = await loadWorkers().catch(() => []);
   const form = openForm({
     title: 'Edit a cost',
-    fields: costFields(cost, { rooms, workers, today }),
+    fields: costFields(cost, { rooms, workers, today, first }),
     buttons: [
       { label: 'Delete this cost', action: () => openDeleteDialog({ cost, onDone, onLost }) },
       { value: 'save', label: 'Save', primary: true },
@@ -207,9 +207,10 @@ export function openChangeDialog({ cost, month, today, onDone, onLost }) {
   });
 }
 
-// A monthly item's last month: its first to this month.
+// A monthly item's last month: its first to this month, or to its last month when stopped already (a Stop only shortens).
 export function openStopDialog({ cost, month, today, onDone, onLost }) {
-  const months = monthsBetween(cost.date.slice(0, 7), today.slice(0, 7));
+  const current = today.slice(0, 7);
+  const months = monthsBetween(cost.date.slice(0, 7), cost.repeatUntil && cost.repeatUntil < current ? cost.repeatUntil : current);
   openForm({
     title: `Stop ${entryLine(cost).what}`,
     lead: ['It charges up to and including the month you pick; the months before keep their charges.'],

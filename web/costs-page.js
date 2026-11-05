@@ -149,7 +149,7 @@ export function mount(container, { month = null } = {}) {
     return other.get(m);
   }
   const dialogOpts = () => ({
-    rooms, today: view.today, month: view.month, runsIn, onDone: () => reload.call(), onLost: showError,
+    rooms, today: view.today, first: view.first, month: view.month, runsIn, onDone: () => reload.call(), onLost: showError,
   });
   const costById = (id) => costs.find((c) => c.id === id);
 
