@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   recipeAmounts, waterGuide, recipeLine, recipeSum, sumText, recipeValues, recipeBody, mixValues, recipeFill, mixBody,
   inoculateValues, inoculateBody, loadValues, loadBody, incubateValues, incubateBody, readyBody, qtyText, bagsText, pctText,
+  statusText, placeable, pageGroups, placedLine, detailFacts, makingSteps, loadLine, sterilisedNote, madePriceNote, sheetRows,
 } from '../web/batches-math.js';
 
 const nb = '\u00a0';
@@ -127,4 +128,80 @@ test('the Inoculate, Sterilise, Incubate and Ready to fruit dialogs: boxes and b
   assert.equal(incubateBody({ incubation: 'area', fromDate: '', toDate: '' }).field, 'fromDate');
   assert.deepEqual(readyBody({ readyDate: '2026-11-05' }).body, { incubatedTo: Date.UTC(2026, 10, 4, 16) });
   assert.equal(readyBody({ readyDate: '' }).field, 'readyDate');
+});
+test('a made batch\'s status line, step by step; Put into a room once it can go in', () => {
+  const today = '2026-11-05';
+  assert.equal(statusText(b({}), today), `Mixed 3${nb}Nov`);
+  assert.equal(statusText(b({ sterilisedAt: NOW - DAY - 3_600_000 }), today), `Sterilised 4${nb}Nov`);
+  assert.equal(statusText(b({ sterilisedAt: NOW - DAY, inoculatedAt: NOW - DAY }), today), `Inoculated 4${nb}Nov`);
+  assert.equal(statusText(b({ inoculatedAt: NOW - 12 * DAY, incubation: 'area', incubatedFrom: NOW - 11 * DAY }), today), `Incubating since 25${nb}Oct${dot}day 12`);
+  assert.equal(statusText(b({ incubation: 'area', incubatedFrom: NOW - 11 * DAY, incubatedTo: NOW, status: 'waiting' }), today), 'Ready to fruit');
+  assert.equal(statusText(b({ status: 'placed', roomName: 'Container 2' }), today), `In${nb}Container${nb}2`);
+  assert.equal(statusText(b({ kind: 'bought', status: 'waiting' }), today), 'Waiting');
+  assert.equal(placeable(b({})), false, 'not inoculated');
+  assert.equal(placeable(b({ inoculatedAt: NOW - DAY })), true, 'to incubate in a grow room');
+  assert.equal(placeable(b({ inoculatedAt: NOW - DAY, incubation: 'area', incubatedFrom: NOW - DAY })), false, 'in an area until ready');
+  assert.equal(placeable(b({ status: 'waiting' })), true);
+  assert.equal(placeable(b({ status: 'placed' })), false);
+});
+
+test('the page: making batches in their own group; a made batch in a room says when it was made; its facts', () => {
+  const g = pageGroups([b({ id: 1 }), b({ id: 2, kind: 'bought', status: 'waiting' }), b({ id: 3, status: 'waiting', incubation: 'area', incubatedTo: NOW })]);
+  assert.deepEqual([g.making.map((x) => x.id), g.waiting.map((x) => x.id)], [[1], [2, 3]]);
+  assert.equal(placedLine(b({ supplier: 'Spawn Co', spawnBatch: '0912' }), '2026-11-05'), `Spawn Co${dot}spawn batch 0912${dot}made 3${nb}Nov`);
+  const one = b({ supplier: 'Spawn Co', spawnBatch: '0912', deliveryRef: 'never shown', dryKg: 0.92, pricePerBlock: 0.7119,
+    delivery: [b({ blocks: 300 }), b({ id: 2, parentId: 1, blocks: 100 })] });
+  assert.deepEqual(detailFacts(one), [
+    ['Spawn supplier', 'Spawn Co'], ['Spawn batch', '0912'], ['Block weight', `2.30${nb}kg${dot}60${nb}% water${dot}0.92${nb}kg dry`],
+    ['Price per block', `RM${nb}0.71`], ['Blocks made', `400${nb}blocks${dot}RM${nb}284.76`],
+  ]);
+});
+
+test('the Making card\'s steps: what each recorded, and what can be done next', () => {
+  const today = '2026-11-05';
+  const mk = b({
+    recipe: { name: 'Sawdust 78' }, supplier: 'Spawn Co', strain: 'PL-27', spawnBatch: '0912', inoculatedAt: NOW - DAY, incubation: 'area', incubatedFrom: NOW - DAY,
+    materials: [
+      { item: 'sawdust', qty: 287, unit: 'kg', itemName: 'Sawdust (Kilang Jaya)' }, { item: 'other', name: 'Cotton waste', qty: 10, unit: 'kg' },
+      { item: 'spawn', qty: 12, unit: 'kg' },
+    ],
+    loads: [],
+  });
+  const steps = makingSteps(mk, today);
+  assert.deepEqual(steps.map((s) => [s.key, s.done, s.can]), [['mix', true, true], ['sterilise', false, true], ['inoculate', true, true], ['incubate', true, true]]);
+  assert.deepEqual(steps[0].lines, [`Mixed 3 Nov${dot}recipe Sawdust 78${dot}400${nb}bags`, `Sawdust${dot}287${nb}kg${dot}from Sawdust (Kilang Jaya)`, `Cotton waste${dot}10${nb}kg`]);
+  assert.deepEqual(steps[2].lines, [`Inoculated 4 Nov${dot}Spawn Co${dot}PL-27${dot}batch 0912${dot}12${nb}kg spawn`]);
+  assert.deepEqual(steps[3].lines, [`In an area since 4 Nov${dot}day 2`]);
+  assert.deepEqual(makingSteps({ ...mk, incubatedTo: NOW }, today)[3].lines, [`In an area since 4 Nov${dot}ready to fruit 5 Nov`]);
+  const fresh = makingSteps(b({}), today);
+  assert.deepEqual([fresh[0].lines[0], fresh[2].lines, fresh[3].can, fresh[3].why], [`Mixed 3 Nov${dot}no recipe${dot}400${nb}bags`, [], false, 'Record the inoculation first']);
+  const inRoom = makingSteps(b({ inoculatedAt: NOW - DAY, incubation: 'room', placedAt: NOW, roomName: 'Container 1', status: 'placed' }), today)[3];
+  assert.deepEqual([inRoom.lines, inRoom.can, inRoom.why], [[`In a grow room${dot}Container 1`], false, 'Some blocks are in a room']);
+  assert.deepEqual(makingSteps(b({ inoculatedAt: NOW - DAY, incubation: 'room' }), today)[3].lines, ['In a grow room: put the blocks into a room']);
+});
+
+test('a load\'s line, the amber note of bags not yet sterilised, the price note', () => {
+  assert.equal(loadLine({ hotAt: Date.UTC(2026, 10, 4, 0, 12), method: 'steam', bags: 400, tempC: 98, holdH: 6, worker: 'Ali' }, '2026-11-05'),
+    `4 Nov 08:12${dot}Atmospheric steam${dot}400${nb}bags${dot}98${nb}°C for 6${nb}h${dot}Ali`);
+  assert.equal(sterilisedNote(b({ loads: [{ bags: 300 }] })), '300 of 400 bags sterilised');
+  assert.equal(sterilisedNote(b({ loads: [{ bags: 300 }, { bags: 100 }] })), null);
+  assert.equal(sterilisedNote(b({ loads: [] })), null);
+  assert.match(madePriceNote(b({ pricePerBlock: 0.71 })), /^The price per block is the materials/);
+  assert.match(madePriceNote(b({})), /^No price per block yet/);
+});
+
+test('the 4-2 sheet: a made batch\'s receipt is its spawn, its use "made into" the blocks, then its placements', () => {
+  const range = { from: '2026-11-01', to: '2026-11-30', today: '2026-11-05' };
+  const first = b({ id: 5, blocks: 300, supplier: 'Spawn Co', strain: 'PL-27', spawnBatch: '0912', receivedAt: Date.UTC(2026, 10, 1, 4),
+    mixedAt: Date.UTC(2026, 10, 1, 4), inoculatedAt: Date.UTC(2026, 10, 3, 4), spawn: { qty: 12, unit: 'kg', unitCost: 8 }, pricePerBlock: 0.71 });
+  const part = b({ id: 6, parentId: 5, blocks: 100, strain: 'PL-27', spawnBatch: '0912', placedAt: Date.UTC(2026, 10, 4, 4), usedBlocks: 100, runId: 4,
+    roomName: 'Container 1', runStartedAt: Date.UTC(2026, 9, 3, 4), status: 'placed' });
+  assert.deepEqual(sheetRows([part, first], range), [
+    ['3 Nov 2026', `Grey oyster spawn${dot}PL-27${dot}batch 0912`, `12${nb}kg`, `RM${nb}8.00`, '', '', '', '', '', 'Spawn Co'],
+    ['3 Nov 2026', `Grey oyster spawn${dot}PL-27${dot}batch 0912`, '', '', `12${nb}kg`, `made into 400${nb}blocks`, '', '', '', ''],
+    ['4 Nov 2026', `Grey oyster blocks${dot}PL-27${dot}batch 0912`, '', '', `100${nb}blocks`, `Container 1${dot}run of 3 Oct`, '', '', '', ''],
+  ]);
+  assert.deepEqual(sheetRows([{ ...first, inoculatedAt: null, spawn: null }], range), [], 'not inoculated yet: nothing to write');
+  assert.equal(sheetRows([{ ...first, spawn: { qty: 30, unit: 'bags', unitCost: null } }], range)[0][3], '', 'no price: blank to write in');
+  assert.equal(sheetRows([{ ...first, spawn: null }], range)[0][2], '', 'no spawn line: blank');
 });

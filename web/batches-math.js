@@ -51,7 +51,8 @@ export const roomRunText = (b, today) => (b.roomName && finite(b.runStartedAt) ?
 // A date kept whole at a wrap ("26 Sep", not "26 / Sep").
 const wholeDate = (ms, today) => dateText(ms, today).replace(/ /g, NB);
 export const waitingLine = (b, nowMs) => [b.supplier, `Received ${wholeDate(b.receivedAt, farmDate(nowMs))}${DOT}${agoText(b.receivedAt, nowMs)}`].filter(Boolean).join(DOT);
-export const placedLine = (b, today) => [b.supplier, b.spawnBatch ? `spawn batch ${b.spawnBatch}` : null, `received ${wholeDate(b.receivedAt, today)}`].filter(Boolean).join(DOT);
+export const placedLine = (b, today) => [b.supplier, b.spawnBatch ? `spawn batch ${b.spawnBatch}` : null,
+  b.kind === 'made' ? `made ${wholeDate(b.mixedAt ?? b.receivedAt, today)}` : `received ${wholeDate(b.receivedAt, today)}`].filter(Boolean).join(DOT);
 
 // The notes of a run whose batches of a crop hold more blocks than the run has (spec 3: allowed, said in amber).
 export function overNotes(list) {
@@ -65,7 +66,8 @@ export function overNotes(list) {
     .map(([crop, x]) => `Batches hold ${countBlocks(x.blocks, crop)}; the run has ${grouped(x.runBlocks, 0)}.`);
 }
 
-// { waiting, rooms: [{ runId, roomId, roomName, runStartedAt, batches, over }] by room name, past } of the list reply.
+// { making, waiting, rooms: [{ runId, roomId, roomName, runStartedAt, batches, over }] by room name, past } of the list reply
+// (making: made batches not yet ready, listed above the waiting ones).
 export function pageGroups(batches) {
   const runs = new Map();
   for (const b of batches.filter((x) => x.status === 'placed')) {
@@ -73,7 +75,10 @@ export function pageGroups(batches) {
     runs.get(b.runId).batches.push(b);
   }
   const rooms = [...runs.values()].sort((a, b) => String(a.roomName).localeCompare(String(b.roomName))).map((r) => ({ ...r, over: overNotes(r.batches) }));
-  return { waiting: batches.filter((x) => x.status === 'waiting'), rooms, past: batches.filter((x) => x.status === 'past') };
+  return {
+    making: batches.filter((x) => x.status === 'making'), waiting: batches.filter((x) => x.status === 'waiting'), rooms,
+    past: batches.filter((x) => x.status === 'past'),
+  };
 }
 
 export const PAST_RANGES = [[90, '90 days'], [365, '12 months'], [null, 'All']];
@@ -92,11 +97,12 @@ export const pastCells = (b, today) => [dateText(b.receivedAt, today), cropShort
 // The Details card's rows [label, value], the empty ones left out (detail: GET /api/batches/:id).
 export function detailFacts(b) {
   const total = (b.delivery ?? [b]).reduce((s, x) => s + x.blocks, 0);
+  const made = b.kind === 'made'; // its spawn's supplier; no delivery note; its blocks made at the materials' cost
   return [
-    ['Spawn batch', b.spawnBatch], ['Strain', b.strain], ['Delivery note', b.deliveryRef],
+    ['Spawn supplier', made ? b.supplier : null], ['Spawn batch', b.spawnBatch], ['Strain', b.strain], ['Delivery note', made ? null : b.deliveryRef],
     ['Inoculated', finite(b.inoculatedAt) ? fullDate(b.inoculatedAt) : null], ['Block weight', weightText(b)],
     ['Price per block', finite(b.pricePerBlock) ? rmText(b.pricePerBlock) : null],
-    ['Whole delivery', finite(b.pricePerBlock) ? `${blocksText(total)}${DOT}${rmText(total * b.pricePerBlock)}` : blocksText(total)],
+    [made ? 'Blocks made' : 'Whole delivery', finite(b.pricePerBlock) ? `${blocksText(total)}${DOT}${rmText(total * b.pricePerBlock)}` : blocksText(total)],
     ['Note', b.note],
   ].filter(([, v]) => v !== null && v !== undefined && v !== '');
 }
@@ -179,10 +185,13 @@ export function batchLineFor(run, reply) {
 export const SHEET_TITLE = `myGAP 4-2${DOT}Purchase, use and treatment of planting material (Pembelian, penggunaan dan rawatan bahan tanaman)`;
 export const SHEET_COLUMNS = ['Date', 'Variety / material (+ batch No.)', 'Qty bought', 'Price / unit', 'Qty used', 'Block / area',
   'Treatment: why', 'Treatment: material', 'Treatment: rate', 'Supplier / operator'];
+export const spawnText = (b) => [`${cropShortName(b.crop)} spawn`, b.strain, b.spawnBatch ? `batch ${b.spawnBatch}` : null].filter(Boolean).join(DOT);
 export const materialText = (b) => [cropBlocks(b.crop), b.strain, b.spawnBatch ? `batch ${b.spawnBatch}` : null].filter(Boolean).join(DOT);
 
 // The sheet's rows from every batch (GET /api/batches): a receipt row per delivery received in [from, to] (its blocks, the
 // first row's and its parts') and a use row per row put into a room in [from, to], by date (a receipt before its uses).
+// A made batch's receipt is its spawn, on the day inoculated (the amount, its price per unit when known, the spawn supplier),
+// with a use row the same day: the spawn "made into" the blocks (none before the inoculation).
 export function sheetRows(batches, { from, to, today = farmDate(Date.now()) }) {
   const families = new Map();
   for (const b of batches) families.set(b.parentId ?? b.id, [...(families.get(b.parentId ?? b.id) ?? []), b]);
@@ -191,14 +200,22 @@ export function sheetRows(batches, { from, to, today = farmDate(Date.now()) }) {
   for (const [firstId, family] of families) {
     const first = family.find((b) => b.id === firstId) ?? family[0];
     const received = farmDate(first.receivedAt);
-    if (inRange(received)) {
-      const total = family.reduce((s, b) => s + b.blocks, 0);
+    const total = family.reduce((s, b) => s + b.blocks, 0);
+    if (first.kind === 'made') {
+      const day = finite(first.inoculatedAt) ? farmDate(first.inoculatedAt) : null;
+      if (day && inRange(day)) {
+        const amount = first.spawn ? qtyText(first.spawn.qty, first.spawn.unit) : '';
+        const price = finite(first.spawn?.unitCost) ? rmText(first.spawn.unitCost) : '';
+        rows.push({ date: day, order: 0, id: firstId, cells: [fullDate(first.inoculatedAt), spawnText(first), amount, price, '', '', '', '', '', first.supplier ?? ''] });
+        rows.push({ date: day, order: 1, id: firstId, cells: [fullDate(first.inoculatedAt), spawnText(first), '', '', amount, `made into ${blocksText(total)}`, '', '', '', ''] });
+      }
+    } else if (inRange(received)) {
       rows.push({ date: received, order: 0, id: firstId,
         cells: [fullDate(first.receivedAt), materialText(first), blocksText(total), finite(first.pricePerBlock) ? rmText(first.pricePerBlock) : '', '', '', '', '', '', first.supplier ?? ''] });
     }
     for (const b of family) {
       if (!finite(b.placedAt) || !inRange(farmDate(b.placedAt))) continue;
-      rows.push({ date: farmDate(b.placedAt), order: 1, id: b.id,
+      rows.push({ date: farmDate(b.placedAt), order: 2, id: b.id,
         cells: [fullDate(b.placedAt), materialText(first), '', '', blocksText(finite(b.usedBlocks) ? b.usedBlocks : b.blocks), roomRunText(b, today), '', '', '', ''] });
     }
   }
@@ -499,4 +516,68 @@ export function incubateBody(v) {
 export function readyBody(v) {
   const at = dayMs(v.readyDate);
   return finite(at) ? { body: { incubatedTo: at } } : { field: 'readyDate', message: 'Pick the day they were ready' };
+}
+
+// A batch's status in words (spec 4): a made batch's step while it is being made ("Mixed 3 Nov", "Sterilised 3 Nov",
+// "Inoculated 4 Nov", "Incubating since 4 Nov · day 12", the first day day 1), "Ready to fruit" once ready and waiting; else
+// as a bought batch's (statusLine).
+export function statusText(b, today) {
+  if (b.kind !== 'made') return statusLine(b);
+  if (b.status === 'waiting' && b.incubation === 'area' && finite(b.incubatedTo)) return 'Ready to fruit';
+  if (b.status !== 'making') return statusLine(b);
+  if (b.incubation === 'area' && finite(b.incubatedFrom)) {
+    return `Incubating since ${wholeDate(b.incubatedFrom, today)}${DOT}day ${daysFrom(farmDate(b.incubatedFrom), today) + 1}`;
+  }
+  if (finite(b.inoculatedAt)) return `Inoculated ${wholeDate(b.inoculatedAt, today)}`;
+  if (finite(b.sterilisedAt)) return `Sterilised ${wholeDate(b.sterilisedAt, today)}`;
+  return `Mixed ${wholeDate(b.mixedAt ?? b.receivedAt, today)}`;
+}
+
+// Put into a room is offered (spec 5): a waiting batch; a made one still making once inoculated, unless it incubates in an
+// area (then once ready to fruit, when it waits).
+export const placeable = (b) => b.status === 'waiting' || (b.status === 'making' && finite(b.inoculatedAt) && b.incubation !== 'area');
+
+// "Sawdust · 287 kg · from Sawdust (Kilang Jaya)": a material line, with its Inventory item's name when it has one.
+export const materialLine = (m) => [m.item === 'other' ? m.name ?? MATERIAL_NAMES.other : MATERIAL_NAMES[m.item] ?? m.item, qtyText(m.qty, m.unit),
+  m.itemName ? `from ${m.itemName}` : null].filter(Boolean).join(DOT);
+// "4 Nov 08:12 · Atmospheric steam · 400 bags · 98 °C for 6 h · Ali": a sterilising load (hot_at: it reached the temperature).
+export const loadLine = (l, today) => [`${dateText(l.hotAt, today)} ${farmTime(l.hotAt)}`, METHOD_NAMES[l.method] ?? l.method, bagsText(l.bags),
+  `${grouped(l.tempC, 0, 1)}${NB}°C for ${grouped(l.holdH, 0, 1)}${NB}h`, l.worker].filter(Boolean).join(DOT);
+// The amber note when the loads hold fewer bags than were made: "300 of 400 bags sterilised"; null with no load or all done.
+export function sterilisedNote(b) {
+  const done = (b.loads ?? []).reduce((s, l) => s + l.bags, 0);
+  const total = madeBlocks(b);
+  return done > 0 && done < total ? `${grouped(done, 0)} of ${grouped(total, 0)} bags sterilised` : null;
+}
+// How a made block's price comes about (decision 6 of part 2), or why there is none.
+export const madePriceNote = (b) => (finite(b.pricePerBlock)
+  ? "The price per block is the materials at Inventory's latest purchase prices when the batch was last saved: a later purchase counts at its next change."
+  : 'No price per block yet: every material needs an Inventory item with a purchase price.');
+
+function incubationLines(b, today) {
+  if (b.incubation === 'room') return [finite(b.placedAt) && b.roomName ? `In a grow room${DOT}${b.roomName}` : 'In a grow room: put the blocks into a room'];
+  if (b.incubation !== 'area') return [];
+  const since = `In an area since ${dateText(b.incubatedFrom, today)}`;
+  return [finite(b.incubatedTo) ? `${since}${DOT}ready to fruit ${dateText(b.incubatedTo, today)}` : `${since}${DOT}day ${daysFrom(farmDate(b.incubatedFrom), today) + 1}`];
+}
+
+// The Making card's steps in order (spec 5), from a made batch's detail: [{ key, title, lines, done, can, why }]. Each step can
+// be recorded or edited at any time (can), except the incubation before the inoculation, or while blocks are in a room (where
+// they incubate is fixed then); why: the reason, for the button's title. The loads are the detail's, listed by the card.
+export function makingSteps(b, today) {
+  const inoculated = finite(b.inoculatedAt);
+  const placed = (b.delivery ?? [b]).some((x) => finite(x.placedAt));
+  const spawn = (b.materials ?? []).find((m) => m.item === 'spawn');
+  const mixed = [`Mixed ${dateText(b.mixedAt ?? b.receivedAt, today)}`, b.recipe ? `recipe ${b.recipe.name}` : 'no recipe', bagsText(madeBlocks(b))].join(DOT);
+  const inoculation = [`Inoculated ${dateText(b.inoculatedAt, today)}`, b.supplier, b.strain, b.spawnBatch ? `batch ${b.spawnBatch}` : null,
+    spawn ? `${qtyText(spawn.qty, spawn.unit)} spawn` : null].filter(Boolean).join(DOT);
+  return [
+    { key: 'mix', title: 'Mix', done: true, can: true, why: null, lines: [mixed, ...(b.materials ?? []).filter((m) => m.item !== 'spawn').map(materialLine)] },
+    { key: 'sterilise', title: 'Sterilise', done: (b.loads ?? []).length > 0, can: true, why: null, lines: [] },
+    { key: 'inoculate', title: 'Inoculate', done: inoculated, can: true, why: null, lines: inoculated ? [inoculation] : [] },
+    {
+      key: 'incubate', title: 'Incubate', done: b.incubation != null, can: inoculated && !placed,
+      why: !inoculated ? 'Record the inoculation first' : placed ? 'Some blocks are in a room' : null, lines: incubationLines(b, today),
+    },
+  ];
 }
