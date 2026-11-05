@@ -9,7 +9,8 @@
 import { request, OUTDATED, OFFLINE, routeMissing } from './api.js';
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
-import { weekOf, shiftWeek, weekTitle, gridColumns, gridCells, menuItems, LEGEND } from './task-grid-math.js';
+import { weekOf, shiftWeek, weekTitle, gridColumns, gridCells, menuItems, LEGEND, createPress, gridMove, MOVE_KEYS, createHeld, createPaintGate,
+  sheetMonth } from './task-grid-math.js';
 import { amountText, farmTime, farmDate } from './tasks-math.js';
 import { dayTitle } from './calendar-math.js';
 import { openForm, loadWorkers, errorText } from './task-dialogs.js';
@@ -40,8 +41,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
   let failed = ''; // why the week could not be read, while there is none to show
   let painted = '';
   let current = null; // the box (data-at) the grid's Tab stop is on
-  const held = new Set(); // today's rows tapped: their boxes wait for the repaint (a second tap would send again)
-  const letGo = new Set(); // ...and those whose change came: let go of at the next paint
+  const held = createHeld(); // today's rows tapped: their boxes wait for their row's change (a second tap would send again)
   const media = typeof matchMedia === 'function' ? matchMedia(PHONE) : null;
   let turned = media?.matches ?? false;
   const info = new WeakMap(); // a box or a head → what it shows
@@ -63,6 +63,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
   const table = el('table', 'tg');
   table.setAttribute('role', 'grid');
   scroller.append(table);
+  const byAt = (at) => (at ? table.querySelector(`[data-at="${CSS.escape(at)}"]`) : null); // a box or a head by its place
   const none = el('p', 'none tg-none');
   none.hidden = true;
   const legend = el('p', 'muted tg-legend', LEGEND);
@@ -74,6 +75,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     if (!alive) return;
     const me = ++seq;
     const { from, to } = weekOf(week ?? cal?.today ?? localToday());
+    print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday())); // at once, not when the week comes
     table.setAttribute('aria-busy', 'true');
     try {
       const data = await request('GET', `/api/calendar?room=${roomId}&from=${from}&to=${to}`);
@@ -91,7 +93,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     table.removeAttribute('aria-busy');
     paint();
   }
-  loadWorkers().then((list) => { workers = list; paint(); }, () => {}); // without them, a clash shows only among the week's
+  loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {}); // without them, a clash shows only among the week's
 
   const shown = () => weekOf(week ?? cal?.today ?? localToday());
   function go(w) {
@@ -154,10 +156,10 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     return td;
   }
 
-  function paint() {
-    for (const id of letGo) held.delete(id);
-    const force = letGo.size > 0;
-    letGo.clear();
+  // Every repaint goes through the gate: while the menu is open it waits for it to close.
+  const gate = createPaintGate(() => { if (alive) draw(); });
+  const paint = () => gate.paint();
+  function draw() {
     if (!cal) {
       painted = ''; // the boxes are hidden: the next week read shows, even when it reads as the last
       title.textContent = weekTitle(shown());
@@ -167,19 +169,18 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
       return;
     }
     const todayRows = view?.date === cal.today && cal.from <= view.date && view.date <= cal.to ? view.today ?? [] : null;
-    const key = JSON.stringify([cal, todayRows, workers, turned, [...held]]);
-    if (!force && key === painted) return; // nothing new: the boxes (their focus and presses) stay
+    const key = JSON.stringify([cal, todayRows, workers, turned, held.ids()]);
+    if (key === painted) return; // nothing new: the boxes (their focus and presses) stay
     painted = key;
     title.textContent = weekTitle(cal);
     thisWeek.setAttribute('aria-disabled', String(week === null));
-    print.href = taskSheetHash(roomId, (cal.from <= cal.today && cal.today <= cal.to ? cal.today : cal.from).slice(0, 7));
+    print.href = taskSheetHash(roomId, sheetMonth(cal, cal.today));
     const columns = gridColumns(cal.days, todayRows ?? []);
     const rows = gridCells({ days: cal.days, columns, today: cal.today, todayRows, workers });
     none.textContent = 'No daily tasks this week.';
     none.hidden = columns.length > 0;
     scroller.hidden = legend.hidden = columns.length === 0;
     const focused = table.contains(document.activeElement) ? document.activeElement.dataset.at : null;
-    closeMenu();
     table.dataset.turn = turned ? 'phone' : 'desk';
     table.style.setProperty('--cols', String(columns.length));
     // One set of boxes; a phone turns it: a row a task, a column a day.
@@ -209,7 +210,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     }
     table.replaceChildren(thead, tbody);
     // The Tab stop: the box it was on, else today's first open box, else today's first, else the first box.
-    const stops = [focused, current].map((at) => at && table.querySelector(`[data-at="${CSS.escape(at)}"]`));
+    const stops = [focused, current].map(byAt);
     const stop = stops.find(Boolean) ?? table.querySelector('.tg-today button[data-kind="open"]')
       ?? table.querySelector(':is(.tg-today[data-box], .tg-today [data-box])') ?? table.querySelector('[data-box]');
     for (const n of table.querySelectorAll('[data-at]')) n.tabIndex = n === stop ? 0 : -1;
@@ -219,18 +220,25 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
 
   // ---- acting on a box (spec 3) ----
 
-  // Done (a row with an amount opens its dialog; createTaskActions decides) and Skip: the box waits for the repaint once
-  // something changed, and lets go at once when nothing did.
-  function act(action, c) {
+  // After a dialog: the box (or head) at `at` takes the focus again when a repaint under the dialog left it on nothing.
+  function refocus(at) {
+    if (!alive || !at || (document.activeElement && document.activeElement !== document.body)) return;
+    byAt(at)?.focus();
+  }
+
+  // Done (a row with an amount opens its dialog; createTaskActions decides) and Skip: the box waits for its row's change in
+  // the room reply (update) once something changed, and lets go at once when nothing did.
+  function act(action, c, at) {
     const id = c.taskId;
     if (held.has(id)) return;
-    held.add(id);
+    held.hold(id, view?.today);
     paint();
-    Promise.resolve(action(c.row)).then((changed) => {
+    const after = (changed) => {
       if (!alive) return;
-      if (changed) letGo.add(id);
-      else { held.delete(id); painted = ''; paint(); }
-    }, () => { held.delete(id); painted = ''; if (alive) paint(); });
+      if (!changed && held.letGo(id)) paint();
+      refocus(at);
+    };
+    Promise.resolve(action(c.row)).then(after, () => after(false));
   }
 
   async function undo(c) {
@@ -245,56 +253,66 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
   }
 
   // Details (a read-only dialog): the task's text and note, its status, who, when, the amount, the reason.
-  function details({ c, col, date }) {
+  function details({ c, col, date }, at) {
     const r = c.row;
     // a missed row's closed time is when the server noticed it, not a time anyone did anything
     const facts = [['Status', STATUS[c.kind]], ['Who', r.worker], ['When', c.kind !== 'missed' && Number.isFinite(r.closedAt) ? farmTime(r.closedAt) : ''],
       ['Amount', amountText(r)], ['Reason', r.reason], ['Note', r.note]];
     const dl = el('dl', 'tg-facts');
     for (const [k, v] of facts) if (v) dl.append(el('dt', '', k), el('dd', '', keepLines(String(v))));
-    openForm({ title: col.shortName, lead: [dayTitle(date, cal?.today), r.text ?? '', dl] });
+    const text = typeof r.text === 'string' && r.text.trim() ? [r.text] : []; // no empty line for a row without one
+    openForm({ title: col.shortName, lead: [dayTitle(date, cal?.today), ...text, dl] }).closed.then(() => refocus(at));
   }
 
   // A task's full text (its head's tap).
-  function fullText(col) {
-    openForm({ title: col.shortName, lead: [col.text || col.shortName] });
+  function fullText(col, at) {
+    openForm({ title: col.shortName, lead: [col.text || col.shortName] }).closed.then(() => refocus(at));
   }
 
   function tap(node) {
     const x = info.get(node);
     if (!x) return;
-    if (!x.c) fullText(x.col);
-    else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c);
-    else if (hasRow(x.c)) details(x);
+    const at = node.dataset.at;
+    if (!x.c) fullText(x.col, at);
+    else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c, at);
+    else if (hasRow(x.c)) details(x, at);
   }
 
   // ---- the menu: Skip… (an open box of today), Undo (a Done or Skip of the last minute), Details ----
 
   let menu = null;
   let menuFor = null;
-  function closeMenu(refocus = false) {
+  // (back: the focus to its box, found by its place, as a repaint held while the menu was open may have made it anew)
+  function closeMenu(back = false) {
     if (!menu) return;
     menu.remove();
     document.removeEventListener('pointerdown', outside, true);
-    window.removeEventListener('resize', onResize);
-    const back = menuFor;
+    document.removeEventListener('scroll', onMove, true);
+    window.removeEventListener('resize', onMove);
+    const at = menuFor.dataset.at;
     menu = menuFor = null;
-    if (refocus && back?.isConnected) back.focus();
+    gate.closed();
+    if (back) byAt(at)?.focus();
   }
   const outside = (e) => { if (!menu?.contains(e.target)) closeMenu(); };
-  const onResize = () => closeMenu();
+  const onMove = () => closeMenu(); // the menu is fixed: a scroll or a resize would leave it away from its box
 
-  function openMenu(node) {
-    const x = info.get(node);
-    if (!hasRow(x?.c) || menuFor === node) return;
+  function openMenu(pressed) {
+    if (menuFor === pressed) return; // the timer and the contextmenu of one press open one menu
     closeMenu();
+    const at = pressed.dataset.at;
+    const node = pressed.isConnected ? pressed : byAt(at); // made anew by a repaint the last menu held
+    const x = info.get(node);
+    if (!hasRow(x?.c)) return;
     const { c } = x;
-    const run = { skip: ['Skip…', () => act(actions.skip, c)], undo: ['Undo', () => undo(c)], details: ['Details', () => details(x)] };
+    const run = { skip: ['Skip…', () => act(actions.skip, c, at)], undo: ['Undo', () => undo(c)], details: ['Details', () => details(x, at)] };
     const items = menuItems(c, Date.now()).map((k) => run[k]);
     menu = el('div', 'tg-menu');
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', c.words);
+    menu.addEventListener('contextmenu', (e) => e.preventDefault()); // a long press on an item is not the browser's menu
     menuFor = node;
+    gate.opened();
     for (const [label, run] of items) {
       const b = button(label);
       b.setAttribute('role', 'menuitem');
@@ -318,33 +336,25 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     menu.style.top = `${Math.max(4, below ? r.bottom + 4 : r.top - 4 - m.height)}px`;
     menu.style.left = `${Math.max(4, Math.min(r.left, innerWidth - m.width - 4))}px`;
     document.addEventListener('pointerdown', outside, true);
-    window.addEventListener('resize', onResize);
-    menu.firstChild.focus();
+    document.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    menu.firstChild.focus({ preventScroll: true });
   }
 
-  // A long press opens the menu; the tap that ends it must not also act. A press that moves is a scroll.
-  let press = null;
-  let pressAt = null;
-  let swallow = false;
+  // A long press opens the menu; the pointer's tap that ends it must not also act (a keyboard's click always does). A
+  // press that moves is a scroll.
+  const press = createPress({ onHold: openMenu, ms: PRESS_MS, movePx: MOVE_PX });
   const target = (e) => e.target.closest?.('[data-at]');
-  const stopPress = () => { clearTimeout(press); press = null; };
+  const stopPress = () => press.stop();
   table.addEventListener('pointerdown', (e) => {
-    swallow = false;
-    stopPress();
     const t = target(e);
-    if (!t || e.button !== 0 || !hasRow(info.get(t)?.c)) return;
-    pressAt = [e.clientX, e.clientY];
-    press = setTimeout(() => { press = null; swallow = true; openMenu(t); }, PRESS_MS);
+    press.down(t && e.button === 0 && hasRow(info.get(t)?.c) ? t : null, e.clientX, e.clientY);
   });
-  table.addEventListener('pointermove', (e) => {
-    if (press && Math.hypot(e.clientX - pressAt[0], e.clientY - pressAt[1]) > MOVE_PX) stopPress();
-  });
+  table.addEventListener('pointermove', (e) => press.move(e.clientX, e.clientY));
   for (const type of ['pointerup', 'pointercancel', 'pointerleave']) table.addEventListener(type, stopPress);
   table.addEventListener('click', (e) => {
     const t = target(e);
-    if (!t || t.tagName !== 'BUTTON') return;
-    if (swallow) { swallow = false; return; }
-    tap(t);
+    if (t?.tagName === 'BUTTON' && press.click(e.detail)) tap(t);
   });
   // right-click, a phone's own long press, Shift+F10 and the menu key
   table.addEventListener('contextmenu', (e) => {
@@ -365,20 +375,13 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
       openMenu(t);
       return;
     }
+    if (!MOVE_KEYS.has(e.key)) return;
+    e.preventDefault();
     const grid = [...table.rows].map((tr) => [...tr.cells].map((td) => (td.matches('[data-at]') ? td : td.querySelector('[data-at]'))));
     const y = grid.findIndex((row) => row.includes(t));
-    const x = grid[y].indexOf(t);
-    const last = (row) => row.length - 1;
-    const to = {
-      ArrowLeft: [y, x - 1, 0, -1], ArrowRight: [y, x + 1, 0, 1], ArrowUp: [y - 1, x, -1, 0], ArrowDown: [y + 1, x, 1, 0],
-      Home: e.ctrlKey ? [0, 0, 0, 1] : [y, 0, 0, 1], End: e.ctrlKey ? [grid.length - 1, last(grid.at(-1)), 0, -1] : [y, last(grid[y]), 0, -1],
-    }[e.key];
+    const to = gridMove(grid, [y, grid[y].indexOf(t)], e.key, e.ctrlKey);
     if (!to) return;
-    e.preventDefault();
-    let [ny, nx] = to;
-    while (grid[ny]?.[nx] === null) [ny, nx] = [ny + to[2], nx + to[3]]; // the corner holds nothing
-    const n = grid[ny]?.[nx];
-    if (!n) return;
+    const n = grid[to[0]][to[1]];
     t.tabIndex = -1;
     n.tabIndex = 0;
     current = n.dataset.at;
@@ -408,6 +411,7 @@ export function createTaskGrid(host, { roomId, week = null, onWeek, actions, onC
     // the room tasks reply (today's rows with their ids); a new day: the week again
     update(next) {
       view = next;
+      held.changed(next?.today); // a tapped row's change came: its box lets go (paint shows it)
       if (cal && next?.date && next.date !== cal.today) load();
       else paint();
     },

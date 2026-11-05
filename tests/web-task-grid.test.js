@@ -69,7 +69,8 @@ test('keyboard: role="grid", rows and cells, one Tab stop, arrows, Home and End,
   assert.ok(grid.includes("th.setAttribute('role', turned ? 'columnheader' : 'rowheader');"));
   assert.ok(grid.includes("th.setAttribute('role', turned ? 'rowheader' : 'columnheader');"));
   assert.ok(grid.includes("for (const n of table.querySelectorAll('[data-at]')) n.tabIndex = n === stop ? 0 : -1;"));
-  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']) assert.ok(grid.includes(`${key}:`), key);
+  // the moves themselves: tests/web-task-grid-state.test.js (gridMove)
+  assert.ok(grid.includes('if (!MOVE_KEYS.has(e.key)) return;') && grid.includes('const to = gridMove(grid, [y, grid[y].indexOf(t)], e.key, e.ctrlKey);'));
   assert.ok(grid.includes("if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {"));
   // the box's words are its name (a screen reader hears "Footbath, Wednesday 4 November: done by Sara at 08:12")
   assert.ok(grid.includes("focus.setAttribute('aria-label', c.words);"));
@@ -78,26 +79,30 @@ test('keyboard: role="grid", rows and cells, one Tab stop, arrows, Home and End,
 
 test('a long press (500 ms) opens the menu and the tap that ends it does not also act; a press that moves is a scroll', () => {
   assert.ok(grid.includes('const PRESS_MS = 500;'));
-  const down = grid.slice(grid.indexOf("table.addEventListener('pointerdown'"), grid.indexOf("table.addEventListener('pointermove'"));
-  assert.ok(down.includes('swallow = false;'), 'every press starts clean: a long press with no click after it does not eat the next tap');
-  assert.ok(down.includes('press = setTimeout(() => { press = null; swallow = true; openMenu(t); }, PRESS_MS);'));
-  const click = grid.slice(grid.indexOf("table.addEventListener('click'"));
-  assert.ok(click.includes('if (swallow) { swallow = false; return; }'));
-  assert.ok(grid.includes('Math.hypot(e.clientX - pressAt[0], e.clientY - pressAt[1]) > MOVE_PX) stopPress();'));
+  // the press's behaviour (hold, scroll, swallow vs a keyboard's Enter): tests/web-task-grid-state.test.js (createPress)
+  assert.ok(grid.includes('const press = createPress({ onHold: openMenu, ms: PRESS_MS, movePx: MOVE_PX });'));
+  assert.ok(grid.includes("press.down(t && e.button === 0 && hasRow(info.get(t)?.c) ? t : null, e.clientX, e.clientY);"));
+  assert.ok(grid.includes("table.addEventListener('pointermove', (e) => press.move(e.clientX, e.clientY));"));
+  assert.ok(grid.includes("if (t?.tagName === 'BUTTON' && press.click(e.detail)) tap(t);"), "the click's detail: 0 from the keyboard");
   assert.ok(grid.includes("table.addEventListener('contextmenu', (e) => {"), 'right-click and a phone\'s own long press');
-  assert.ok(grid.includes("if (!hasRow(x?.c) || menuFor === node) return;"), 'the timer and the contextmenu of one press open one menu');
+  assert.ok(grid.includes('if (menuFor === pressed) return;'), 'the timer and the contextmenu of one press open one menu');
+  assert.ok(grid.includes("menu.addEventListener('contextmenu', (e) => e.preventDefault());"), 'a long press on an item');
   assert.ok(css.includes('-webkit-touch-callout: none; user-select: none;'), 'a long press does not select the box');
 });
 
 test("a tap: today's open box is Done (the one tap, or its dialog), any other row Details; Undo posts and says its errors", () => {
-  assert.ok(grid.includes("else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c);"));
-  assert.ok(grid.includes('else if (hasRow(x.c)) details(x);'));
+  assert.ok(grid.includes("else if (x.c.kind === 'open' && x.c.taskId != null) act(actions.done, x.c, at);"));
+  assert.ok(grid.includes('else if (hasRow(x.c)) details(x, at);'));
   assert.ok(grid.includes("await request('POST', `/api/tasks/${c.taskId}/undo`, undefined, COMMAND_TIMEOUT);"));
   assert.ok(grid.includes('if (err.status === 409 || err.status === 404) onChanged?.();'));
   assert.ok(grid.includes('onError?.(errorText(err));'));
   // the box waits for the repaint once something changed (a second tap would send again), and lets go when nothing did
   assert.ok(grid.includes("if (c.taskId != null && held.has(c.taskId)) target.setAttribute('aria-disabled', 'true');"));
-  assert.ok(grid.includes("else { held.delete(id); painted = ''; paint(); }"));
+  // ...and lets go only when the room reply shows its row changed (createHeld; a calendar reload does not)
+  assert.ok(grid.includes('held.hold(id, view?.today);') && grid.includes('if (!changed && held.letGo(id)) paint();'));
+  const update = grid.slice(grid.indexOf('update(next) {'), grid.indexOf('setWeek(w) {'));
+  assert.ok(update.includes('held.changed(next?.today);'));
+  assert.equal(grid.split('held.changed(').length, 2, 'only update() lets a box go on a change');
   // Details: the text, then status, who, when (not a missed row's), amount, reason, note
   assert.ok(grid.includes("['Status', STATUS[c.kind]], ['Who', r.worker], ['When', c.kind !== 'missed'"));
 });
@@ -112,4 +117,26 @@ test('the look: amber only for a missed ✗, the accent ring on today, a planned
   assert.ok(block.includes('.tg-box[data-kind="planned"] { border: 1px dashed var(--border-strong); }'));
   assert.ok(block.includes('.tg[data-turn="phone"] .tg-box { min-width: 0; height: 48px;'));
   assert.ok(block.includes('.tg { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }'));
+});
+
+test('the menu holds the repaint and closes on a scroll; a dialog gives the focus back; no repaint after destroy', () => {
+  // every paint through the gate (its behaviour: tests/web-task-grid-state.test.js), opened and closed with the menu
+  assert.ok(grid.includes('const gate = createPaintGate(() => { if (alive) draw(); });') && grid.includes('const paint = () => gate.paint();'));
+  assert.equal(grid.split('draw()').length, 3, 'draw() only behind the gate (its definition and the gate)');
+  assert.ok(grid.includes('gate.opened();') && grid.includes('gate.closed();'));
+  assert.ok(grid.includes("document.addEventListener('scroll', onMove, true);") && grid.includes("document.removeEventListener('scroll', onMove, true);"));
+  assert.ok(grid.includes('if (back) byAt(at)?.focus();'), 'the box found again by its place: a held repaint made it anew');
+  // after Done's or Skip's dialog, Details and a task's full text: the box again when the focus fell to the page
+  assert.ok(grid.includes('refocus(at);') && grid.split('.closed.then(() => refocus(at));').length === 3);
+  assert.ok(grid.includes("if (!alive || !at || (document.activeElement && document.activeElement !== document.body)) return;"));
+  assert.ok(grid.includes('loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});'));
+  assert.ok(grid.includes("const text = typeof r.text === 'string' && r.text.trim() ? [r.text] : [];"), 'Details: no empty line');
+  const load = grid.slice(grid.indexOf('async function load() {'), grid.indexOf("await request('GET', `/api/calendar"));
+  assert.ok(load.includes('print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday()));'), 'Print month has an address while the week loads');
+});
+
+test('a desk of many tasks (601 to 800 px): the boxes keep their width and the grid scrolls sideways', () => {
+  assert.ok(css.includes('.tg-scroll { overflow-x: auto; }'));
+  assert.ok(css.includes('.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 56px); max-width: calc(88px + var(--cols, 6) * 150px); }'));
+  assert.ok(grid.includes("table.style.setProperty('--cols', String(columns.length));"));
 });

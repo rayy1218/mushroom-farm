@@ -71,7 +71,10 @@ test('mount takes the tab, and the page can change tab without mounting again', 
   assert.match(app, /unmount\.setTab\?\.\(route\.tab\)/);
   // the Tasks tab's week (spec 2026-11-04-task-grid-design.md 2): from the address, and back into it in place
   assert.ok(app.includes("if (route.tab === 'tasks') unmount.setWeek?.(route.week ?? null);"));
-  assert.ok(page.includes('unmount.setWeek = (w) => { week = w ?? null; tasksCard?.setWeek(week); };'));
+  assert.ok(page.includes('unmount.setWeek = (w) => { setTasksWeek(w); tasksCard?.setWeek(week); };'));
+  // the Tasks tab's link carries the week: leaving the tab and coming back keeps it (while on the room's page)
+  assert.ok(page.includes('tasksLink.href = tasksHash(id, week);'));
+  assert.ok(page.includes("onWeek: (w) => { setTasksWeek(w); if (alive() && tab === 'tasks')"));
   assert.ok(page.includes("window.history.replaceState(null, '', tasksHash(id, w));"), 'history is the History tab\'s state in this page');
 });
 

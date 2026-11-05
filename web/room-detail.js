@@ -196,6 +196,12 @@ export function mount(container, { id, tab = 'now', week = null }) {
     }
     tabBar.append(a);
   }
+  // The Tasks tab's week: its link carries it, so leaving the tab and coming back keeps the week (while on this room's page).
+  function setTasksWeek(w) {
+    week = w ?? null;
+    tasksLink.href = tasksHash(id, week);
+  }
+  setTasksWeek(week);
   // The Tasks tab's dot: the stage tasks open today and the upkeep due or overdue (amber with an overdue one).
   function paintTasksDot(counts) {
     const dot = tabDot(counts);
@@ -564,7 +570,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     // the grid's week in the address, in place (as the Calendar keeps its day): ‹ › add no history entry each (window's:
     // history here is the History tab's)
     tasksCard ??= createTasksCard(els.tasksHost, {
-      roomId: id, week, onWeek: (w) => { week = w; if (alive() && tab === 'tasks') window.history.replaceState(null, '', tasksHash(id, w)); },
+      roomId: id, week, onWeek: (w) => { setTasksWeek(w); if (alive() && tab === 'tasks') window.history.replaceState(null, '', tasksHash(id, w)); },
       onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },
     });
     harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });
@@ -842,6 +848,6 @@ export function mount(container, { id, tab = 'now', week = null }) {
     container.replaceChildren();
   }
   unmount.setTab = setTab; // a tab change: the router shows another panel instead of mounting the page again
-  unmount.setWeek = (w) => { week = w ?? null; tasksCard?.setWeek(week); }; // the Tasks tab's week from the address
+  unmount.setWeek = (w) => { setTasksWeek(w); tasksCard?.setWeek(week); }; // the Tasks tab's week from the address
   return unmount;
 }

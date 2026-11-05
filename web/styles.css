@@ -1721,8 +1721,9 @@ h2.r-named { display: flex; }
 .tg-title { flex: 1 1 auto; margin: 0; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
 .tg-scroll { overflow-x: auto; }
 .tg { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
-/* columns of one width, at most 150 px each: a week of few tasks does not stretch its boxes into bars */
-.tg[data-turn="desk"] { max-width: calc(88px + var(--cols, 6) * 150px); }
+/* columns of one width, at most 150 px each: a week of few tasks does not stretch its boxes into bars; at least a box's 52 px
+   and its padding, so many tasks on a narrow desk (601 to 800 px) scroll sideways rather than run over their cells */
+.tg[data-turn="desk"] { min-width: calc(88px + var(--cols, 6) * 56px); max-width: calc(88px + var(--cols, 6) * 150px); }
 .tg th, .tg td { padding: 2px; font-weight: inherit; }
 .tg-corner { width: 88px; }
 .tg .tg-day { padding: 2px 10px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 500; text-align: left; white-space: nowrap; }

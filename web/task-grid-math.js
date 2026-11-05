@@ -273,3 +273,88 @@ export function sheetLayout(n) {
   const width = (landscape ? PAGE_MM.landscape : PAGE_MM.portrait) - FIXED_MM;
   return { landscape, sideways: n > 0 && width / n < NARROW_MM };
 }
+
+// ---- the grid's state: pressing, moving, the boxes held, the paint held (no DOM, so their behaviour can be tested) ----
+
+// A press on a box (spec 3): held `ms` without moving more than `movePx`, it is a long press, onHold(target) (the menu). The
+// pointer's click that ends a long press must not also act; a keyboard's click (detail 0: Enter, Space) always acts, so a
+// long press that no click followed does not eat the next Enter. timers: { set(fn, ms), clear(id) } (a test's clock).
+// → { down(target | null, x, y), move(x, y), stop(), click(detail) → whether it acts }
+export function createPress({ onHold, ms = 500, movePx = 10, timers = { set: (fn, t) => setTimeout(fn, t), clear: (id) => clearTimeout(id) } }) {
+  let timer = null;
+  let at = null;
+  let swallow = false;
+  const stop = () => { if (timer !== null) timers.clear(timer); timer = null; };
+  return {
+    // every press starts clean; target null: a press that holds nothing (not a row's box, not the main button)
+    down(target, x, y) {
+      swallow = false;
+      stop();
+      if (target == null) return;
+      at = [x, y];
+      timer = timers.set(() => { timer = null; swallow = true; onHold(target); }, ms);
+    },
+    move(x, y) { if (timer !== null && Math.hypot(x - at[0], y - at[1]) > movePx) stop(); }, // a scroll
+    stop,
+    click(detail) {
+      const eat = swallow && detail !== 0;
+      swallow = false;
+      return !eat;
+    },
+  };
+}
+
+// The keys that move in the grid (spec 5); the page does not scroll on them, even at an edge.
+export const MOVE_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End']);
+
+// Where a key moves from [y, x] (spec 5): the arrows one box, Home and End to the row's ends (with Ctrl, the grid's); a cell
+// that holds nothing (null: the corner) is passed over. grid: the rows of the grid's focusable nodes. → [y, x], or null (an
+// edge, or not a moving key)
+export function gridMove(grid, [y, x], key, ctrl = false) {
+  const last = (row) => row.length - 1;
+  const to = {
+    ArrowLeft: [y, x - 1, 0, -1], ArrowRight: [y, x + 1, 0, 1], ArrowUp: [y - 1, x, -1, 0], ArrowDown: [y + 1, x, 1, 0],
+    Home: ctrl ? [0, 0, 0, 1] : [y, 0, 0, 1], End: ctrl ? [grid.length - 1, last(grid.at(-1)), 0, -1] : [y, last(grid[y]), 0, -1],
+  }[key];
+  if (!to) return null;
+  let [ny, nx] = to;
+  while (grid[ny]?.[nx] === null) [ny, nx] = [ny + to[2], nx + to[3]];
+  return grid[ny]?.[nx] ? [ny, nx] : null;
+}
+
+// Today's rows tapped (Done, Skip): each box waits, disabled, until the room tasks reply shows its row changed, as a second
+// tap would send again (a 409 for the worker's own tap); a week read again (the calendar) does not let it go.
+// → { has(id), hold(id, rows), letGo(id) → whether it was held, changed(rows) → whether any let go, ids() }
+export function createHeld() {
+  const held = new Map(); // id → its row as the reply read when it was tapped
+  const rowOf = (rows, id) => JSON.stringify((rows ?? []).find((r) => r?.id === id) ?? null);
+  return {
+    has: (id) => held.has(id),
+    hold(id, rows) { held.set(id, rowOf(rows, id)); },
+    letGo: (id) => held.delete(id),
+    changed(rows) {
+      let any = false;
+      for (const [id, was] of held) if (rowOf(rows, id) !== was) any = held.delete(id) || any;
+      return any;
+    },
+    ids: () => [...held.keys()],
+  };
+}
+
+// The paint, held while the box's menu is open: a refresh never closes the menu under the finger or the keys (and drops the
+// focus); it paints once the menu closes. → { paint(), opened(), closed() }
+export function createPaintGate(paint) {
+  let open = false;
+  let waiting = false;
+  return {
+    paint() { if (open) waiting = true; else paint(); },
+    opened() { open = true; },
+    closed() {
+      open = false;
+      if (waiting) { waiting = false; paint(); }
+    },
+  };
+}
+
+// The month Print month opens: today's when the week holds it, else the week's first day's ('YYYY-MM').
+export const sheetMonth = ({ from, to }, today) => (from <= today && today <= to ? today : from).slice(0, 7);
