@@ -8,9 +8,10 @@ import {
   lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead,
 } from '../web/sales-math.js';
 
-const nb = ' ';
+const nb = '\u00a0';
 const NOW = Date.UTC(2026, 10, 5, 2); // Thu 5 Nov 2026 10:00 at the farm
 const DAY = 86_400_000;
+const dot = `${nb}· `;
 
 test('the formatter: RM per kg, days owed', () => {
   assert.equal(priceText(12), `RM${nb}12.00`);
@@ -26,21 +27,24 @@ const delivery = {
 };
 
 test('a delivery\'s row: day, buyer, lines in short, total, the paid mark, the reference', () => {
-  assert.equal(linesShort(delivery.lines), `Grey oyster 12.00${nb}kg · Pink oyster 4.50${nb}kg`);
+  assert.equal(linesShort(delivery.lines), `Grey oyster 12.00${nb}kg${dot}Pink oyster 4.50${nb}kg`);
   assert.deepEqual(paidMark(delivery), { text: 'Unpaid', unpaid: true });
   assert.deepEqual(paidMark({ ...delivery, paidAt: Date.UTC(2026, 10, 9, 2) }), { text: `Paid 9${nb}Nov`, unpaid: false });
   assert.deepEqual(deliveryRow(delivery), { day: 'Wed 4 Nov', buyer: 'Kedai Ah Seng', lines: linesShort(delivery.lines), total: `RM${nb}214.50`, paid: paidMark(delivery), reference: 'R-1' });
 });
 
 test('the tiles: sold of harvested, income, owed all time', () => {
-  const sales = { days: 30, totals: { kg: 16.5, total: 214.5, harvestedKg: 64.5, count: 1 }, owed: { total: 214.5, count: 3, oldestAt: NOW - 12 * DAY } };
+  const sales = { days: 30, from: '2026-10-07', totals: { kg: 16.5, total: 214.5, harvestedKg: 64.5, count: 1 }, owed: { total: 214.5, count: 3, oldestAt: NOW - 12 * DAY } };
   assert.deepEqual(pageTiles(sales, NOW), [
     { label: 'Sold', value: `16.5${nb}kg`, line: `of 64.5${nb}kg harvested` },
     { label: 'Income', value: `RM${nb}214.50` },
-    { label: 'Owed', value: `RM${nb}214.50`, line: '3 sales · oldest 12 days' },
+    { label: 'Owed', value: `RM${nb}214.50`, line: `3 sales${dot}oldest 12 days` },
   ]);
-  const old = { ...sales, days: 7, owed: { total: 10, count: 1, oldestAt: NOW - 40 * DAY } };
-  assert.equal(pageTiles(old, NOW)[2].line, 'all time · 1 sale · oldest 40 days');
+  const old = { ...sales, days: 7, from: '2026-10-30', owed: { total: 10, count: 1, oldestAt: NOW - 40 * DAY } };
+  assert.equal(pageTiles(old, NOW)[2].line, `all time${dot}1 sale${dot}oldest 40 days`);
+  const edge = (at) => pageTiles({ ...sales, owed: { total: 1, count: 1, oldestAt: at } }, NOW)[2].line;
+  assert.equal(edge(Date.UTC(2026, 9, 7, 2)), `1 sale${dot}oldest 29 days`, 'oldest on the first day: not all time');
+  assert.equal(edge(Date.UTC(2026, 9, 6, 2)), `all time${dot}1 sale${dot}oldest 30 days`, 'the day before: all time');
   assert.equal(pageTiles({ ...sales, owed: { total: 0, count: 0, oldestAt: null } }, NOW)[2].line, 'All paid');
 });
 
@@ -60,7 +64,7 @@ test('the tables: by crop with the price against expected, by buyer', () => {
 test('the dialog: a line\'s total, the foot, the price pre-fill (buyer, expected, empty)', () => {
   assert.equal(lineTotal('12', '10.5'), `RM${nb}126.00`);
   assert.equal(lineTotal('', '10'), '');
-  assert.equal(footText([{ kg: '12', priceKg: '13' }, { kg: '4.5', priceKg: '13' }]), `16.50${nb}kg · RM${nb}214.50`);
+  assert.equal(footText([{ kg: '12', priceKg: '13' }, { kg: '4.5', priceKg: '13' }]), `16.50${nb}kg${dot}RM${nb}214.50`);
   const buyer = { prices: { oyster: 13 } };
   const cropYield = { oyster: { priceKg: 12 }, pink: { priceKg: 14 } };
   assert.deepEqual(prefill('oyster', buyer, cropYield), { value: '13.00', expected: false });
@@ -87,7 +91,7 @@ test('the body from the boxes: the day at the time typed (today: now; another da
 
 test('delete confirm: the title and the lead', () => {
   assert.equal(deleteTitle(delivery), 'Delete the sale of 4 Nov to Kedai Ah Seng?');
-  assert.equal(deleteLead(delivery), `RM${nb}214.50 · Grey oyster 12.00${nb}kg, Pink oyster 4.50${nb}kg.`);
+  assert.equal(deleteLead(delivery), `RM${nb}214.50${dot}Grey oyster 12.00${nb}kg, Pink oyster 4.50${nb}kg.`);
 });
 
 test('the myGAP sheet: a day\'s harvest rows, then its sale lines; the totals', () => {
@@ -101,7 +105,34 @@ test('the myGAP sheet: a day\'s harvest rows, then its sale lines; the totals', 
   assert.deepEqual(rows[0].slice(3), ['', '1.00', '14.00', '14.00', '', 'Borong Lim']);
   assert.equal(rows[0][2], 'Mixed');
   assert.equal(rows[1][3], '20.00', 'the harvest row before the same day\'s sale');
-  assert.deepEqual(rows[2].slice(2), [`Container 1 · run of 3 Oct`, '', '12.00', '10.50', '126.00', 'R-1', 'Kedai Ah Seng']);
+  assert.deepEqual(rows[2].slice(2), [`Container 1${dot}run of 3 Oct`, '', '12.00', '10.50', '126.00', 'R-1', 'Kedai Ah Seng']);
   assert.deepEqual(sheetTotals({ totals: { kg: 20 } }, lines), { harvested: '20.00', sold: '13.00', total: '140.00' });
   assert.deepEqual(sheetTotals({ totals: { kg: 20 } }, null), { harvested: '20.00', sold: '', total: '' });
+});
+
+test('review pins: numbers, the edit keeps its time, the sheet order, the wording, rounding', () => {
+  const body = (kg, extra = {}, opts = {}) => saleBody({ date: '2026-11-05', buyerId: '3', lines: [{ crop: 'oyster', kg, priceKg: '1', roomId: '' }], ...extra }, { now: NOW, ...opts });
+  assert.deepEqual(body('1,234'), { error: 'Give the kg as a number', field: 'lines.0.kg' });
+  assert.deepEqual(body('1,000'), { error: 'Give the kg as a number', field: 'lines.0.kg' });
+  assert.equal(body('12.').lines[0].kg, 12);
+  assert.equal(body('.5').lines[0].kg, 0.5);
+  assert.equal(body('4,5').lines[0].kg, 4.5);
+  assert.deepEqual(saleBody({ date: '2026-11-05', buyerId: '3', lines: [{ crop: 'oyster', kg: '1', priceKg: 'x', roomId: '' }] }, { now: NOW }), { error: 'Give RM per kg as a number', field: 'lines.0.priceKg' });
+  const was = Date.UTC(2026, 10, 3, 6, 30);
+  assert.equal(body('1', { date: '2026-11-03' }, { soldAt: was }).soldAt, was, 'same date keeps the time');
+  assert.equal(body('1', { date: '2026-11-02' }, { soldAt: was }).soldAt, Date.UTC(2026, 10, 2, 4), 'another day: 12:00');
+  assert.deepEqual(body('1', { date: '2026-13-01' }), { error: 'Give the date', field: 'date' });
+
+  const cropYield = { oyster: { priceKg: 12 }, black: { priceKg: 0 } };
+  assert.deepEqual(unlikely([{ crop: 'oyster', kg: 500, priceKg: 12 }], cropYield), [], '500 kg exactly: no question');
+  assert.deepEqual(unlikely([{ crop: 'black', kg: 1, priceKg: 50 }], cropYield), [], 'expected 0: no price check');
+  assert.equal(unlikely([{ crop: 'oyster', kg: 1, priceKg: 36.1 }], cropYield)[0].message, `That's over 3 times the expected RM${nb}12.00 per kg. Is RM${nb}36.10 right?`);
+  assert.deepEqual(prefill('oyster', { prices: { oyster: 1000 } }, {}), { value: '1000.00', expected: false });
+  assert.equal(footText([{ kg: '0.1', priceKg: '1' }, { kg: '0.2', priceKg: '1' }]), `0.30${nb}kg${dot}RM${nb}0.30`);
+  assert.deepEqual(sheetTotals({ totals: { kg: 1 } }, [{ kg: 0.1, total: 0.1 }, { kg: 0.2, total: 0.2 }]), { harvested: '1.00', sold: '0.30', total: '0.30' });
+
+  const mk = (soldAt, kg, roomName = null, runStartedAt = null) => ({ date: '2026-11-04', soldAt, crop: 'pink', roomName, runStartedAt, kg, priceKg: 1, total: kg, invoiceNo: null, buyer: 'B' });
+  const rows = sheetWithSales([], [mk(20, 2), mk(10, 1), mk(10, 3, 'Container 1')]);
+  assert.deepEqual(rows.map((r) => r[4]), ['1.00', '3.00', '2.00'], 'by time, then given order');
+  assert.equal(rows[1][2], 'Container 1', 'a room without a run: just the room');
 });

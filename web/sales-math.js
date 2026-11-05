@@ -4,29 +4,35 @@
 
 import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
-import { farmDate, dayMonth } from './tasks-math.js';
-import { kgText, rmText, sheetRows, periodWords } from './harvest-math.js';
+import { farmDate, dayMonth, daysFrom } from './tasks-math.js';
+import { kgText, rmText, sheetRows, periodWords, whenMs } from './harvest-math.js';
 
 const NB = ' ';
-const DASH = '—';
-const DAY_MS = 86_400_000;
-const FARM_OFFSET_MS = 8 * 3_600_000;
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// A price over this many times the crop's expected price is asked about once (a slipped decimal point).
 export const UNLIKELY_TIMES = 3;
+// A line over this many kg is asked about once (a slipped decimal point).
 export const UNLIKELY_KG = 500;
+// A real number, not NaN or a string.
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
+// A box's value: 2 places, no thousands comma.
 const two = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false }); // a box's value
+// The sheet's figure: 2 places, grouped.
 const sheet2 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); // the sheet's figures, grouped as Harvest's
+// A box's text as a number: a decimal comma is read ('4,5'), a grouped '1,234' is refused as ambiguous, NaN when it is no number.
 const num = (text) => {
-  const t = String(text ?? '').trim().replace(',', '.');
-  return t === '' || !/^\d*\.?\d+$/.test(t) ? NaN : Number(t);
+  const s = String(text ?? '').trim();
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) return NaN;
+  const t = s.replace(',', '.');
+  return /^(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN;
 };
 
+// RM per kg (or any RM figure) as Harvest writes it; a dash when missing.
 export const priceText = (v) => rmText(v);
 
 // Whole farm days from a sale to now: "today", "1 day", "12 days".
 export function ageText(ms, now) {
-  const days = Math.round((Date.parse(farmDate(now)) - Date.parse(farmDate(ms))) / DAY_MS);
+  const days = daysFrom(farmDate(ms), farmDate(now));
   return days <= 0 ? 'today' : days === 1 ? '1 day' : `${days} days`;
 }
 
@@ -35,13 +41,18 @@ const shortDay = (ms) => {
   return `${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${dayMonth(date)}`;
 };
 
-// "Grey oyster 12.00 kg · Pink oyster 4.50 kg"
-export const linesShort = (lines) => lines.map((l) => `${cropShortName(l.crop)} ${kgText(l.kg, { exact: true })}`).join(DOT);
+// One line in words: "Grey oyster 12.00 kg".
+const lineWords = (l) => `${cropShortName(l.crop)} ${kgText(l.kg, { exact: true })}`;
 
+// "Grey oyster 12.00 kg · Pink oyster 4.50 kg"
+export const linesShort = (lines) => lines.map(lineWords).join(DOT);
+
+// The paid mark as text ("Unpaid" or "Paid 9 Nov"), with a flag so the unpaid one is styled by more than colour.
 export const paidMark = (d) => (d.paidAt === null || d.paidAt === undefined
   ? { text: 'Unpaid', unpaid: true }
   : { text: `Paid ${dayMonth(farmDate(d.paidAt)).replace(' ', NB)}`, unpaid: false });
 
+// A delivery's row on the page: day, buyer, lines in short, total, paid mark, reference.
 export const deliveryRow = (d) => ({
   day: shortDay(d.soldAt), buyer: d.buyer, lines: linesShort(d.lines), total: rmText(d.total), paid: paidMark(d), reference: d.invoiceNo ?? '',
 });
@@ -49,8 +60,7 @@ export const deliveryRow = (d) => ({
 // Sold (of harvested), Income, Owed (all time: said when the oldest unpaid sale is before the period).
 export function pageTiles(sales, now) {
   const { totals, owed } = sales;
-  const before = owed.oldestAt !== null && ageText(owed.oldestAt, now) !== 'today'
-    && Math.round((Date.parse(farmDate(now)) - Date.parse(farmDate(owed.oldestAt))) / DAY_MS) >= sales.days;
+  const before = owed.oldestAt !== null && farmDate(owed.oldestAt) < sales.from;
   const owedLine = owed.count === 0 ? 'All paid'
     : `${before ? `all time${DOT}` : ''}${owed.count} ${owed.count === 1 ? 'sale' : 'sales'}${DOT}oldest ${ageText(owed.oldestAt, now)}`;
   return [
@@ -71,14 +81,17 @@ function diffText(avg, expected) {
   return `${rmText(Math.abs(d))} ${d < 0 ? 'under' : 'over'} expected`;
 }
 
+// The by-crop table's rows: the cells and the average price against the expected one in words.
 export const cropRows = (sales) => (sales.byCrop ?? []).map((c) => ({
   crop: c.crop, name: cropShortName(c.crop),
   cells: [kgText(c.kg), kgText(c.harvestedKg), rmText(c.total), rmText(c.avgPriceKg), rmText(c.expectedPriceKg)],
   diff: diffText(c.avgPriceKg, c.expectedPriceKg),
 }));
 
+// The by-buyer table's rows: name and the cells.
 export const buyerRows = (sales) => (sales.byBuyer ?? []).map((b) => ({ name: b.buyer, cells: [kgText(b.kg), rmText(b.total), rmText(b.owed)] }));
 
+// The empty page's words for the period.
 export const emptyText = (days) => `No sales in the last ${periodWords(days)}.`;
 
 // A line's total as typed ('' until both boxes read as numbers).
@@ -111,19 +124,20 @@ export function unlikely(lines, cropYield) {
     const expected = cropYield?.[l.crop]?.priceKg;
     if (finite(expected) && expected > 0 && l.priceKg > UNLIKELY_TIMES * expected) {
       const times = (Math.round((l.priceKg / expected) * 10) / 10).toFixed(1);
-      out.push({ field: `lines.${i}.priceKg`, message: `That's ${times} times the expected ${rmText(expected)} per kg. Is ${rmText(l.priceKg)} right?` });
+      out.push({ field: `lines.${i}.priceKg`, message: `That's ${times === '3.0' ? 'over 3' : times} times the expected ${rmText(expected)} per kg. Is ${rmText(l.priceKg)} right?` });
     }
     if (l.kg > UNLIKELY_KG) out.push({ field: `lines.${i}.kg`, message: `Is ${kgText(l.kg, { exact: true })} right?` });
     return out;
   });
 }
 
-// The POST/PUT body from the dialog's boxes: { date, buyerId, invoiceNo, note, lines: [{ crop, kg, priceKg, roomId }] } (all
+// The POST/PUT body from the dialog's boxes (an edit passes the sale's soldAt: its time stays while its date does): { date, buyerId, invoiceNo, note, lines: [{ crop, kg, priceKg, roomId }] } (all
 // text). Today's date is now; another day is 12:00 at the farm. → the body, or { error, field }.
-export function saleBody(v, { now }) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v.date ?? '')) return { error: 'Give the date', field: 'date' };
+export function saleBody(v, { now, soldAt: was = null }) {
+  const noon = whenMs(v.date, '12:00');
+  if (Number.isNaN(noon) || farmDate(noon) !== v.date) return { error: 'Give the date', field: 'date' };
   if (!/^[1-9]\d*$/.test(String(v.buyerId ?? ''))) return { error: 'Pick a buyer', field: 'buyerId' };
-  const soldAt = v.date === farmDate(now) ? now : Date.parse(`${v.date}T12:00:00Z`) - FARM_OFFSET_MS;
+  const soldAt = was !== null && v.date === farmDate(was) ? was : v.date === farmDate(now) ? now : noon;
   const lines = [];
   for (const [i, l] of (v.lines ?? []).entries()) {
     const kg = num(l.kg);
@@ -136,21 +150,23 @@ export function saleBody(v, { now }) {
   return { soldAt, buyerId: Number(v.buyerId), invoiceNo: text(v.invoiceNo), note: text(v.note), lines };
 }
 
+// The Delete confirm's title.
 export const deleteTitle = (d) => `Delete the sale of ${dayMonth(farmDate(d.soldAt))} to ${d.buyer}?`;
-export const deleteLead = (d) => `${rmText(d.total)}${DOT}${d.lines.map((l) => `${cropShortName(l.crop)} ${kgText(l.kg, { exact: true })}`).join(', ')}.`;
+// The Delete confirm's lead: the total and the lines.
+export const deleteLead = (d) => `${rmText(d.total)}${DOT}${d.lines.map(lineWords).join(', ')}.`;
 
 // The myGAP 4-6 sheet's rows: Harvest's rows (sheetRows) and the sale lines together by date, a day's harvest rows first
 // then its sale lines by time. A sale row: Date, Crop, Block / location (the room and run as Harvest's, or "Mixed"),
 // Harvested blank, Sold, Price / kg, Total, Invoice No., Buyer.
 export function sheetWithSales(records, lines) {
   const list = Array.isArray(records) ? records : [];
-  const harvest = sheetRows(list).map((cells, i) => ({ date: list[i].date, kind: 0, at: i, cells }));
+  const harvest = sheetRows(list).map((cells, i) => ({ date: list[i].date, kind: 0, at: 0, index: i, cells }));
   const sales = (Array.isArray(lines) ? lines : []).map((l, i) => {
     const [base] = sheetRows([{ date: l.date, roomName: l.roomName ?? '', crop: l.crop, runStartedAt: l.runStartedAt, kg: null }]);
-    const where = l.roomName ? base[2] : 'Mixed';
-    return { date: l.date, kind: 1, at: l.soldAt * 1000 + i, cells: [base[0], base[1], where, '', sheet2(l.kg), sheet2(l.priceKg), sheet2(l.total), l.invoiceNo ?? '', l.buyer] };
+    const where = !l.roomName ? 'Mixed' : l.runStartedAt === null || l.runStartedAt === undefined ? l.roomName : base[2];
+    return { date: l.date, kind: 1, at: l.soldAt, index: i, cells: [base[0], base[1], where, '', sheet2(l.kg), sheet2(l.priceKg), sheet2(l.total), l.invoiceNo ?? '', l.buyer] };
   });
-  return [...harvest, ...sales].sort((a, b) => a.date.localeCompare(b.date) || a.kind - b.kind || a.at - b.at).map((r) => r.cells);
+  return [...harvest, ...sales].sort((a, b) => a.date.localeCompare(b.date) || a.kind - b.kind || a.at - b.at || a.index - b.index).map((r) => r.cells);
 }
 
 // The sheet's Total row: harvested kg, sold kg and the RM total ('' when the sales could not be read: lines null).
