@@ -63,8 +63,8 @@ const ROUTES = [
   ['GET', '/api/simulations/1', false], ['GET', '/api/sizing/1', false], ['GET', '/api/workers/accounts', false],
   ['POST', '/api/workers/1/secret', false], ['PUT', '/api/workers/1/role', false], ['POST', '/api/workers/1/unlock', false],
   ['POST', '/api/workers/1/sign-out', false],
-  ['GET', '/api/rooms/1/alarms', false], ['POST', '/api/rooms/1/alarms/ack', false], ['POST', '/api/rooms/1/filter/changed', false],
-  ['GET', '/api/rooms/1/filter/changes', false], ['POST', '/api/rooms/1/simulations', false], ['POST', '/api/rooms/1/sizing', false],
+  ['GET', '/api/rooms/1/alarms', true], ['POST', '/api/rooms/1/alarms/ack', false], ['POST', '/api/rooms/1/filter/changed', false],
+  ['GET', '/api/rooms/1/filter/changes', true], ['POST', '/api/rooms/1/simulations', false], ['POST', '/api/rooms/1/sizing', false],
   ['GET', '/api/batches/stock-items', false], ['GET', '/api/batches/1', false], ['POST', '/api/batches/1/place', false],
   ['POST', '/api/batches/1/unplace', false], ['POST', '/api/batches/1/checks', false], ['POST', '/api/batches/1/loads', false],
   ['PUT', '/api/batch-checks/1', false], ['PUT', '/api/batch-loads/1', false], ['PUT', '/api/batch-recipes/1', false],
@@ -205,8 +205,9 @@ test("a worker's replies carry no money; the owner's same replies do", async (t)
   await call('POST', `/api/rooms/${room}/harvests`, { kg: 3.5, crop: 'oyster', worker: 'Ali' }, owner);
   const item = (await call('POST', '/api/inventory/items', { name: 'Bleach', kind: 'chemical', unit: 'L' }, owner)).body.id;
   await call('POST', '/api/inventory/purchases', { itemId: item, qty: 3, total: 30 }, owner);
+  assert.equal((await call('POST', `/api/rooms/${room}/filter/changed`, undefined, owner)).status, 200);
   const day = localDate(Date.now());
-  const paths = ['/api/overview', '/api/rooms', `/api/rooms/${room}`, `/api/rooms/${room}/harvests`, '/api/harvest?days=30', '/api/inventory',
+  const paths = ['/api/overview', '/api/rooms', `/api/rooms/${room}`, `/api/rooms/${room}/alarms`, `/api/rooms/${room}/filter/changes`, `/api/rooms/${room}/harvests`, '/api/harvest?days=30', '/api/inventory',
     `/api/inventory/items/${item}`, `/api/rooms/${room}/tasks`, '/api/tasks/today', `/api/calendar?from=${day}&to=${day}`, '/api/workers'];
   for (const p of paths) {
     const r = await call('GET', p, undefined, worker);

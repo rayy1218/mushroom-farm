@@ -7,7 +7,8 @@ const WORKER_ROUTES = [
   ['GET', '/api/overview'],
   ['GET', '/api/rooms'],
   ['GET', `/api/rooms/${ID}`],
-  ['GET', `/api/rooms/${ID}/(?:sensors|history|crop|machines|tasks|tasks/log|harvests)`],
+  // a room's alarms and filter changes: read only (the acks and a filter change are the owner's)
+  ['GET', `/api/rooms/${ID}/(?:sensors|history|crop|machines|tasks|tasks/log|harvests|alarms|filter/changes)`],
   ['GET', '/api/alarms'],
   ['GET', '/api/outdoor'],
   ['GET', '/api/outdoor/history'],

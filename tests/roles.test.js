@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { workerMay, workerReply, filterWorkerReplies, MONEY_KEYS } from '../server/roles.js';
 
-test('the allow-list: floor work yes; Business, Settings, Setup, usage, CSV, edits no', () => {
+test('the allow-list: floor work and a room\'s alarms and filter changes yes; Business, Settings, Setup, usage, CSV, edits, acks no', () => {
   const yes = [
     ['GET', '/api/overview'], ['GET', '/api/rooms'], ['GET', '/api/rooms/12'], ['GET', '/api/rooms/12/sensors'],
     ['GET', '/api/rooms/12/history'], ['GET', '/api/rooms/12/crop'], ['GET', '/api/rooms/12/machines'], ['GET', '/api/alarms'],
@@ -14,6 +14,7 @@ test('the allow-list: floor work yes; Business, Settings, Setup, usage, CSV, edi
     ['GET', '/api/workers'], ['POST', '/api/tasks/7/done'], ['POST', '/api/tasks/7/skip'], ['POST', '/api/tasks/7/undo'],
     ['GET', '/api/rooms/12/harvests'], ['GET', '/api/harvest'], ['POST', '/api/rooms/12/harvests'], ['GET', '/api/inventory'],
     ['GET', '/api/inventory/items/3'], ['POST', '/api/inventory/uses'], ['POST', '/api/inventory/counts'],
+    ['GET', '/api/rooms/12/alarms'], ['GET', '/api/rooms/12/filter/changes'],
   ];
   const no = [
     ['PUT', '/api/settings'], ['GET', '/api/usage'], ['GET', '/api/rooms/12/usage'], ['GET', '/api/rooms/12/control'],
@@ -23,7 +24,9 @@ test('the allow-list: floor work yes; Business, Settings, Setup, usage, CSV, edi
     ['PUT', '/api/inventory/items/3'], ['GET', '/api/inventory/purchases'], ['POST', '/api/inventory/purchases'],
     ['PUT', '/api/inventory/moves/9'], ['POST', '/api/inventory/lots/9/throw-out'], ['GET', '/api/inventory/sheet'], ['GET', '/api/sales'],
     ['GET', '/api/costs'], ['GET', '/api/runs'], ['GET', '/api/business/summary'], ['GET', '/api/workers/accounts'],
-    ['POST', '/api/workers/1/secret'], ['GET', '/api/rooms/012'], ['GET', '/api/rooms/12/'], ['HEAD', '/api/rooms'], ['GET', '/api'],
+    ['POST', '/api/workers/1/secret'], ['POST', '/api/alarms/5/ack'], ['POST', '/api/rooms/12/alarms/ack'],
+    ['POST', '/api/rooms/12/filter/changed'], ['GET', '/api/rooms/12/filter/changed'], ['POST', '/api/rooms/12/filter/changes'],
+    ['GET', '/api/rooms/012'], ['GET', '/api/rooms/12/'], ['HEAD', '/api/rooms'], ['GET', '/api'],
   ];
   for (const [m, p] of yes) assert.equal(workerMay(m, p), true, `${m} ${p}`);
   for (const [m, p] of no) assert.equal(workerMay(m, p), false, `${m} ${p}`);
