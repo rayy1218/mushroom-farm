@@ -38,3 +38,20 @@ test('routeMissing: a plain "Not found" (a farm server older than the page), not
   assert.equal(routeMissing(new ApiError(404, null)), false, 'no body: not told apart, treated as missing');
   assert.equal(OUTDATED, 'The farm app is older than this page: restart the farm app (npm start) to use this');
 });
+
+test('a 401 once the app runs reloads the page and never settles; on the sign-in routes it is just an error', async (t) => {
+  const realLoc = globalThis.location;
+  let calls = 0;
+  globalThis.location = { reload() { calls++; } };
+  t.after(() => { globalThis.location = realLoc; });
+  stub(t, () => new Response('{"error":"Sign in"}', { status: 401 }));
+  let settled = false;
+  request('GET', '/api/rooms').then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(calls, 1);
+  assert.equal(settled, false);
+  for (const path of ['/api/session', '/api/login', '/api/login/names']) {
+    await assert.rejects(request('GET', path), (e) => e.status === 401);
+  }
+  assert.equal(calls, 1, 'no reload from the sign-in routes');
+});

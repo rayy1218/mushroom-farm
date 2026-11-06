@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { SECRET, secretProblem, landing, failText } from '../web/login-math.js';
+import { SECRET, secretProblem, landing, failText, NOT_KEPT } from '../web/login-math.js';
 
 const src = (name) => readFileSync(new URL(`../web/${name}`, import.meta.url), 'utf8');
 
@@ -33,4 +33,13 @@ test('the page starts at boot.js; the app (and its live stream) only once someon
   assert.ok(!src('index.html').includes('src="/app.js"'));
   assert.ok(src('boot.js').includes("await import('./app.js')"));
   assert.ok(src('api.js').includes('res.status === 401'));
+});
+
+test('a sign-in the browser did not keep (plain http) has its words; a failed app import shows the load-fail page at once', () => {
+  assert.equal(NOT_KEPT, 'This browser did not keep the sign-in. Open the farm app at its https:// address.');
+  const boot = src('boot.js');
+  assert.ok(boot.includes('NOT_KEPT'));
+  assert.ok(boot.includes("open(who).catch(() => showLoadFail())"));
+  assert.ok(boot.includes('routeMissing(err) ? OUTDATED'));
+  assert.ok(boot.indexOf('window.farmReady = true') > boot.indexOf('login.mount'), 'ready only once the sign-in view is up');
 });

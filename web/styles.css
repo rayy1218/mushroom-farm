@@ -2893,12 +2893,12 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
 /* ---- end Summary ---- */
 
 /* ---- Login ---- the sign-in view (spec 2026-11-06-login-design.md 6); the top bar's links wait until someone is signed in */
-html[data-signin] .top-link, html[data-signin] .top-alarm, html[data-signin] .theme-btn, html[data-signin] [data-signout] { display: none; }
+html[data-signin] .top-link, html[data-signin] .top-alarm, html[data-signin] .theme-btn, html[data-signin] .live-mark, html[data-signin] [data-signout] { display: none; }
 html[data-role="worker"] [data-owner-only] { display: none !important; }
-.login { max-width: 26rem; margin: 2rem auto; }
-.login-names { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
-.login-name { width: 100%; min-height: 44px; text-align: left; font-size: 1.05rem; }
-.login-secret .field input { max-width: 14rem; font-size: 1.25rem; letter-spacing: 0.15em; }
-.login-actions { display: flex; justify-content: space-between; gap: 0.75rem; margin-top: 1rem; }
+.login { max-width: 416px; margin: 32px auto; }
+.login-names { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
+.login-name { width: 100%; min-height: 44px; text-align: left; font-size: var(--fs-lg); }
+.login-secret .field input { max-width: 224px; font-size: var(--fs-xl); letter-spacing: .15em; }
+.login-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; }
 .login-actions button { min-height: 44px; }
 /* ---- end Login ---- */
