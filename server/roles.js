@@ -77,7 +77,8 @@ const withoutLength = (headers) => {
   if (headers !== null && typeof headers === 'object') return Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'content-length'));
   return headers;
 };
-const isJson = (status, type) => status < 300 && /^application\/json\b/i.test(String(type ?? ''));
+// A 2xx reply with no type at all counts as JSON (fails closed: filtered, or the error reply if it does not parse).
+const isJson = (status, type) => status < 300 && (type === undefined || type === null || /^application\/json\b/i.test(String(type)));
 
 export function filterWorkerReplies(res, path) {
   let status; // from writeHead, else res.statusCode
@@ -131,6 +132,7 @@ export function filterWorkerReplies(res, path) {
     } catch {
       console.error(`A worker's reply of ${path} was not JSON; sent an error instead`);
       body = FAILED;
+      if (!res.headersSent) res.statusCode = 500;
     }
     return end(body, cb);
   };

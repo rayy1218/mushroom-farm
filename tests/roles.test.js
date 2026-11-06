@@ -2,6 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { workerMay, workerReply, filterWorkerReplies, MONEY_KEYS } from '../server/roles.js';
 
 test('the allow-list: floor work yes; Business, Settings, Setup, usage, CSV, edits no', () => {
@@ -76,8 +77,6 @@ test('the reply filter: a JSON reply is filtered; a CSV, a stream, an error and 
 });
 
 // The reply filter against a real server: it fails closed however the handler writes its reply.
-import http from 'node:http';
-
 const serve = async (path, handler) => {
   const server = http.createServer((req, res) => { filterWorkerReplies(res, path); handler(req, res); });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -131,6 +130,13 @@ test('the filter leaves a CSV, a 4xx JSON and an event stream as they are; a nul
   assert.equal(r.body, BODY);
   r = await serve(H, (q, res) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('data: {"value":1}\n\n'); setTimeout(() => res.end('data: 2\n\n'), 5); });
   assert.equal(r.body, 'data: {"value":1}\n\ndata: 2\n\n');
+  r = await serve(H, (q, res) => { res.writeHead(200); res.end(BODY); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+  const err = console.error;
+  console.error = () => {};
+  try { r = await serve(H, (q, res) => { res.end('value 10'); }); } finally { console.error = err; }
+  assert.equal(r.status, 500);
+  assert.deepEqual(JSON.parse(r.body), { error: 'Something went wrong' });
   r = await serve('/api/settings', (q, res) => { res.setHeader('content-type', 'application/json'); res.end('null'); });
   assert.equal(r.body, 'null');
 });
