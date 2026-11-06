@@ -123,7 +123,7 @@ export function mount(container) {
     retry.dataset.focusKey = `retry:${part}`;
     retry.setAttribute('aria-label', `${RETRY_WORDS} ${PART_NAMES[part]}`);
     retry.addEventListener('click', () => reader.load());
-    node.append(el('span', '', text), ' ', retry);
+    node.append(el('span', '', text), retry);
     return node;
   };
 
