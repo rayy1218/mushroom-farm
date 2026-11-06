@@ -89,6 +89,7 @@ export function taskRow(row, actions, { due = null, line = row.text, skip = true
   }
   if (cancel) {
     const b = button('Cancel', 'tk-quiet');
+    b.dataset.ownerOnly = ''; // ---- Login ---- the owner's
     b.setAttribute('aria-label', `Cancel the task: ${row.text}`);
     b.dataset.focusKey = `cancel-${row.id}`;
     tap(b, () => actions.cancel(row));

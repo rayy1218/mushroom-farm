@@ -202,6 +202,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const emptyCard = el('section', 'card hv-part hv-empty');
   const giveCrops = el('a', 'button', 'Give it crops on the Crop tab');
   giveCrops.href = roomHash(roomId, 'crop');
+  giveCrops.dataset.ownerOnly = ''; // ---- Login ---- a worker cannot change the crops
   emptyCard.append(picture('task', 'harvestDaily', { size: 40 }), el('p', 'none', 'No crops in this room yet.'), giveCrops);
 
   for (const node of [runCard, listCard, pastCard, emptyCard]) node.hidden = true;
@@ -229,6 +230,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const actions = el('div', 'tk-actions');
     // one quiet Edit a row; Delete is in its dialog
     const edit = button('Edit', 'tk-quiet');
+    edit.dataset.ownerOnly = ''; // ---- Login ---- a harvest is changed by the owner
     edit.dataset.focusKey = `edit-${h.id}`;
     edit.setAttribute('aria-label', `Edit ${l.kg} picked ${l.when}`);
     edit.addEventListener('click', () => editHarvest(h, run, li, fallback));

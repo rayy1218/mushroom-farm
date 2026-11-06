@@ -9,7 +9,8 @@
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
-import { ROOM_TABS, roomHash, tasksHash } from './route.js';
+import { ROOM_TABS, OWNER_TABS, roomHash, tasksHash } from './route.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
 import { cardOf } from './equipment-cards.js';
@@ -114,7 +115,7 @@ const TEMPLATE = `
         </div>
         <div class="charts hist-part" id="hist-climate" tabindex="-1" data-charts></div>
         <section class="card chart-card usage-charts hist-part" id="hist-energy" tabindex="-1" data-usage-charts></section>
-        <section data-usage></section>
+        <section data-usage data-owner-only></section>
         <section class="card chart-card usage-charts hist-part" id="hist-exchange" tabindex="-1" data-exchange hidden></section>
         <section class="card timeline-card hist-part" id="hist-timeline" tabindex="-1" data-timeline hidden>
           <h2>Machine timeline</h2>
@@ -182,7 +183,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
   const tabBar = q('[data-tabs]');
   let tasksLink = null;
   let tasksDot = null;
-  for (const t of ROOM_TABS) {
+  for (const t of ROOM_TABS.filter((tab) => isOwner() || !OWNER_TABS.includes(tab.key))) { // ---- Login ---- a worker's tabs
     const a = document.createElement('a');
     a.href = roomHash(id, t.key);
     a.dataset.tab = t.key;
@@ -543,7 +544,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
       buildCharts();
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
-      usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
+      // ---- Login ---- the room's usage reply is the owner's (RM): a worker has no Energy and water card
+      if (isOwner()) usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, initial: '24h', onChange: () => { if (alive() && sensors) { renderCharts(); syncHistoryNav(); } } });
       const saved = { // the head and the other tabs show the change; new ratings change the estimates
         queue: createSaveQueue(), // one save at a time on the page: each PUT sends the whole room
@@ -605,7 +607,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     renderCharts();
     syncHistoryNav();
     paintDrawing();
-    usageCard.refresh(); // not more than once a minute
+    usageCard?.refresh(); // not more than once a minute
   }
 
   // The Room card from the latest painted replies (also right after a command, not only on the next refresh).

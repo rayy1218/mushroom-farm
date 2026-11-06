@@ -29,7 +29,7 @@ test('the tab dot from the counts; the live stream and the stream coming back as
   assert.ok(card.includes('onCounts?.(view.counts ?? null);'));
   assert.ok(card.includes("live.on('room', (d) => { if (d.id === roomId && d.part === 'tasks') reload.call(); })"));
   const destroy = card.slice(card.indexOf('destroy() {'));
-  for (const x of ['reload.cancel();', 'grid.destroy();', 'actions.destroy();', 'picker.destroy();', 'clearTimeout(timer);']) assert.ok(destroy.includes(x), x);
+  for (const x of ['reload.cancel();', 'grid.destroy();', 'actions.destroy();', 'clearTimeout(timer);']) assert.ok(destroy.includes(x), x);
 });
 
 test('a row: its text, the crop notes muted under it, Done and Skip; the closed ones folded under "6 done"', () => {

@@ -1,22 +1,22 @@
 // The dialogs of the Tasks tab, the Today page and Plan this (spec 2026-10-30-tasks-design.md 7.1, 7.2, 7.4 and 7.5): who
-// did it (a name from Settings' workers, kept in this browser), Done with an amount, Skip and Cancel with a reason, Add a
+// did it (the name signed in; an owner may pick another), Done with an amount, Skip and Cancel with a reason, Add a
 // long-term task, Done on a long-term machine task with the Setup update, and Plan this. One dialog, made on first use and
 // shared, like the Simulate stepper.
 //   createTaskActions({ onChanged(row | null), onError(text) }) → { done(row), skip(row), cancel(row), add(roomId), destroy() }
 //   (done, skip and cancel end, after their dialog closes, with true when something changed: the list will be asked again)
-//   createWorkerPicker() → { node, destroy() } · openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows, replaced) })
+//   openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows, replaced) })
 //   closeTaskDialog() · openForm(options) (below; the Harvest tab's Record and Edit use it too) · loadWorkers() · getWorker()
-//   · setWorker(name) · workerField(names, label) · errorText(err)
+//   · setWorker() · workerField(names, label) · errorText(err)
 
 import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
+import { me, isOwner } from './session.js'; // ---- Login ----
 import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
 import { picture } from './pictures.js';
 import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
 import { pickWarnings, donePicks } from './harvest-math.js';
 
-const WORKER_KEY = 'farm.worker';
 const COMMAND_TIMEOUT = 15000;
 
 let dialog = null;
@@ -49,66 +49,25 @@ export const errorText = (err) => (err.status === 0 ? `${OFFLINE}. Try again.` :
 // A Setup field as it is now: "aircon rated input 1,070 W", "dehumidifier not fitted" (a box's label says fitted itself).
 const nowText = (f) => `${(f.kind === 'check' ? f.label.replace(/ fitted$/, '') : f.label).toLowerCase()} ${beforeText(f)}`;
 
-// ---- who is doing the rounds ----
+// ---- who did it ---- (spec 2026-11-06-login-design.md 4 and 6): the person signed in. An owner may pick another name in a
+// dialog; a worker's box has only theirs (the server records them whatever is sent).
 
 export function getWorker() {
-  try { return localStorage.getItem(WORKER_KEY) || null; } catch { return null; }
+  return me()?.name ?? null;
 }
 
-export function setWorker(name) {
-  try {
-    if (name) localStorage.setItem(WORKER_KEY, name);
-    else localStorage.removeItem(WORKER_KEY);
-  } catch { /* not kept: the next Done asks again */ }
-  window.dispatchEvent(new CustomEvent('farm:worker'));
-}
+// The name picked in a dialog was kept for the next Done until Login: the signed-in name is the default now, so there is
+// nothing to keep (the callers still call it after a save; a name the server refused sends 'farm:worker' itself).
+export function setWorker() {}
 
-// The active workers' names (GET /api/workers).
+// The names a "who did it" box offers: an owner, the active workers (GET /api/workers); a worker, their own.
 export async function loadWorkers() {
+  if (!isOwner()) return me() ? [me().name] : [];
   const data = await request('GET', '/api/workers');
   return (Array.isArray(data?.workers) ? data.workers : []).filter((w) => w.active).map((w) => w.name);
 }
 
-// "Doing the rounds as: Ali ▾" (spec 7.2): the name kept in this browser; another picker or a dialog changing it repaints it.
-export function createWorkerPicker() {
-  let alive = true;
-  let names = [];
-  let loaded = false;
-  let failed = false; // the names could not be read: say so, not "No names yet"
-  const node = el('label', 'tk-as');
-  const select = el('select');
-  select.name = 'worker';
-  node.append(el('span', '', 'Doing the rounds as'), select);
-  function paint() {
-    const now = getWorker();
-    const first = failed ? OFFLINE : names.length || !loaded ? 'Pick a name' : 'No names yet (Settings)';
-    fillOptions(select, [['', first], ...names.map((n) => [n, n])], names.includes(now) ? now : '');
-  }
-  select.addEventListener('change', () => setWorker(select.value || null));
-  let seq = 0; // every read gets a token: an older answer that comes last is dropped
-  function load() {
-    const mine = ++seq;
-    loadWorkers().then((list) => { if (mine === seq) { names = list; loaded = true; failed = false; } }, () => { if (mine === seq) failed = true; })
-      .then(() => { if (alive && mine === seq) paint(); });
-  }
-  // The names are read again when the worker changes (here, in another picker, or a name the server refused) and when the
-  // stream comes back (the server is there again, and Settings may have renamed or removed someone meanwhile).
-  const onStore = () => { if (alive) { paint(); load(); } };
-  window.addEventListener('farm:worker', onStore);
-  const offStatus = live.onStatus((up) => { if (up && alive) load(); });
-  load();
-  paint();
-  return {
-    node,
-    destroy() {
-      alive = false;
-      window.removeEventListener('farm:worker', onStore);
-      offStatus();
-    },
-  };
-}
-
-// The dialog's "Who did it" box: the active workers, the one this browser does the rounds as picked.
+// The dialog's "Who did it" box: the names loadWorkers gives, the one signed in picked.
 export const workerField = (list, label = 'Who did it') => ({
   name: 'worker', label, kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
   options: [['', 'Pick a name'], ...list.map((n) => [n, n])],
@@ -383,7 +342,7 @@ function amountBoxes(amounts) {
 export function createTaskActions({ onChanged, onError }) {
   let alive = true;
   let names = null; // the workers' names, read on the first need
-  // ...and again after the worker changes (a picker, or a name the server refused) and when the stream comes back (Settings
+  // ...and again after a name the server refused and when the stream comes back (Settings
   // may have renamed or removed someone meanwhile).
   const forget = () => { names = null; };
   window.addEventListener('farm:worker', forget);
@@ -410,7 +369,7 @@ export function createTaskActions({ onChanged, onError }) {
   }
 
   // A name the server refused as not on the workers list (renamed or removed in Settings meanwhile): the names are read
-  // again here and in the pickers, and the open dialog's box gets the list as it is now.
+  // again here and in the other open boxes, and the open dialog's box gets the list as it is now.
   async function refusedName(form) {
     window.dispatchEvent(new CustomEvent('farm:worker'));
     if (!form) return;
@@ -441,10 +400,9 @@ export function createTaskActions({ onChanged, onError }) {
   }
   const leadOf = (row, list, more = []) => [taskLead(row), ...more, ...(list.length ? [] : [settingsLine()])];
 
-  // The worker picked in a dialog is kept for the next Done (spec 7.2).
+  // The name picked in a dialog (the signed-in one unless an owner picked another).
   function picked(values) {
     const w = String(values.worker ?? '').trim();
-    if (w) setWorker(w);
     return w || null;
   }
 
@@ -467,7 +425,7 @@ export function createTaskActions({ onChanged, onError }) {
     const list = await workers();
     if (!list || !alive) return;
     const worker = getWorker();
-    // One tap: a stage or upkeep task with no amount, by the worker this browser does the rounds as.
+    // One tap: a stage or upkeep task with no amount, by the person signed in.
     if (row.kind !== 'longterm' && !recordsAmount(row) && worker && list.includes(worker)) {
       const r = await send(`/api/tasks/${row.id}/done`, { worker });
       if (r !== true && alive) onError?.(r.message);

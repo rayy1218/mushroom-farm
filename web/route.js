@@ -13,6 +13,8 @@ export const ROOM_TABS = [
   { key: 'simulations', label: 'Simulations' },
   { key: 'setup', label: 'Setup' },
 ];
+// ---- Login ---- the room tabs only an owner has (spec 2026-11-06-login-design.md 6)
+export const OWNER_TABS = ['simulations', 'setup'];
 const NAMED_TABS = ROOM_TABS.slice(1).map((t) => t.key);
 // The nine tabs before the redesign: an old address (a bookmark, a link) opens the tab that holds that part now.
 const OLD_TABS = { overview: 'now', charts: 'history', energy: 'history', climate: 'setup', sensors: 'setup', profile: 'setup', equipment: 'setup' };
@@ -139,6 +141,15 @@ const BUSINESS_PAGES = new Map([
 ]);
 export const businessTabOf = (route) => BUSINESS_PAGES.get(route?.name) ?? null;
 export const businessStrip = (route) => (BUSINESS_TABS.some((t) => t.key === route?.name) ? route.name : null);
+
+// ---- Login ---- the pages a worker may open: null when route is one, else the address to show instead (Today; a room's
+// owner tab: its Now tab).
+const WORKER_PAGES = new Set(['today', 'calendar', 'overview', 'detail', 'harvest', 'inventory', 'inventoryItem', 'inventoryCount']);
+export function workerHash(route) {
+  if (!WORKER_PAGES.has(route?.name)) return '#/today';
+  if (route.name === 'detail' && OWNER_TABS.includes(route.tab)) return roomHash(route.id, 'now');
+  return null;
+}
 
 export function parseRoute(hash) {
   const run = new RegExp(`^#/rooms/${ID}/simulations/${ID}/?$`).exec(hash ?? '');

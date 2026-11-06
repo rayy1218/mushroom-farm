@@ -30,7 +30,7 @@ test('the page: the period in the address, Export CSV and the myGAP sheet follow
   assert.ok(page.includes("history.replaceState(null, '', canonicalHash({ name: 'harvest', days: n }));"));
   assert.ok(page.includes('els.csv.href = `/api/harvest.csv?days=${period}`;'));
   assert.ok(page.includes('els.sheet.href = sheetHash(period);'));
-  assert.ok(page.includes('<a class="button" data-csv download>Export CSV</a>'));
+  assert.ok(page.includes('<a class="button" data-csv download data-owner-only>Export CSV</a>'));
   assert.ok(page.includes("color: 'var(--s-harvest)'"));
   assert.ok(page.includes("request('GET', `/api/harvest?days=${period}`)"));
 });

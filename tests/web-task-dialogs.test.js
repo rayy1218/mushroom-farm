@@ -4,17 +4,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { setMe } from '../web/session.js';
 
 const dialogs = readFileSync(new URL('../web/task-dialogs.js', import.meta.url), 'utf8');
 const has = (text, msg) => assert.ok(dialogs.includes(text), msg ?? text);
 
-test('the worker is kept per browser under farm.worker; the pickers hear a change', () => {
-  has("const WORKER_KEY = 'farm.worker';");
-  has("window.dispatchEvent(new CustomEvent('farm:worker'));");
-  has("window.addEventListener('farm:worker', onStore);");
-  has("window.removeEventListener('farm:worker', onStore);");
-  has("node.append(el('span', '', 'Doing the rounds as'), select);");
+test('who did it is the signed-in name (Login): an owner is offered the active workers, a worker their own name', () => {
+  has('return me()?.name ?? null;');
+  has("if (!isOwner()) return me() ? [me().name] : [];");
   has("const data = await request('GET', '/api/workers');");
+  has("window.dispatchEvent(new CustomEvent('farm:worker'));"); // a refused name: the open boxes read the names again
+  assert.ok(!dialogs.includes('localStorage') && !dialogs.includes('Doing the rounds as'));
 });
 
 test('Done is one tap with a kept worker and no amount; otherwise it asks', () => {
@@ -79,13 +79,13 @@ test('one dialog, made on first use; a page that goes away closes it', () => {
   has('destroy() {\n      alive = false;\n      window.removeEventListener(\'farm:worker\', forget);\n      offStatus();\n      closeTaskDialog();');
 });
 
-// ---- C5 review: run with a stand-in fetch, localStorage and window (no DOM: these paths open no dialog) ----
+// ---- C5 review: run with a stand-in fetch and window, signed in as Ali (no DOM: these paths open no dialog) ----
 
-function stubs(t, answer) {
-  const saved = { fetch: globalThis.fetch, localStorage: globalThis.localStorage, window: globalThis.window };
-  const store = new Map([['farm.worker', 'Ali']]);
+function stubs(t, answer, who = { name: 'Ali', role: 'owner' }) {
+  const saved = { fetch: globalThis.fetch, window: globalThis.window };
   const calls = [];
-  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+  setMe(who);
+  t.after(() => setMe(null));
   globalThis.window = new EventTarget();
   globalThis.fetch = async (path, init) => {
     calls.push(`${init.method} ${path}`);
@@ -125,10 +125,6 @@ test('the workers could not be read: the page says so, no dialog says "No names 
   assert.deepEqual(calls, ['GET /api/workers', 'GET /api/workers'], 'a failed read is not kept; nothing was posted');
 });
 
-test('the picker says the server could not be reached rather than "No names yet"', () => {
-  has("const first = failed ? OFFLINE : names.length || !loaded ? 'Pick a name' : 'No names yet (Settings)';");
-});
-
 test('Esc does not close the dialog while it is sending (a failure would be lost)', () => {
   has('d.oncancel = (event) => { if (busy) event.preventDefault(); };');
 });
@@ -151,9 +147,9 @@ test('a dialog closed while sending (Chrome lets a second Esc close it): a failu
   has('openForm({ ...options, onLost: (text) => { if (alive) onError?.(text); } })');
 });
 
-test('the picker that could not read the names reads them again when the live stream comes back', () => {
+test('the names that could not be read are read again when the live stream comes back', () => {
   has("import { live } from './live.js';");
-  has('const offStatus = live.onStatus((up) => { if (up && alive) load(); });');
+  has('const offStatus = live.onStatus((up) => { if (up) forget(); });');
   has('offStatus();');
 });
 
@@ -225,7 +221,7 @@ test('the kept workers are read again after the worker changes and when the live
   assert.equal(reads(), 3);
 });
 
-test('a name the server refuses as not on the workers list: the page says so and the list is read again, here and in the pickers', async (t) => {
+test('a name the server refuses as not on the workers list: the page says so and the list is read again, here and in the other open boxes', async (t) => {
   await liveStub(t);
   const calls = stubs(t, async (path) => (path === '/api/workers'
     ? json({ workers: [{ id: 1, name: 'Ali', active: true }] })
@@ -255,8 +251,21 @@ test('a 409 (someone else closed it): the list is asked again and the server\'s 
   assert.deepEqual([changed, errors], [[null], ['Already done by Siti at 09:12']]);
 });
 
-test('an empty workers list is not kept (the first name added in Settings is seen); the picker reads the list again on a change and when the stream is back', () => {
+test('an empty workers list is not kept (the first name added in Settings is seen)', () => {
   has('names = list.length ? list : null;');
-  has("const onStore = () => { if (alive) { paint(); load(); } };");
-  has('const offStatus = live.onStatus((up) => { if (up && alive) load(); });');
+});
+
+test("a worker's one-tap Done reads no list and sends their own name (Login)", async (t) => {
+  await liveStub(t);
+  const bodies = [];
+  const calls = stubs(t, async (path, init) => {
+    bodies.push(init.body);
+    return json({ ...ROW, status: 'done', worker: 'Siti' });
+  }, { name: 'Siti', role: 'worker' });
+  const { createTaskActions, loadWorkers, getWorker } = await import('../web/task-dialogs.js');
+  assert.deepEqual([getWorker(), await loadWorkers()], ['Siti', ['Siti']]);
+  const actions = createTaskActions({ onChanged: () => {}, onError: () => {} });
+  assert.equal(await actions.done(ROW), true);
+  assert.deepEqual(calls, ['POST /api/tasks/7/done']);
+  assert.deepEqual(JSON.parse(bodies[0]), { worker: 'Siti' });
 });

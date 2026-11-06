@@ -28,8 +28,8 @@ const TEMPLATE = `
     </div>
     <div class="hv-tools">
       <div class="range-bar" role="group" aria-label="Period" data-range></div>
-      <a class="button" data-csv download>Export CSV</a>
-      <a class="button" data-sheet>myGAP sheet</a>
+      <a class="button" data-csv download data-owner-only>Export CSV</a>
+      <a class="button" data-sheet data-owner-only>myGAP sheet</a>
     </div>
   </div>
   <div class="banner" role="alert" hidden>

@@ -11,7 +11,7 @@ import { request, OUTDATED, routeMissing } from './api.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { upkeepRows, nowDue, comingUpWords, longtermLine, dayTitle, tasksDueWords } from './tasks-math.js';
-import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
+import { createTaskActions } from './task-dialogs.js';
 import { createTaskGrid } from './task-grid.js';
 import { el, button, taskRow, keepFocus } from './task-list.js';
 import { keepLines, DOT } from './text-math.js';
@@ -34,8 +34,7 @@ export function createTasksCard(host, { roomId, week = null, shown = true, onWee
   // Daily tasks: the week's grid
   const todayCard = el('section', 'card tk-part tk-today');
   const todayHead = el('div', 'sim-card-head');
-  const picker = createWorkerPicker();
-  todayHead.append(el('h2', '', 'Daily tasks'), picker.node);
+  todayHead.append(el('h2', '', 'Daily tasks'));
   const todaySub = el('p', 'muted tk-sub tk-day');
   const subText = el('span', '', 'Loading…');
   const error = el('p', 'meta warn tk-error');
@@ -49,6 +48,7 @@ export function createTasksCard(host, { roomId, week = null, shown = true, onWee
   // The foot: Print month (the grid's) and every closed task as CSV, for the myGAP records (the Log's export, under the grid
   // that took its place)
   const csvLine = el('p', 'muted tk-sub tg-csv');
+  csvLine.dataset.ownerOnly = ''; // ---- Login ---- Print month and Export CSV: the owner's
   const csv = el('a', '', 'Export CSV');
   csv.href = `/api/rooms/${roomId}/tasks/log.csv`;
   csv.setAttribute('download', '');
@@ -73,6 +73,7 @@ export function createTasksCard(host, { roomId, week = null, shown = true, onWee
   const longCard = el('section', 'card tk-part');
   const longHead = el('div', 'sim-card-head');
   const add = button('Add');
+  add.dataset.ownerOnly = ''; // ---- Login ---- a worker does the tasks; the owner sets them
   add.setAttribute('aria-label', 'Add a long-term task');
   longHead.append(el('h2', '', 'Long-term'), add);
   const longList = el('ul', 'tk-list');
@@ -137,7 +138,7 @@ export function createTasksCard(host, { roomId, week = null, shown = true, onWee
       if (!alive || me !== seq) return;
       if (routeMissing(err)) { // a farm app from before the tasks: say so, no dot, no empty parts, no timer
         subText.textContent = OUTDATED;
-        for (const node of [picker.node, gridHost, csvLine, upkeepCard, longCard]) node.hidden = true;
+        for (const node of [gridHost, csvLine, upkeepCard, longCard]) node.hidden = true;
         onCounts?.(null);
         return;
       }
@@ -179,7 +180,6 @@ export function createTasksCard(host, { roomId, week = null, shown = true, onWee
       for (const off of offLive) off();
       grid.destroy();
       actions.destroy();
-      picker.destroy();
       host.replaceChildren();
       host.className = hostClass;
     },

@@ -31,9 +31,9 @@ const TEMPLATE = `
     </div>
     <div class="iv-tools" data-tools hidden>
       <button type="button" class="primary" data-use>Record use</button>
-      <button type="button" data-purchase>Purchase</button>
-      <button type="button" data-edit>Edit</button>
-      <button type="button" data-archive>Archive</button>
+      <button type="button" data-purchase data-owner-only>Purchase</button>
+      <button type="button" data-edit data-owner-only>Edit</button>
+      <button type="button" data-archive data-owner-only>Archive</button>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -205,6 +205,7 @@ export function mount(container, { id }) {
       } else {
         const b = el('button', 'iv-link bz-quiet iv-move-edit', line.edit === 'edit' ? 'Edit' : 'Delete');
         b.type = 'button';
+        b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner
         const throwOuts = it.moves.some((x) => x.lotId === m.id);
         b.addEventListener('click', () => (line.edit === 'edit'
           ? openMoveDialog({ move: m, item: it, suppliers: it.suppliers, reasons: it.reasons, throwOuts, onDone: done, onLost: showError, alive })

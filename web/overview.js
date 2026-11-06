@@ -14,6 +14,7 @@ import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
 import { openRoomDialog, closeRoomDialog } from './room-dialog.js';
 import { roomHash } from './route.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { cropLine } from './room-card-math.js';
 import { overviewTiles, stripBars, overviewRooms, chartLabel } from './harvest-math.js';
 import { picture, emptyPicture } from './pictures.js';
@@ -29,7 +30,7 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1">Overview</h1>
       <p class="page-sub">Is the farm OK? All rooms at a glance.</p>
     </div>
-    <div class="page-actions ov-actions"><button type="button" data-add>Add room</button></div>
+    <div class="page-actions ov-actions"><button type="button" data-add data-owner-only>Add room</button></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -169,7 +170,8 @@ export function mount(container) {
     if (usageData) usage = usageData;
     if (wantHarvest) harvestAt = Date.now();
     if (harvestData) harvest = harvestData;
-    if (settings) phone = phoneAlarms(settings); // a failed read keeps the last line
+    // a failed read keeps the last line; ---- Login ---- a worker's settings hold no Telegram (the line would say "not set up")
+    if (settings && isOwner()) phone = phoneAlarms(settings);
     refresh = refreshMs(settings);
     const { overview, alarms, failed } = result;
     if (failed.overview || failed.alarms) showBanner(OFFLINE, true);
@@ -406,6 +408,7 @@ export function mount(container) {
       if (a.ackedAt === null) {
         const ack = node('button', '', 'Acknowledge');
         ack.type = 'button';
+        ack.dataset.ownerOnly = ''; // ---- Login ---- a worker reads the alarms; the owner acknowledges them
         ack.dataset.ack = a.id;
         li.append(ack);
       }

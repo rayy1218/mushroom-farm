@@ -107,6 +107,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   const doneMeta = el('p', 'meta warn');
   headText.append(title, farm, doneMeta);
   const editBtn = button('Edit crops');
+  editBtn.dataset.ownerOnly = ''; // ---- Login ---- a worker cannot change the crops
   editBtn.setAttribute('aria-expanded', 'false');
   editBtn.setAttribute('aria-controls', id('editor'));
   // the crops' pictures before their names (spec 2026-11-03-pictures-design.md 3), overlapping by a quarter in a mixed room
