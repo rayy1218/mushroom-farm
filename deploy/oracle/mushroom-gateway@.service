@@ -1,0 +1,16 @@
+# One per container gateway: mushroom-gateway@alpha (8092/1512), @beta (8093/1513), @gamma (8094/1514).
+[Unit]
+Description=Mushroom farm gateway simulator %i
+After=network-online.target
+
+[Service]
+User=farm
+WorkingDirectory=/opt/mushroom-farm
+Environment=TZ=Asia/Kuala_Lumpur NODE_ENV=production DEVICE_STATE=data/gateways/%i.json
+EnvironmentFile=/opt/mushroom-farm/deploy/oracle/gateway-%i.env
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning device/main.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

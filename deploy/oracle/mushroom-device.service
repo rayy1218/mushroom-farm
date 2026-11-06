@@ -1,0 +1,14 @@
+[Unit]
+Description=Mushroom farm device simulator (HTTP :8090, Modbus :1502)
+After=network-online.target
+
+[Service]
+User=farm
+WorkingDirectory=/opt/mushroom-farm
+Environment=TZ=Asia/Kuala_Lumpur NODE_ENV=production
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning device/main.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

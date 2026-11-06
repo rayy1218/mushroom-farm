@@ -162,6 +162,29 @@ docker compose run --rm --no-deps --user root device chown -R node:node /data
 docker compose start
 ```
 
+## Run on a cloud VM (systemd, reached over Tailscale)
+
+The live farm runs on an Oracle Cloud Always Free VM (Ampere A1, Ubuntu 24.04) with the device app and three gateway device apps beside it, each a systemd service that starts with the VM. The files are in `deploy/oracle/`; the scripts run on the dev machine against an SSH host name for the VM (an entry in `~/.ssh/config`, below `<host>`). Plain Node, not Docker: the rooms' own gateways are stored as `127.0.0.1:1512` to `:1514`, which only reach the gateway device apps when all of them share the host.
+
+| Service | Ports | State |
+|---|---|---|
+| `mushroom-farm` | HTTP 8080 | `/opt/mushroom-farm/data/v2.db` |
+| `mushroom-device` | HTTP 8090, Modbus 1502 | `/opt/mushroom-farm/device/state.json` |
+| `mushroom-gateway@alpha`, `@beta`, `@gamma` | HTTP 8092 / 8093 / 8094, Modbus 1512 / 1513 / 1514 | `/opt/mushroom-farm/data/gateways/<name>.json` |
+
+The farm app has no login, so nothing but SSH is open to the internet (the cloud's security list and the VM's firewall). The pages are reached over Tailscale: `tailscale serve` puts the farm app on `https://<vm>.<tailnet>.ts.net` and each device app on the same name with its own port (`:8090`, `:8092` to `:8094`), for the devices logged in to the tailnet only.
+
+| Task | Command |
+|---|---|
+| First set-up of a new VM | `deploy/oracle/push-code.sh <host>`, then `ssh <host> bash /opt/mushroom-farm/deploy/oracle/setup-vm.sh` (Node 22, Tailscale, the `farm` user, the services), then `ssh <host> sudo tailscale up` and `sudo tailscale serve --bg 8080` (and `--https=8090 http://127.0.0.1:8090`, the same for 8092 to 8094) |
+| Move the data in | stop the apps where they run now, then `deploy/oracle/push-data.sh <host>`: copies `data/v2.db`, the gateways' and the device app's state, and starts the services. It **replaces the VM's database**: only for a first move |
+| Ship new code | `deploy/oracle/push-code.sh <host>` (the code at `HEAD`, no data), then `ssh <host> sudo systemctl restart mushroom-farm` (and `mushroom-device mushroom-gateway@{alpha,beta,gamma}` when `device/` changed) |
+| Status | `ssh <host> systemctl status 'mushroom-*'` |
+| Logs | `ssh <host> journalctl -u mushroom-farm -f` |
+| Back up the database | `ssh <host> sudo systemctl stop mushroom-farm`, `scp <host>:/opt/mushroom-farm/data/v2.db ./v2-backup.db`, `ssh <host> sudo systemctl start mushroom-farm` |
+
+Only one farm app runs against a farm: once the VM has the data, the apps on the old machine stay stopped (two would keep two histories).
+
 ## Test
 
 ```bash
