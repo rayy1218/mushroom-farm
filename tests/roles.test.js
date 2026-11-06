@@ -74,3 +74,63 @@ test('the reply filter: a JSON reply is filtered; a CSV, a stream, an error and 
   none.end();
   assert.equal(none.out, undefined);
 });
+
+// The reply filter against a real server: it fails closed however the handler writes its reply.
+import http from 'node:http';
+
+const serve = async (path, handler) => {
+  const server = http.createServer((req, res) => { filterWorkerReplies(res, path); handler(req, res); });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const get = () => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port: server.address().port, path: '/' }, (res) => {
+      const parts = [];
+      res.on('data', (c) => parts.push(c));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(parts).toString() }));
+    }).on('error', reject);
+  });
+  const out = await get();
+  server.close();
+  return out;
+};
+const BODY = JSON.stringify({ current: { kg: 1, value: 10 } });
+const FILTERED = { current: { kg: 1 } };
+const H = '/api/rooms/1/harvests';
+
+test('the filter fails closed: setHeader then end, capitalised name, raw array, write then end', async () => {
+  let r = await serve(H, (q, res) => { res.setHeader('content-type', 'application/json'); res.end(BODY); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+  r = await serve(H, (q, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(BODY); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+  r = await serve(H, (q, res) => { res.writeHead(200, ['Content-Type', 'application/json']); res.end(BODY); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+  r = await serve(H, (q, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.write(BODY.slice(0, 10)); res.write(Buffer.from(BODY.slice(10))); res.end(); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+});
+
+test('the filter: a stale content-length goes; end(cb) calls cb; a bad body becomes the error JSON; second end passes', async () => {
+  let r = await serve(H, (q, res) => { res.writeHead(200, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(BODY) }); res.end(BODY); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+  let called = false;
+  r = await serve(H, (q, res) => { res.setHeader('content-type', 'application/json'); res.end(BODY, () => { called = true; }); });
+  assert.deepEqual(JSON.parse(r.body), FILTERED);
+  assert.equal(called, true);
+  r = await serve(H, (q, res) => { res.setHeader('content-type', 'application/json'); res.end(() => {}); });
+  assert.equal(r.status, 200);
+  const err = console.error;
+  console.error = () => {};
+  try {
+    r = await serve(H, (q, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('<html>value 10</html>'); });
+  } finally { console.error = err; }
+  assert.deepEqual(JSON.parse(r.body), { error: 'Something went wrong' });
+});
+
+test('the filter leaves a CSV, a 4xx JSON and an event stream as they are; a null settings reply does not throw', async () => {
+  let r = await serve(H, (q, res) => { res.writeHead(200, { 'content-type': 'text/csv' }); res.end('value\n10'); });
+  assert.equal(r.body, 'value\n10');
+  r = await serve(H, (q, res) => { res.writeHead(400, { 'content-type': 'application/json' }); res.end(BODY); });
+  assert.equal(r.body, BODY);
+  r = await serve(H, (q, res) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('data: {"value":1}\n\n'); setTimeout(() => res.end('data: 2\n\n'), 5); });
+  assert.equal(r.body, 'data: {"value":1}\n\ndata: 2\n\n');
+  r = await serve('/api/settings', (q, res) => { res.setHeader('content-type', 'application/json'); res.end('null'); });
+  assert.equal(r.body, 'null');
+});

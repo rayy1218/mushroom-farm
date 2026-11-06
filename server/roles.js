@@ -28,7 +28,8 @@ const WORKER_ROUTES = [
 export const workerMay = (method, path) => WORKER_ROUTES.some(([m, re]) => m === method && re.test(path));
 
 // The keys that mean money in the replies a worker may get, left out wherever they are (a whole object under one: a run's
-// cost). missing: what Settings → Yield lacks, the owner's to fix (its price list names the crops without a price).
+// cost). Names are matched everywhere: a later non-money key of the same name in an allowed reply would vanish for workers
+// (it fails closed; rename it). missing: what Settings → Yield lacks, the owner's to fix (its price list names the crops without a price).
 export const MONEY_KEYS = new Set([
   'value', 'cost', 'costPerKg', 'waterCost', 'prices', 'electricityPrice', 'waterPrice', 'priceKg', 'rmMonth', 'unitCost', 'price',
   'total', 'blockCost', 'pricePerBlock', 'profit', 'income', 'unpriced', 'missing',
@@ -54,19 +55,83 @@ export function workerReply(path, data) {
 }
 
 // Makes res pass its JSON replies (a 2xx with an application/json type) through workerReply on their way out; a CSV, an
-// event stream, an error and an empty reply go as they are. The API's send() gives no Content-Length, so the length may change.
+// event stream, an error and an empty reply go as they are. It fails closed: however the handler sets the type (setHeader,
+// writeHead with an object or a raw array, any letter case) and however it writes (write chunks, end with a callback), a JSON
+// reply is buffered and filtered once; a body that is not JSON is never sent, an error reply goes instead. The API's send()
+// gives no Content-Length, and the length would change, so any is removed.
+const FAILED = JSON.stringify({ error: 'Something went wrong' });
+
+const typeIn = (headers) => {
+  if (Array.isArray(headers)) {
+    for (let i = 0; i + 1 < headers.length; i += 2) if (String(headers[i]).toLowerCase() === 'content-type') return headers[i + 1];
+    return undefined;
+  }
+  if (headers !== null && typeof headers === 'object') {
+    const k = Object.keys(headers).find((n) => n.toLowerCase() === 'content-type');
+    return k === undefined ? undefined : headers[k];
+  }
+  return undefined;
+};
+const withoutLength = (headers) => {
+  if (Array.isArray(headers)) return headers.filter((x, i) => String(headers[i - (i % 2)]).toLowerCase() !== 'content-length');
+  if (headers !== null && typeof headers === 'object') return Object.fromEntries(Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'content-length'));
+  return headers;
+};
+const isJson = (status, type) => status < 300 && /^application\/json\b/i.test(String(type ?? ''));
+
 export function filterWorkerReplies(res, path) {
-  let json = false;
+  let status; // from writeHead, else res.statusCode
+  let type;
+  let json; // decided at the first write or end
+  let done = false;
+  const buffered = [];
   const writeHead = res.writeHead.bind(res);
-  res.writeHead = (status, ...rest) => {
-    const headers = rest.find((x) => x !== null && typeof x === 'object') ?? {};
-    const type = headers['content-type'] ?? res.getHeader('content-type') ?? '';
-    json = status < 300 && /^application\/json\b/i.test(String(type));
-    return writeHead(status, ...rest);
-  };
+  const write = res.write?.bind(res);
   const end = res.end.bind(res);
+  const decide = () => {
+    if (json === undefined) {
+      json = isJson(status ?? res.statusCode, type ?? res.getHeader?.('content-type'));
+      if (json && !res.headersSent) res.removeHeader?.('content-length');
+    }
+    return json;
+  };
+  res.writeHead = (code, ...rest) => {
+    status = code;
+    type = rest.map(typeIn).find((x) => x !== undefined) ?? res.getHeader?.('content-type');
+    if (isJson(status, type)) {
+      res.removeHeader?.('content-length');
+      rest = rest.map(withoutLength);
+    }
+    return writeHead(code, ...rest);
+  };
+  res.write = (chunk, ...rest) => {
+    if (done || !decide()) return write(chunk, ...rest);
+    if (chunk !== undefined && chunk !== null) {
+      const enc = typeof rest[0] === 'string' ? rest[0] : undefined;
+      buffered.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, enc));
+    }
+    const cb = rest.find((x) => typeof x === 'function');
+    if (cb) process.nextTick(cb);
+    return true;
+  };
   res.end = (chunk, ...rest) => {
-    if (json && chunk !== undefined && chunk !== null) chunk = JSON.stringify(workerReply(path, JSON.parse(String(chunk))));
-    return end(chunk, ...rest);
+    if (done || !decide()) return end(chunk, ...rest);
+    done = true;
+    let enc;
+    let cb;
+    if (typeof chunk === 'function') { cb = chunk; chunk = undefined; } else {
+      enc = typeof rest[0] === 'string' ? rest[0] : undefined;
+      cb = rest.find((x) => typeof x === 'function');
+    }
+    if (chunk !== undefined && chunk !== null) buffered.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, enc));
+    if (buffered.length === 0) return end(cb);
+    let body;
+    try {
+      body = JSON.stringify(workerReply(path, JSON.parse(Buffer.concat(buffered).toString('utf8'))));
+    } catch {
+      console.error(`A worker's reply of ${path} was not JSON; sent an error instead`);
+      body = FAILED;
+    }
+    return end(body, cb);
   };
 }
