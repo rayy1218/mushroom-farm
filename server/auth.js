@@ -112,7 +112,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
 
   // Counts the try; → true when the address has had more than its tries in its window.
   function overLimit(address, t) {
-    if (tries.size > MAX_ADDRESSES) prune();
+    if (tries.size > MAX_ADDRESSES) sweepTries(t);
     if (tries.size > MAX_ADDRESSES && !tries.has(address)) return true;
     const seen = tries.get(address);
     if (!seen || seen.until <= t) {
@@ -133,10 +133,11 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
 
   async function login(req, body) {
     const t = now();
-    const address = addressKey(clientAddress(req));
+    const raw = clientAddress(req);
+    const address = addressKey(raw); // counted by key, logged as it came
     const id = Number.isSafeInteger(body?.id) ? body.id : null;
     const secret = typeof body?.secret === 'string' && body.secret.length <= MAX_SECRET ? body.secret : '';
-    const note = (result) => log(`login ${new Date(t).toISOString()} ${address} worker ${id ?? '-'} ${result}`);
+    const note = (result) => log(`login ${new Date(t).toISOString()} ${raw} worker ${id ?? '-'} ${result}`);
     if (overLimit(address, t)) {
       note('address-limited');
       return { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes' } };
@@ -207,7 +208,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     if (account?.role !== 'owner') return { status: 403, body: { error: 'Ask the owner' } };
     const note = (result) => log(`password ${new Date(now()).toISOString()} worker ${me.id} ${result}`);
     const current = typeof body?.current === 'string' ? body.current : '';
-    if (!account || !(await checkSecret(current, account.secretHash))) {
+    if (!(await checkSecret(current, account.secretHash))) {
       note('wrong');
       return { status: 400, body: { error: 'That password is not right', field: 'current' } };
     }
@@ -218,10 +219,14 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     return { status: 204, body: null, cookie: startSession(req, account, now()) };
   }
 
+  function sweepTries(t) {
+    for (const [address, seen] of tries) if (seen.until <= t) tries.delete(address);
+  }
+
   function prune() {
     const t = now();
     db.pruneSessions(t);
-    for (const [address, seen] of tries) if (seen.until <= t) tries.delete(address);
+    sweepTries(t);
   }
 
   prune();
