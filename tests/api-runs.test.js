@@ -18,7 +18,7 @@ async function app(t) {
   const roomId = db.createRoom(ROOM, Date.now() - 2 * DAY).id;
   db.setProgram(roomId, { ...db.getProgram(roomId), crops: [{ crop: 'oyster', blocks: 600 }] }, { change: 'start', at: Date.now() - DAY });
   const runId = db.openRun(roomId).id;
-  const server = createApp(db, { events });
+  const server = createApp(db, { login: false, events });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

@@ -128,7 +128,7 @@ test('the command stores autoChangedAt only when auto changes', (t) => {
 
 test('GET and PUT /api/rooms/:id/control carry autoChangedAt', async (t) => {
   const s = controllerSetup(t);
-  const server = createApp(s.db, { machines: s.machines, controller: s.controller });
+  const server = createApp(s.db, { login: false, machines: s.machines, controller: s.controller });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}/api/rooms/${s.id}/control`;

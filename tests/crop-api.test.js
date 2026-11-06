@@ -19,7 +19,7 @@ before(async () => {
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, client, poller });
   const controller = createController({ db, machines });
-  server = createApp(db, { machines, controller });
+  server = createApp(db, { login: false, machines, controller });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });

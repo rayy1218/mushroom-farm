@@ -7,7 +7,7 @@ import { createApp } from '../server/app.js';
 import { openDb } from '../server/db.js';
 
 test('every module the page imports is served, from app.js to the end', async (t) => {
-  const server = createApp(openDb(':memory:'));
+  const server = createApp(openDb(':memory:'), { login: false });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import net from 'node:net';
 import { openDb } from '../server/db.js';
 import { TELEGRAM_VIEW_DEFAULT } from '../server/settings.js';
+import { hashSecret } from '../server/auth.js';
 
 // A port nothing listens on (never the owner's 1502).
 async function freePort() {
@@ -21,6 +22,18 @@ async function freePort() {
 }
 
 const MAIN = new URL('../server/main.js', import.meta.url).pathname;
+
+// ---- Login ---- the app of main.js has sign-in on: an owner in the database at dbPath, signed in at base → the cookie.
+async function ownerCookie(base, dbPath) {
+  const db = openDb(dbPath);
+  const id = db.setOwner('Ray', await hashSecret('long enough password'));
+  db.close();
+  const res = await fetch(`${base}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id, secret: 'long enough password' }),
+  });
+  assert.equal(res.status, 200);
+  return /^farm_session=[^;]+/.exec(res.headers.get('set-cookie'))[0];
+}
 
 // Starts server/main.js with the given env and resolves with the first line it prints.
 function start(t, env) {
@@ -57,7 +70,9 @@ test('starts on FARM_PORT with FARM_DB and stops cleanly on SIGINT', async (t) =
   assert.equal(match[3], gateway);
   assert.ok(existsSync(dbPath), 'creates the database folder and file');
 
-  const res = await fetch(`http://localhost:${match[1]}/api/rooms`);
+  const base = `http://localhost:${match[1]}`;
+  assert.equal((await fetch(`${base}/api/rooms`)).status, 401, 'sign-in is on');
+  const res = await fetch(`${base}/api/rooms`, { headers: { cookie: await ownerCookie(base, dbPath) } });
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), []);
 
@@ -79,9 +94,10 @@ test('the startup line shows the stored reading interval, and a changed one is k
   const line = await first.firstLine;
   assert.ok(line.endsWith(', reading every 17 s)'), line);
   const base = `http://localhost:${/localhost:(\d+)/.exec(line)[1]}`;
-  assert.deepEqual(await (await fetch(`${base}/api/settings`)).json(), { pollSeconds: 17, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, cropYield: {}, inventoryTelegram: true, ...TELEGRAM_VIEW_DEFAULT, farmGateway: gateway });
+  const cookie = await ownerCookie(base, dbPath);
+  assert.deepEqual(await (await fetch(`${base}/api/settings`, { headers: { cookie } })).json(), { pollSeconds: 17, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null, cropYield: {}, inventoryTelegram: true, ...TELEGRAM_VIEW_DEFAULT, farmGateway: gateway });
   const res = await fetch(`${base}/api/settings`, {
-    method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{"pollSeconds":30}',
+    method: 'PUT', headers: { 'content-type': 'application/json', cookie }, body: '{"pollSeconds":30}',
   });
   assert.equal(res.status, 200);
   first.child.kill('SIGINT');
@@ -123,23 +139,25 @@ test('polls the gateway: readings reach the API, and SIGTERM stops cleanly', asy
   t.after(() => gateway.close());
   const dir = mkdtempSync(join(tmpdir(), 'farm-main-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dbPath = join(dir, 'farm.db');
   const { child, firstLine, exited } = start(t, {
     FARM_PORT: '0',
-    FARM_DB: join(dir, 'farm.db'),
+    FARM_DB: dbPath,
     FARM_GATEWAY: `127.0.0.1:${gateway.address().port}`,
   });
   const port = /localhost:(\d+)/.exec(await firstLine)[1];
   const base = `http://localhost:${port}`;
+  const cookie = await ownerCookie(base, dbPath);
   const post = await fetch(`${base}/api/rooms`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', cookie },
     body: JSON.stringify({ name: 'R', length: 2, width: 2, height: 2, trhAddress: 1 }),
   });
   const { id } = await post.json();
   const deadline = Date.now() + 8000; // the first cycle may run before the room exists: wait for the next (5 s)
   let sensor;
   while (Date.now() < deadline) {
-    [sensor] = await (await fetch(`${base}/api/rooms/${id}/sensors`)).json();
+    [sensor] = await (await fetch(`${base}/api/rooms/${id}/sensors`, { headers: { cookie } })).json();
     if (sensor.status === 'online') break;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }

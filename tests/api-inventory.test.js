@@ -12,7 +12,7 @@ async function app(t) {
   const events = createEvents();
   const seen = [];
   events.subscribe((type, data) => seen.push([type, data]));
-  const server = createApp(db, { events });
+  const server = createApp(db, { login: false, events });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

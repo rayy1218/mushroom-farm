@@ -131,7 +131,7 @@ test('the list functions carry each device\'s gateway', (t) => {
 
 async function app(t, options = {}) {
   const db = openDb(':memory:');
-  const server = createApp(db, options);
+  const server = createApp(db, { login: false, ...options });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));
@@ -199,7 +199,7 @@ test('a relay module moved to another gateway: a running dehumidifier taken out 
   const clients = { forRoom: (g) => ({ writeCoil: async (...args) => { writes.push([g, ...args]); }, writeRegisters: async () => {} }) };
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, clients, poller });
-  const server = createApp(db, { machines });
+  const server = createApp(db, { login: false, machines });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
     await new Promise((resolve) => server.close(resolve));

@@ -27,7 +27,7 @@ import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(status, message, field) {
     super(message);
     this.status = status;
@@ -35,12 +35,12 @@ class HttpError extends Error {
   }
 }
 
-function send(res, status, data) {
+export function send(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
 }
 
-async function readJson(req) {
+export async function readJson(req) {
   if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Content-Type must be application/json');
   const chunks = [];
   let size = 0;
@@ -49,11 +49,16 @@ async function readJson(req) {
     if (size > MAX_BODY) throw new HttpError(413, 'Body is too large');
     chunks.push(chunk);
   }
+  let body;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     throw new HttpError(400, 'Body must be valid JSON');
   }
+  // ---- Login ---- a worker is recorded as themselves (spec 2026-11-06-login-design.md 4): every write a worker may make
+  // takes who did it as `worker`, which is the signed-in name whatever the body says. (An owner's body is as sent.)
+  if (req.who?.role === 'worker' && body !== null && typeof body === 'object' && !Array.isArray(body)) body.worker = req.who.name;
+  return body;
 }
 
 const ADDRESS_FIELDS = ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress', 'dpAddress'];

@@ -419,7 +419,7 @@ test('API: lights fitted and power through the room routes; running lights taken
   const client = { async writeCoil(...a) { writes.push(a); }, async writeRegisters() {} };
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, client, poller });
-  const server = createApp(db, { machines });
+  const server = createApp(db, { login: false, machines });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise((resolve) => server.close(resolve)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

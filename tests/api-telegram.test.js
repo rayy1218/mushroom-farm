@@ -11,7 +11,7 @@ const TOKEN = '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11';
 
 async function setup(t, telegram = null) {
   const db = openDb(':memory:');
-  const app = createApp(db, { telegram });
+  const app = createApp(db, { login: false, telegram });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise((resolve) => app.close(resolve)); db.close(); });
   const base = `http://127.0.0.1:${app.address().port}`;
@@ -107,7 +107,7 @@ test('the test route with the real sender and a fake transport: network error te
   db.setSetting('telegramToken', TOKEN);
   db.setSetting('telegramChatId', '-100');
   const tg = createTelegram({ db, transport: async () => { throw new Error(`fetch failed for bot${TOKEN}`); }, log: () => {} });
-  const app = createApp(db, { telegram: tg });
+  const app = createApp(db, { login: false, telegram: tg });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => { tg.close(); await new Promise((resolve) => app.close(resolve)); db.close(); });
   const res = await fetch(`http://127.0.0.1:${app.address().port}/api/settings/telegram/test`, { method: 'POST' });

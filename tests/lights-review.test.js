@@ -91,7 +91,7 @@ test('API: running lights (or a dehumidifier) taken out: the room is saved first
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, client, poller });
   const controller = createController({ db, machines, log: (e) => { throw e; } });
-  const server = createApp(db, { machines, controller });
+  const server = createApp(db, { login: false, machines, controller });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

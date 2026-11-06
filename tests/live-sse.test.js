@@ -22,7 +22,7 @@ async function start(t, { ssePingMs, wire } = {}) {
   const machines = createMachines({ db, client, poller });
   const controller = createController({ db, machines });
   const extra = wire ? wire({ db, events }) : {};
-  const server = createApp(db, { machines, controller, events, ssePingMs, ...extra });
+  const server = createApp(db, { login: false, machines, controller, events, ssePingMs, ...extra });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   t.after(() => {
@@ -103,7 +103,7 @@ test('only GET; without a bus the route does not exist', async (t) => {
   const { base } = await start(t);
   assert.equal((await fetch(`${base}/api/events`, { method: 'POST' })).status, 404);
   const db = openDb(':memory:');
-  const server = createApp(db);
+  const server = createApp(db, { login: false });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => { server.close(); db.close(); });
   assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/api/events`)).status, 404);

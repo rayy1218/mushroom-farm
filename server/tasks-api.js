@@ -201,6 +201,10 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       // Done { worker, amount? }, Skip { worker, reason }, Cancel { reason }: server/tasks.js checks them, the row (404),
       // that it is still open (409 with who and when) and that the action fits its kind. Undo takes no body.
       const id = Number(action[1]);
+      // ---- Login ---- a worker undoes only their own Done or Skip (spec 2026-11-06-login-design.md 4)
+      // (a task that is not there goes on to its 404)
+      const row = action[2] === 'undo' && req.who?.role === 'worker' ? db.getTask(id) : null;
+      if (row && row.worker !== req.who.name) throw new HttpError(403, 'Ask the owner');
       send(res, 200, action[2] === 'undo' ? tasks.undo(id) : tasks[action[2]](id, await readBody()));
       return true;
     }
