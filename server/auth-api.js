@@ -2,7 +2,7 @@
 // GET /api/session, POST /api/logout and POST /api/session/password (an owner's own password).
 
 import { readJson, send, HttpError } from './api.js';
-import { clearCookie } from './auth.js';
+import { clearCookie, readCookie } from './auth.js';
 
 // auth: from createAuth. → async (req, res, path) that answers true when the path is one of its routes.
 export function createAuthRoutes({ auth }) {
@@ -26,7 +26,11 @@ export function createAuthRoutes({ auth }) {
       only(req, 'GET');
       const me = auth.who(req, res);
       if (me) send(res, 200, { id: me.id, name: me.name, role: me.role });
-      else send(res, 401, { error: 'Sign in' });
+      else {
+        // a cookie whose session has ended or expired goes too, so the browser stops sending it
+        if (readCookie(req.headers.cookie)) res.setHeader('set-cookie', clearCookie());
+        send(res, 401, { error: 'Sign in' });
+      }
       return true;
     }
     if (path === '/api/logout') {

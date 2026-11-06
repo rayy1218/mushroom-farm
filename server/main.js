@@ -83,6 +83,7 @@ async function stop() {
   telegram.close();
   gateways.close();
   server.close();
+  server.closeAuth(); // ---- Login ---- the sign-in timer stops before the database closes
   db.close();
   process.exit(0);
 }

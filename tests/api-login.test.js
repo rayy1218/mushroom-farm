@@ -3,6 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync, readdirSync } from 'node:fs';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { createTasks } from '../server/tasks.js';
@@ -45,7 +46,7 @@ const ROUTES = [
   ['DELETE', '/api/rooms/1', false], ['GET', '/api/rooms/1/sensors', true], ['GET', '/api/rooms/1/usage', false],
   ['GET', '/api/rooms/1/control', false], ['PUT', '/api/rooms/1/control', false], ['GET', '/api/rooms/1/crop', true],
   ['PUT', '/api/rooms/1/crop', false], ['GET', '/api/rooms/1/history', true], ['GET', '/api/rooms/1/machines', true],
-  ['PUT', '/api/rooms/1/machines/ac', false], ['GET', '/api/alarms', true], ['PUT', '/api/alarms/1', false],
+  ['PUT', '/api/rooms/1/machines/ac', false], ['GET', '/api/alarms', true], ['POST', '/api/alarms/1/ack', false],
   ['GET', '/api/rooms/1/tasks', true], ['POST', '/api/rooms/1/tasks', false], ['GET', '/api/rooms/1/tasks/log', true],
   ['GET', '/api/rooms/1/tasks/log.csv', false], ['GET', '/api/tasks/today', true], ['POST', '/api/tasks/1/done', true],
   ['POST', '/api/tasks/1/skip', true], ['POST', '/api/tasks/1/undo', true], ['POST', '/api/tasks/1/cancel', false],
@@ -62,7 +63,74 @@ const ROUTES = [
   ['GET', '/api/simulations/1', false], ['GET', '/api/sizing/1', false], ['GET', '/api/workers/accounts', false],
   ['POST', '/api/workers/1/secret', false], ['PUT', '/api/workers/1/role', false], ['POST', '/api/workers/1/unlock', false],
   ['POST', '/api/workers/1/sign-out', false],
+  ['GET', '/api/rooms/1/alarms', false], ['POST', '/api/rooms/1/alarms/ack', false], ['POST', '/api/rooms/1/filter/changed', false],
+  ['GET', '/api/rooms/1/filter/changes', false], ['POST', '/api/rooms/1/simulations', false], ['POST', '/api/rooms/1/sizing', false],
+  ['GET', '/api/batches/stock-items', false], ['GET', '/api/batches/1', false], ['POST', '/api/batches/1/place', false],
+  ['POST', '/api/batches/1/unplace', false], ['POST', '/api/batches/1/checks', false], ['POST', '/api/batches/1/loads', false],
+  ['PUT', '/api/batch-checks/1', false], ['PUT', '/api/batch-loads/1', false], ['PUT', '/api/batch-recipes/1', false],
+  ['GET', '/api/costs.csv', false], ['PUT', '/api/costs/1', false], ['POST', '/api/costs/1/change', false], ['POST', '/api/costs/1/stop', false],
+  ['GET', '/api/sales/range', false], ['GET', '/api/sales/summary', false], ['GET', '/api/sales.csv', false],
+  ['PUT', '/api/sales/deliveries/1', false], ['PUT', '/api/sales/deliveries/1/paid', false], ['PUT', '/api/buyers/1', false],
 ];
+
+// Every route the API answers, from the server sources (spec 7: a new route missing from ROUTES fails here): each
+// `path === '/api/…'` (or !==) literal, each regex literal /^\/api…/ and each new RegExp(`^/api…`) of server/api.js and
+// server/*-api.js (not auth-api.js: the sign-in routes are before the gate, tested on their own). A regex is expanded into
+// every path it answers, an id group as 1 and a machine name as ac; a part this cannot expand fails the test.
+const SERVER = new URL('../server/', import.meta.url);
+const ID_SOURCE = '[1-9][0-9]{0,14}';
+
+function expand(source) {
+  const s = source.replace(/^\^/, '').replace(/\$$/, '').replaceAll(ID_SOURCE, '1').replaceAll('[a-z]+', 'ac');
+  let i = 0;
+  const alternatives = () => {
+    const out = [];
+    let seq = [''];
+    while (i < s.length && s[i] !== ')') {
+      const c = s[i++];
+      if (c === '\\') seq = seq.map((x) => x + s[i++]);
+      else if (c === '|') { out.push(...seq); seq = ['']; } else if (c === '(') {
+        if (s.startsWith('?:', i)) i += 2;
+        let inner = alternatives();
+        assert.equal(s[i++], ')', `${source}: an open group`);
+        if (s[i] === '?') { i++; inner = ['', ...inner]; }
+        seq = seq.flatMap((x) => inner.map((y) => x + y));
+      } else if ('[]{}*+?.^$'.includes(c)) assert.fail(`${source}: cannot expand ${c} at ${i - 1}`);
+      else seq = seq.map((x) => x + c);
+    }
+    return [...out, ...seq];
+  };
+  const paths = alternatives();
+  assert.equal(i, s.length, `${source}: a stray )`);
+  return paths;
+}
+
+function serverRoutes() {
+  const names = readdirSync(SERVER).filter((n) => n === 'api.js' || (n.endsWith('-api.js') && n !== 'auth-api.js'));
+  const paths = new Set();
+  for (const name of names) {
+    const text = readFileSync(new URL(name, SERVER), 'utf8');
+    for (const [, p] of text.matchAll(/path [!=]== '(\/api\/[^']*)'/g)) paths.add(p);
+    for (const [, src] of text.matchAll(/\/(\^\\\/api(?:\\.|[^/\\\n])*)\//g)) for (const p of expand(src)) paths.add(p);
+    for (const [, src] of text.matchAll(/new RegExp\(`(\^\/api[^`]*)`\)/g)) {
+      const plain = src.replaceAll('${ID}', ID_SOURCE);
+      assert.ok(!plain.includes('${'), `${name}: ${src} has a part this cannot read`);
+      for (const p of expand(plain)) paths.add(p);
+    }
+  }
+  return [...paths];
+}
+
+test('ROUTES has a row for every route the server sources answer, and no row for one they do not', () => {
+  const routes = serverRoutes();
+  assert.ok(routes.length > 80, `found only ${routes.length}`);
+  for (const known of ['/api/settings', '/api/rooms/1/machines/ac', '/api/batches/1/loads', '/api/workers/1/sign-out', '/api/runs/1']) {
+    assert.ok(routes.includes(known), `the reading missed ${known}`);
+  }
+  const rows = new Set(ROUTES.map(([, p]) => p.split('?')[0]));
+  assert.deepEqual(routes.filter((p) => !rows.has(p)), [], 'routes with no ROUTES row');
+  assert.deepEqual([...rows].filter((p) => !routes.includes(p)), [], 'ROUTES rows that name no route');
+});
 
 test('without a session every /api route is 401 but the sign-in routes; the page files are open', async (t) => {
   const { call, ali, ray } = await farm(t);
@@ -148,4 +216,63 @@ test("a worker's replies carry no money; the owner's same replies do", async (t)
   assert.ok(moneyIn((await call('GET', `/api/rooms/${room}/harvests`, undefined, owner)).body).length > 0, 'the owner sees the value');
   assert.ok(moneyIn((await call('GET', `/api/inventory/items/${item}`, undefined, owner)).body).length > 0, 'the owner sees the total');
   assert.deepEqual(Object.keys((await call('GET', '/api/settings', undefined, worker)).body), ['pollSeconds']);
+});
+
+test("a worker's Done, Skip and count record them, whatever name the body gives", async (t) => {
+  const { db, call, owner, worker, now } = await farm(t);
+  const room = (await call('POST', '/api/rooms', ROOM, owner)).body.id;
+  await call('PUT', `/api/rooms/${room}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] }, owner);
+  db.setProgram(room, { ...db.getProgram(room), stageSince: now });
+  const today = (await call('GET', `/api/rooms/${room}/tasks`, undefined, owner)).body.today;
+  const [one, two] = today.filter((x) => x.ruleKey === 'footbath' || x.ruleKey === 'floorClean');
+  const done = await call('POST', `/api/tasks/${one.id}/done`, { worker: 'Ray' }, worker);
+  assert.deepEqual([done.status, done.body.worker], [200, 'Ali']);
+  const skipped = await call('POST', `/api/tasks/${two.id}/skip`, { worker: 'Ray', reason: 'No water' }, worker);
+  assert.deepEqual([skipped.status, skipped.body.worker], [200, 'Ali']);
+  const item = (await call('POST', '/api/inventory/items', { name: 'Bleach', kind: 'chemical', unit: 'L' }, owner)).body.id;
+  const counted = await call('POST', '/api/inventory/counts', { worker: 'Ray', counts: [{ itemId: item, qty: 2 }] }, worker);
+  assert.equal(counted.status, 201);
+  assert.deepEqual(counted.body.moves.map((m) => m.worker), ['Ali']);
+});
+
+test("a worker's undo of a task that is not done or skipped is the usual 409, not 403", async (t) => {
+  const { db, call, owner, worker, now } = await farm(t);
+  const room = (await call('POST', '/api/rooms', ROOM, owner)).body.id;
+  await call('PUT', `/api/rooms/${room}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] }, owner);
+  db.setProgram(room, { ...db.getProgram(room), stageSince: now });
+  const open = (await call('GET', `/api/rooms/${room}/tasks`, undefined, owner)).body.today.find((x) => x.ruleKey === 'footbath');
+  const r = await call('POST', `/api/tasks/${open.id}/undo`, undefined, worker);
+  assert.equal(r.status, 409);
+  assert.match(r.body.error, /not done or skipped/);
+});
+
+test("a worker may not change a password: POST /api/session/password is 403", async (t) => {
+  const { call, worker } = await farm(t);
+  const r = await call('POST', '/api/session/password', { current: '482913', next: 'a long new password' }, worker);
+  assert.deepEqual([r.status, r.body], [403, { error: 'Ask the owner' }]);
+});
+
+test('a cookie with no session behind it gets its 401 with the cookie cleared; no cookie, no Set-Cookie', async (t) => {
+  const { call, worker } = await farm(t);
+  assert.equal((await call('POST', '/api/logout', undefined, worker)).status, 204);
+  for (const path of ['/api/rooms', '/api/session']) {
+    const stale = await call('GET', path, undefined, worker);
+    assert.equal(stale.status, 401, path);
+    assert.match(stale.cookie ?? '', /^farm_session=; .*Max-Age=0$/, path);
+    assert.equal((await call('GET', path, undefined, 'farm_session=never-was')).cookie?.endsWith('Max-Age=0'), true, path);
+    assert.equal((await call('GET', path)).cookie, null, path);
+  }
+});
+
+test('the server closes its sign-in timer on its own (closeAuth), before the database goes', async () => {
+  const db = openDb(':memory:');
+  const server = createApp(db);
+  assert.equal(typeof server.closeAuth, 'function');
+  server.closeAuth();
+  db.close();
+  server.close(); // the close hook again: no throw
+  const bare = openDb(':memory:');
+  const off = createApp(bare, { login: false });
+  off.closeAuth(); // without sign-in: nothing to close
+  bare.close();
 });

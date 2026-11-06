@@ -4,20 +4,15 @@
 
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { createApi } from './api.js';
+import { createApi, send } from './api.js';
 import { createStatic } from './static.js';
 import { createSse } from './live.js';
 import { DEFAULT_GATEWAY } from './gateways.js';
-import { createAuth } from './auth.js';
+import { createAuth, readCookie, clearCookie } from './auth.js';
 import { createAuthRoutes } from './auth-api.js';
 import { workerMay, filterWorkerReplies } from './roles.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
-
-const refuse = (res, status, error) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify({ error }));
-};
 
 // gateway: the farm's gateway text (FARM_GATEWAY), shown by GET /api/settings. tasks: from createTasks (one is made when
 // left out). login: false only in tests that are not about signing in; every request is then the owner's.
@@ -37,9 +32,13 @@ export function createApp(db, {
       if (isApi && auth) {
         if (await authRoutes(req, res, url.pathname)) return;
         req.who = auth.who(req, res);
-        if (!req.who) return refuse(res, 401, 'Sign in');
+        if (!req.who) {
+          // a cookie whose session has ended or expired goes too, so the browser stops sending it
+          if (readCookie(req.headers.cookie)) res.setHeader('set-cookie', clearCookie());
+          return send(res, 401, { error: 'Sign in' });
+        }
         if (req.who.role !== 'owner') {
-          if (!workerMay(req.method, url.pathname)) return refuse(res, 403, 'Ask the owner');
+          if (!workerMay(req.method, url.pathname)) return send(res, 403, { error: 'Ask the owner' });
           filterWorkerReplies(res, url.pathname);
         }
       }
@@ -52,6 +51,9 @@ export function createApp(db, {
       res.end('Something went wrong');
     }
   });
+  // The sign-in timer stops with the server; main.js calls closeAuth itself before it closes the database (server.close
+  // waits for open connections, so its 'close' can come after).
+  server.closeAuth = () => auth?.close();
   server.on('close', () => { api.close(); auth?.close(); });
   return server;
 }
