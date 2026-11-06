@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createAuth, hashSecret, tokenHash } from '../server/auth.js';
+import { createAuth, hashSecret, tokenHash, addressKey } from '../server/auth.js';
 
 const T = Date.UTC(2026, 10, 6, 2); // 10:00 on the farm
 const MIN = 60_000;
@@ -150,4 +150,37 @@ test('prune: expired sessions and old address counts go', async (t) => {
   at(T + 31 * 86_400_000);
   auth.prune();
   assert.equal(db.accounts(T).find((a) => a.id === ali).sessions, 0);
+});
+
+test('tries in flight together each count: 6 wrong at once lock the account, the right PIN then waits', async (t) => {
+  const { db, auth, ali, req } = await setup(t);
+  const rs = await Promise.all([1, 2, 3, 4, 5, 6].map((i) => auth.login(req({ address: `100.64.1.${i}` }), { id: ali, secret: '111112' })));
+  assert.deepEqual(rs.map((r) => r.status).sort(), [401, 401, 401, 401, 429, 429]);
+  assert.notEqual(db.account(ali).lockedUntil, null);
+  assert.equal((await auth.login(req({ address: '100.64.1.9' }), { id: ali, secret: '482913' })).status, 429);
+});
+
+test('addressKey: an IPv6 address counts by its /64, an IPv4-mapped one as its IPv4', () => {
+  assert.equal(addressKey('2001:db8:1:2:3:4:5:6'), addressKey('2001:db8:1:2::9'));
+  assert.notEqual(addressKey('2001:db8:1:2::9'), addressKey('2001:db8:1:3::9'));
+  assert.equal(addressKey('::ffff:203.0.113.9'), '203.0.113.9');
+  assert.equal(addressKey('100.64.0.9'), '100.64.0.9');
+});
+
+test('17 sign-ins at once: the 17th is told the app is busy', async (t) => {
+  const { auth, req } = await setup(t);
+  const rs = await Promise.all(Array.from({ length: 17 }, (_, i) => auth.login(req({ address: `100.64.2.${i}` }), { id: 9999, secret: '000001' })));
+  assert.deepEqual(rs.map((r) => r.status).filter((s) => s === 503), [503]);
+  assert.deepEqual(rs.find((r) => r.status === 503).body, { error: 'The farm app is busy. Try again in a moment' });
+});
+
+test('an owner-only password change; a long secret is just wrong; log results', async (t) => {
+  const { auth, ali, req, res, lines } = await setup(t);
+  const cookie = `farm_session=${tokenOf((await auth.login(req(), { id: ali, secret: '482913' })).cookie)}`;
+  const me = auth.who(req({ cookie }), res());
+  assert.deepEqual(await auth.changePassword(req(), me, { current: 'x', next: 'a brand new password' }), { status: 403, body: { error: 'Ask the owner' } });
+  assert.equal((await auth.login(req(), { id: ali, secret: 'x'.repeat(2000) })).status, 401);
+  assert.match(lines.at(-1), / wrong$/);
+  await auth.login(req(), { id: 9999, secret: '000001' });
+  assert.match(lines.at(-1), / unknown$/);
 });

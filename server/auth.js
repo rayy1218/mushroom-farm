@@ -78,7 +78,24 @@ export function clientAddress(req) {
 
 export const LOCK = { tries: 5, ms: 15 * 60_000 };
 export const ADDRESS_LIMIT = { tries: 20, ms: 15 * 60_000 };
+const MAX_CHECKING = 16; // scrypt checks (32 MiB each) in flight at once
+const MAX_ADDRESSES = 10_000;
+const MAX_SECRET = 1024;
 const TOUCH_MS = 3_600_000; // a session's last_seen and expiry are written at most once an hour
+
+// The key an address is counted under: an IPv4-mapped IPv6 address as its IPv4, another IPv6 address by its /64 (one
+// customer holds a whole /64), an IPv4 address as it is.
+export function addressKey(address) {
+  const a = String(address).toLowerCase();
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(a);
+  if (mapped) return mapped[1];
+  if (!a.includes(':')) return a;
+  const [head, tail = null] = a.split('::');
+  const first = head === '' ? [] : head.split(':');
+  const last = tail === null || tail === '' ? [] : tail.split(':');
+  const groups = tail === null ? first : [...first, ...Array(Math.max(0, 8 - first.length - last.length)).fill('0'), ...last];
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
 
 // db: the farm database. log(line): one line per sign-in try (never the secret). → { names(), login(req, body), who(req,
 // res), logout(req), changePassword(req, me, body), prune(), close() }. login and changePassword → { status, body, cookie? }.
@@ -87,12 +104,16 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
   // The hash an unknown name is checked against, so it takes as long as a known one; made at start, so the first unknown
   // name after a restart is not slower.
   const dummy = hashSecret(newToken());
+  dummy.catch(() => {}); // an early failure is not an unhandled rejection; login still awaits it
+  let checking = 0;
 
   const wrong = (role) => ({ status: 401, body: { error: role === 'owner' ? 'That password is not right' : 'That PIN is not right', field: 'secret' } });
   const lockedReply = (until) => ({ status: 429, body: { error: `Too many tries. Try again at ${localTime(until)}` } });
 
   // Counts the try; → true when the address has had more than its tries in its window.
   function overLimit(address, t) {
+    if (tries.size > MAX_ADDRESSES) prune();
+    if (tries.size > MAX_ADDRESSES && !tries.has(address)) return true;
     const seen = tries.get(address);
     if (!seen || seen.until <= t) {
       tries.set(address, { count: 1, until: t + ADDRESS_LIMIT.ms });
@@ -112,13 +133,17 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
 
   async function login(req, body) {
     const t = now();
-    const address = clientAddress(req);
+    const address = addressKey(clientAddress(req));
     const id = Number.isSafeInteger(body?.id) ? body.id : null;
-    const secret = typeof body?.secret === 'string' ? body.secret : '';
+    const secret = typeof body?.secret === 'string' && body.secret.length <= MAX_SECRET ? body.secret : '';
     const note = (result) => log(`login ${new Date(t).toISOString()} ${address} worker ${id ?? '-'} ${result}`);
     if (overLimit(address, t)) {
       note('address-limited');
       return { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes' } };
+    }
+    if (checking >= MAX_CHECKING) {
+      note('busy');
+      return { status: 503, body: { error: 'The farm app is busy. Try again in a moment' } };
     }
     const account = id === null ? null : db.account(id);
     const usable = Boolean(account?.active && account.secretHash !== null);
@@ -126,17 +151,24 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
       note('locked');
       return lockedReply(account.lockedUntil);
     }
-    const right = await checkSecret(secret, usable ? account.secretHash : await dummy);
-    if (!usable || !right) {
-      note('wrong');
-      if (!usable) return wrong(account?.role);
+    // Count the try before the slow check, so tries in flight together each see the ones before them.
+    let lockUntil = null;
+    if (usable) {
       const count = account.failedTries + 1;
-      if (count >= LOCK.tries) {
-        db.setTries(account.id, 0, t + LOCK.ms);
-        return lockedReply(t + LOCK.ms);
-      }
-      db.setTries(account.id, count, null);
-      return wrong(account.role);
+      if (count >= LOCK.tries) lockUntil = t + LOCK.ms;
+      db.setTries(account.id, lockUntil === null ? count : 0, lockUntil);
+    }
+    checking += 1;
+    let right;
+    try {
+      right = await checkSecret(secret, usable ? account.secretHash : await dummy);
+    } finally {
+      checking -= 1;
+    }
+    if (!usable || !right) {
+      note(!usable ? 'unknown' : lockUntil === null ? 'wrong' : 'wrong-locked');
+      if (!usable) return wrong(account?.role);
+      return lockUntil === null ? wrong(account.role) : lockedReply(lockUntil);
     }
     db.setTries(account.id, 0, null);
     note('right');
@@ -172,13 +204,17 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
   // An owner's own password { current, next }: every session of theirs ends and this browser (req) gets a new one.
   async function changePassword(req, me, body) {
     const account = db.account(me.id);
+    if (account?.role !== 'owner') return { status: 403, body: { error: 'Ask the owner' } };
+    const note = (result) => log(`password ${new Date(now()).toISOString()} worker ${me.id} ${result}`);
     const current = typeof body?.current === 'string' ? body.current : '';
     if (!account || !(await checkSecret(current, account.secretHash))) {
+      note('wrong');
       return { status: 400, body: { error: 'That password is not right', field: 'current' } };
     }
     const problem = passwordError(body?.next);
     if (problem) return { status: 400, body: { error: problem, field: 'next' } };
     db.setSecret(account.id, await hashSecret(body.next));
+    note('right');
     return { status: 204, body: null, cookie: startSession(req, account, now()) };
   }
 
@@ -189,7 +225,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
   }
 
   prune();
-  const timer = setInterval(prune, TOUCH_MS);
+  const timer = setInterval(() => { try { prune(); } catch (err) { log(`login prune failed: ${err.message}`); } }, TOUCH_MS);
   timer.unref();
   return { names: () => db.loginNames(), login, who, logout, changePassword, prune, close: () => clearInterval(timer) };
 }

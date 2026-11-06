@@ -53,7 +53,7 @@ A worker's sessions are deleted when their secret or role changes, when they are
 | Cookie | `farm_session=<token>`: 32 random bytes, base64url; `HttpOnly; Secure; SameSite=Strict; Path=/`; `Max-Age` the session's length, sent again when `expires_at` moves |
 | Names | `GET /api/login/names` (no session needed) → `[{ id, name, kind: 'pin' \| 'password' }]`, the active workers with a secret, in the Workers order |
 | Sign in | `POST /api/login` `{ id, secret }`. Right: 200 `{ id, name, role }` with the cookie. Wrong, unknown id or no secret: 401 "That PIN is not right" / "That password is not right" (the same time taken: an unknown id hashes against a fixed dummy). Locked: 429 "Too many tries. Try again at 14:35" |
-| PIN | Exactly 6 digits (400 otherwise, field `secret`); not all one digit, not 123456 or 654321 when set |
+| PIN | Exactly 6 digits when a PIN is set (400 otherwise, field `secret`); not all one digit, not 123456 or 654321. Signing in with a PIN of any shape is only "That PIN is not right" (401) |
 | Password | 12 to 200 characters when set |
 | Lockout, account | 5 wrong tries in a row lock the account 15 minutes; the owner can unlock in Settings → Workers |
 | Lockout, address | 20 tries in 15 minutes from one address get 429 for the rest of the window (in memory). The address is `X-Forwarded-For`'s last entry (the one Tailscale's proxy adds) when the request comes from 127.0.0.1 (Tailscale's proxy), else the socket's |
