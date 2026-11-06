@@ -279,7 +279,7 @@ html { scroll-padding-top: var(--topbar-h); }
 .top-link { display: inline-flex; align-items: center; gap: 8px; flex: none; min-height: 36px; padding: 4px 12px; border-radius: 8px;
   color: var(--ink-2); text-decoration: none; font-weight: 600; }
 .top-link:hover { background: var(--band); color: var(--ink); }
-.top-link[aria-current="page"] { background: var(--band); color: var(--ink); }
+.top-link:is([aria-current="page"], [aria-current="true"]) { background: var(--band); color: var(--ink); }
 .top-alarm { display: inline-flex; align-items: center; gap: 6px; flex: none; min-height: 36px; padding: 4px 10px; border-radius: 8px;
   background: var(--critical); color: var(--on-critical); text-decoration: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .top-alarm:hover { opacity: .9; }
