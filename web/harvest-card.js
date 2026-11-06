@@ -13,8 +13,8 @@ import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
 import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText, pickGuard } from './task-dialogs.js';
 import {
-  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
-  BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
+  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, pastColumns, hasMoney, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
+  byCropColumns, byCropRows, runTiles, pricesNote,
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody, recordPicks, editPicks,
 } from './harvest-math.js';
 import { batchLineFor } from './batches-math.js'; // ---- Batches ----
@@ -263,7 +263,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const prices = pricesNote(run.cost);
     const parts = [prices && el('p', 'muted hv-missing', prices), missingLine(run.missing)].filter(Boolean);
     if ((run.flushes ?? []).length) parts.push(flushTable(run));
-    if ((run.crops ?? []).length > 1) parts.push(table('By crop', BY_CROP_COLUMNS, byCropRows(run), 1));
+    if ((run.crops ?? []).length > 1) parts.push(table('By crop', byCropColumns(hasMoney(run)), byCropRows(run, hasMoney(run)), 1));
     runBody.replaceChildren(...parts);
     const harvests = run.harvests ?? [];
     const shown = showAll ? harvests : harvests.slice(0, window.matchMedia?.(PHONE).matches ? SHOWN_PHONE : SHOWN);
@@ -275,7 +275,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
 
   // A past run: its row (the dates a button that opens it) and the row under it with its flushes and latest harvests.
   function pastRun(run) {
-    const row = pastRow(run);
+    const money = hasMoney(run);
+    const row = pastRow(run, money);
     const tr = el('tr', 'hv-run-row');
     const name = el('th');
     name.scope = 'row';
@@ -285,13 +286,13 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     name.append(toggle);
     tr.append(name, ...row.cells.map((c, i) => {
       const td = el('td', i >= 1 ? 'num' : 'hv-run-crops', c);
-      td.dataset.label = PAST_COLUMNS[i + 1];
+      td.dataset.label = pastColumns(money)[i + 1];
       return td;
     }));
     const detail = el('tr', 'hv-run-detail');
     detail.id = `hv-run-${run.id}`;
     const cell = el('td');
-    cell.colSpan = PAST_COLUMNS.length;
+    cell.colSpan = pastColumns(money).length;
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
     const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
@@ -333,8 +334,9 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function pastTable(past) {
+    const money = past.length ? hasMoney(past[0]) : true;
     const t = el('table', 'us-table hv-table hv-runs-table');
-    t.append(el('caption', 'sr-only', 'Past runs'), headRow(PAST_COLUMNS, 2));
+    t.append(el('caption', 'sr-only', 'Past runs'), headRow(pastColumns(money), 2));
     const body = el('tbody');
     for (const run of past) body.append(...pastRun(run));
     t.append(body);

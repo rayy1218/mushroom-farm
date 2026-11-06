@@ -440,3 +440,10 @@ test("the 4-5 sheet's Period at once, as the Batches sheet's (joint audit B5): t
   assert.deepEqual(sheetPeriod(30, '2026-11-05'), { from: '2026-10-07', to: '2026-11-05' });
   assert.equal(sheetRange(sheetPeriod(365, '2026-11-05')), '6 Nov 2025 – 5 Nov 2026');
 });
+
+test("a worker's purchase line has no RM part (the reply has no total)", () => {
+  const item = { unit: 'L', kind: 'chemical' };
+  const m = { refKind: 'purchase', at: Date.UTC(2026, 10, 2, 2), qty: 5, supplier: 'Ah Seng' };
+  assert.ok(!moveLine(m, item).parts[0].text.includes('—'));
+  assert.ok(moveLine({ ...m, total: 50 }, item).parts[0].text.includes('RM'));
+});
