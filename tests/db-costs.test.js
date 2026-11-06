@@ -1,4 +1,4 @@
-// The costs table (spec 2026-11-05-costs-design.md 2): the step to version 25, the rows' writes, a monthly item's change and
+// The costs table (spec 2026-11-05-costs-design.md 2): the step to version 24, the rows' writes, a monthly item's change and
 // stop, and the triggers that keep a deleted room's costs as the farm's and drop a deleted run.
 
 import { test } from 'node:test';

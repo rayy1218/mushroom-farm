@@ -94,6 +94,7 @@ test("a new secret, a role change, Sign out everywhere, made inactive or removed
   assert.notEqual(db.session('s1'), null);
   db.setWorkers([]);
   assert.equal(db.session('s1'), null);
+  assert.equal(db.pruneSessions(Infinity), 0); // the row is gone, not only hidden by the join
 });
 
 test('setTries and accounts: the lock and the signed-in count for Settings → Workers', () => {

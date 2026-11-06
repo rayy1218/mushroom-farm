@@ -407,7 +407,7 @@ const buyerOf = (r) => {
 };
 // ---- end Sales ----
 // ---- Costs ---- (spec 2026-11-05-costs-design.md 2): what the farm spends, entered by hand; Batches, Inventory and Sales
-// are read live, never copied (source_kind stays 'manual'). This file has no foreign keys (deleteRoom deletes by hand), so
+// are read live, never copied (source_kind stays 'manual'). Rooms and runs have no foreign keys (deleteRoom deletes by hand), so
 // two triggers keep a deleted room's costs as the farm's and drop a deleted run from its costs.
 const COSTS = `
 CREATE TABLE IF NOT EXISTS costs (
@@ -445,6 +445,8 @@ ALTER TABLE workers ADD COLUMN secret_hash TEXT;
 ALTER TABLE workers ADD COLUMN failed_tries INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE workers ADD COLUMN locked_until INTEGER;`;
 const LOGIN = `
+-- Foreign keys are on: a later step that rebuilds workers (rename, copy, drop) must set PRAGMA foreign_keys = OFF outside its
+-- transaction, or the sessions would follow the renamed table and be cascaded away.
 CREATE TABLE IF NOT EXISTS sessions (
   id         INTEGER PRIMARY KEY,
   token_hash TEXT    NOT NULL UNIQUE,
@@ -2165,12 +2167,14 @@ export function openDb(path, { log = console.error } = {}) {
     // Replaces the list: a worker with a known id is updated (a rename), one without is added, one left out is removed (the
     // tasks keep the name as text). → the new list.
     setWorkers(list) {
-      const saved = replaceList(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
-        (w) => q.insertWorker.run(w.name, w.active ? 1 : 0), () => this.listWorkers(),
-        // Parked names start with \u0001, not \u0000: NOCASE stops comparing at a NUL, so every \u0000 name would be the same.
-        (kept) => { for (const id of kept) q.parkWorker.run(`\u0001${id}`, id); });
-      q.deleteSessionsOfInactive.run(); // ---- Login ---- a worker made inactive is signed out (a removed one's went with the row)
-      return saved;
+      inTransaction(() => {
+        replaceRows(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
+          (w) => q.insertWorker.run(w.name, w.active ? 1 : 0),
+          // Parked names start with \u0001, not \u0000: NOCASE stops comparing at a NUL, so every \u0000 name would be the same.
+          (kept) => { for (const id of kept) q.parkWorker.run(`\u0001${id}`, id); });
+        q.deleteSessionsOfInactive.run(); // ---- Login ---- a worker made inactive is signed out (a removed one's went with the row)
+      });
+      return this.listWorkers();
     },
 
     // ---- Login (spec 2026-11-06-login-design.md 2) ----
