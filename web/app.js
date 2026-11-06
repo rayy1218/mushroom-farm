@@ -14,6 +14,7 @@ import * as harvest from './harvest-page.js';
 import * as sales from './sales-page.js';
 import * as costs from './costs-page.js'; // ---- Costs ----
 import * as runs from './runs-page.js'; // ---- Runs ----
+import * as summary from './business-page.js'; // ---- Summary ----
 import * as taskSheet from './task-sheet.js';
 import * as batches from './batches-page.js';
 import * as batchSheet from './batches-sheet.js';
@@ -89,6 +90,7 @@ function show(before = '') {
     : route.name === 'costs' ? costs.mount(page, { month: route.month })
     : route.name === 'runs' ? runs.mount(page, { crop: route.crop }) // ---- Runs ----
     : route.name === 'run' ? runs.mountRun(view, { id: route.id })
+    : route.name === 'summary' ? summary.mount(page, {}) // ---- Summary ----
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
     : route.name === 'batches' ? batches.mount(page, { run: route.run })
     : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })

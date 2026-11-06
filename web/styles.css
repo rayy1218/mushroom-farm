@@ -2837,3 +2837,39 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
   .rn-run > th .co-link { display: inline-flex; align-items: center; min-height: 44px; padding-block: 0; }
 }
 /* ---- end Runs ---- */
+/* ---- Summary (spec 2026-11-06-business-summary-design.md 6) ---- */
+/* the Business summary, #/business: the money across the top; from 900 px Needs you beside Runs in progress, each card its own
+   height (align-items: start), never stretched to its neighbour's; one column below, in that order */
+.sm-page { display: grid; gap: 16px; align-items: start; }
+@media (min-width: 900px) {
+  .sm-page { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "money money" "needs runs"; }
+  .sm-money { grid-area: money; }
+  .sm-needs { grid-area: needs; }
+  .sm-runs { grid-area: runs; }
+}
+.sm-page .none { margin: 0; color: var(--muted); }
+.sm-line { margin: 8px 0 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sm-money .co-tiles + .sm-line { margin-top: 12px; }
+/* Needs you: a line each, the whole line its link; a module not read in a muted line under them */
+:is(.sm-needs-list, .sm-runs-list) { list-style: none; margin: 0; padding: 0; }
+.sm-need { padding: 8px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
+.sm-need:first-child { border-top: 0; padding-top: 0; }
+.sm-needs-list + .sm-failed { margin-top: 8px; }
+/* Runs in progress: the container (its main crop's picture) with the money so far beside it, then its crops, days, kg and Run page */
+.sm-run { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--border); }
+.sm-run:first-child { border-top: 0; padding-top: 0; }
+.sm-run-head { display: flex; align-items: start; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+.sm-room { font-weight: 600; }
+.sm-so-far { text-align: right; font-variant-numeric: tabular-nums; }
+.sm-so-far-label { color: var(--muted); font-size: var(--fs-sm); }
+.sm-so-far-value { font-weight: 600; }
+.sm-run-line { margin: 0; font-size: var(--fs-sm); }
+.sm-foot { margin: 10px 0 0; font-size: var(--fs-sm); }
+@media (max-width: 600px) {
+  /* a finger's tap: every link reaches 44 px, its padding over the line (inline, as the run page's); a need's line a block */
+  .sm-page .co-link { padding-block: 14px; }
+  .sm-need { padding: 0; }
+  .sm-need .co-link { display: block; padding-block: 12px; }
+  .sm-so-far { text-align: left; }
+}
+/* ---- end Summary ---- */
