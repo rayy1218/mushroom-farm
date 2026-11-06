@@ -53,15 +53,33 @@ test('an older farm app or no answer: the banner says why; an older app stops th
   assert.ok(page.includes('outdated = routeMissing(err);'));
 });
 
-test('the styles: one .sm- block at the end, tokens only; Money across, then Needs you beside Runs from 900 px; 44 px taps', () => {
-  assert.ok(smCss.length > 0);
-  assert.ok(css.trimEnd().endsWith('/* ---- end Summary ---- */'));
-  assert.equal(/#[0-9a-f]{3,8}\b/i.test(smCss), false, 'no fixed colour');
-  for (const rule of smCss.match(/[^{}]+\{[^}]*\}/g) ?? []) {
-    const selector = rule.slice(0, rule.indexOf('{')).replace(/\/\*[^*]*\*\//g, '').trim();
-    if (selector.startsWith('@media') || selector === '') continue;
-    assert.match(selector, /\.sm-/, selector);
+// Every rule's selector in a stretch of CSS, those inside an @media block too (each block opened and read on its own).
+function selectorsOf(text) {
+  const out = [];
+  const body = text.replace(/\/\*[\s\S]*?\*\//g, '');
+  let i = 0;
+  while (i < body.length) {
+    const open = body.indexOf('{', i);
+    if (open < 0) break;
+    const head = body.slice(i, open).replace(/[;}]/g, ' ').trim();
+    let depth = 1;
+    let j = open + 1;
+    for (; j < body.length && depth; j++) depth += body[j] === '{' ? 1 : body[j] === '}' ? -1 : 0;
+    if (head.startsWith('@media')) out.push(...selectorsOf(body.slice(open + 1, j - 1)));
+    else out.push(head);
+    i = j;
   }
+  return out;
+}
+
+test('the styles: one marked .sm- block, tokens only; Money across, then Needs you beside Runs from 900 px; 44 px taps', () => {
+  assert.ok(smCss.length > 0);
+  assert.ok(css.indexOf('/* ---- end Summary ---- */') > css.indexOf('/* ---- Summary (spec'), 'its end marker after its start');
+  assert.equal(/#[0-9a-f]{3,8}\b/i.test(smCss), false, 'no fixed colour');
+  const selectors = selectorsOf(smCss);
+  assert.ok(selectors.includes('.sm-money'), 'a rule inside a media block is read');
+  for (const selector of selectors) assert.match(selector, /\.sm-/, selector);
+  assert.equal(selectorsOf('@media (x) { .a { b: c; } .sm-b { d: e; } } .sm-c { f: g; }').join('|'), '.a|.sm-b|.sm-c', 'the first rule of a media block too');
   assert.ok(smCss.includes('.sm-page { display: grid; gap: 16px; align-items: start; }'));
   assert.ok(smCss.includes('grid-template-areas: "money money" "needs runs";'));
   assert.ok(smCss.includes('.sm-page .co-link { padding-block: 14px; }'));
