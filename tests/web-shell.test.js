@@ -65,11 +65,9 @@ test('the top bar: one Business link after Harvest, before Overview, current on 
   assert.ok(app.includes('if (name === current)'));
 });
 
-test('#/business opens the tab last used (farm.business), in place of its own address; the strip over the four pages', () => {
+test('#/business is the Summary tab itself: no memory of the last tab (farm.business gone); the strip over the six pages', () => {
   const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
-  assert.ok(app.includes("const BUSINESS_KEY = 'farm.business';"));
-  assert.match(app, /if \(route\.name === 'business'\) \{\n\s*history\.replaceState\(null, '', businessLanding\(lastBusiness\(\)\)\);\n\s*show\(before\);\n\s*return;\n\s*\}/);
-  assert.ok(app.includes('if (tab) keepBusiness(tab);'));
+  for (const gone of ['farm.business', 'businessLanding', 'lastBusiness', 'keepBusiness']) assert.ok(!app.includes(gone), gone);
   assert.ok(app.includes('view.append(businessTabs(businessStrip(route)), page);'));
   for (const m of ['sales.mount(page,', 'costs.mount(page,', 'batches.mount(page,', 'inventory.mount(page,']) assert.ok(app.includes(m), m);
   for (const m of ['batchSheet.mountSheet(view,', 'inventorySheet.mount(view,', 'batches.mountBatch(view,', 'inventoryItem.mount(view,', 'inventoryCount.mount(view,']) assert.ok(app.includes(m), `${m} no strip`);
@@ -85,6 +83,19 @@ test('the Business top link is current as "true" (a section, not this page); the
   assert.ok(app.includes("if (name === current) a.setAttribute('aria-current', name === 'business' ? 'true' : 'page');"));
   const tabs = readFileSync(new URL('../web/business-tabs.js', import.meta.url), 'utf8');
   assert.ok(tabs.includes("a.setAttribute('aria-current', 'page')"));
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.ok(css.includes('.top-link:is([aria-current="page"], [aria-current="true"]) { background: var(--band); color: var(--ink); }'),
+    'the top bar shows Business current too (the Summary audit, A5)');
+});
+
+test('the Business strip fades the edge that has more tabs while one is hidden there, as the room page\'s (the Summary review, R10)', () => {
+  const tabs = readFileSync(new URL('../web/business-tabs.js', import.meta.url), 'utf8');
+  assert.ok(tabs.includes("import { scrollEdges } from './simulation-math.js';"));
+  assert.ok(tabs.includes('const edges = () => { nav.dataset.more = scrollEdges(nav.scrollLeft, nav.clientWidth, nav.scrollWidth); };'));
+  assert.ok(tabs.includes("nav.addEventListener('scroll', edges, { passive: true });"));
+  assert.ok(tabs.includes('new ResizeObserver(edges).observe(nav);'));
+  const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
+  assert.ok(css.includes('.room-tabs[data-more="end"] { mask-image:'), 'the room tabs\' fade, which the strip is');
 });
 
 test('every business page but a sheet marks the view .bz-view, for the shared look (C1)', () => {

@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  parseRoute, canonicalHash, isCanonical, RUNS_HASH, runsHash, runHash, businessTabOf, businessStrip, businessLanding,
+  parseRoute, canonicalHash, isCanonical, RUNS_HASH, runsHash, runHash, businessTabOf, businessStrip,
 } from '../web/route.js';
 
 test('#/business/runs and its crop; a crop that is not one is every crop', () => {
@@ -28,10 +28,9 @@ test('#/business/runs/<id>: a run\'s page; 0 and words are not one', () => {
   assert.deepEqual(parseRoute('#/business/runs/abc'), { name: 'overview' });
 });
 
-test('Runs is a Business tab: its strip on the list, not on a run (it has its back link); the landing remembers it', () => {
+test('Runs is a Business tab: its strip on the list, not on a run (it has its back link)', () => {
   assert.equal(businessTabOf(parseRoute('#/business/runs')), 'runs');
   assert.equal(businessTabOf(parseRoute('#/business/runs/12')), 'runs');
   assert.equal(businessStrip(parseRoute('#/business/runs?crop=pink')), 'runs');
   assert.equal(businessStrip(parseRoute('#/business/runs/12')), null);
-  assert.equal(businessLanding('runs'), '#/business/runs');
 });

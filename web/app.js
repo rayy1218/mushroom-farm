@@ -1,7 +1,7 @@
 // The shell: theme, hash router, and mounting pages into <main id="view">.
 // A page is { mount(container, params) → unmount() }.
 
-import { parseRoute, isCanonical, canonicalHash, businessTabOf, businessStrip, businessLanding } from './route.js';
+import { parseRoute, isCanonical, canonicalHash, businessTabOf, businessStrip } from './route.js';
 import { businessTabs } from './business-tabs.js'; // ---- Business ----
 import * as detail from './room-detail.js';
 import * as simulation from './simulation-page.js';
@@ -14,6 +14,7 @@ import * as harvest from './harvest-page.js';
 import * as sales from './sales-page.js';
 import * as costs from './costs-page.js'; // ---- Costs ----
 import * as runs from './runs-page.js'; // ---- Runs ----
+import * as summary from './business-page.js'; // ---- Summary ----
 import * as taskSheet from './task-sheet.js';
 import * as batches from './batches-page.js';
 import * as batchSheet from './batches-sheet.js';
@@ -38,16 +39,6 @@ const menuLinks = {
   settings: document.querySelectorAll('[data-nav="settings"]'),
 };
 
-// ---- Business ---- the tab last used in this browser: #/business opens it (Batches the first time).
-const BUSINESS_KEY = 'farm.business';
-function lastBusiness() {
-  try { return localStorage.getItem(BUSINESS_KEY); } catch { return null; }
-}
-function keepBusiness(tab) {
-  try { localStorage.setItem(BUSINESS_KEY, tab); } catch { /* not kept */ }
-}
-// ---- end Business ----
-
 let unmount = null;
 let mounted = null; // the route on show
 let shown = false;
@@ -60,13 +51,6 @@ function show(before = '') {
     history.replaceState(null, '', canonicalHash(route));
   }
   const route = parseRoute(location.hash);
-  // ---- Business ---- the entry stands for the tab last used: put its address in place of #/business, no history entry
-  if (route.name === 'business') {
-    history.replaceState(null, '', businessLanding(lastBusiness()));
-    show(before);
-    return;
-  }
-  // ---- end Business ----
   // Another tab of the same room: the page stays (its data, scroll and focus); only the panel changes.
   if (mounted?.name === 'detail' && route.name === 'detail' && mounted.id === route.id) {
     unmount.setTab?.(route.tab);
@@ -82,9 +66,9 @@ function show(before = '') {
     console.error('Leaving the page failed:', err);
   }
   view.replaceChildren();
-  // ---- Business ---- the five pages under the strip of their tabs: the page mounts into its own box below it
+  // ---- Business ---- the six pages under the strip of their tabs: the page mounts into its own box below it (#/business is
+  // the Summary tab itself: no memory of the last tab, spec 2026-11-06-business-summary-design.md 2)
   const tab = businessTabOf(route);
-  if (tab) keepBusiness(tab);
   // the look the four modules share (styles.css's .bz- block: card titles, head buttons) on every business page but a sheet
   view.classList.toggle('bz-view', Boolean(tab) && !/Sheet$/.test(route.name));
   let page = view;
@@ -106,6 +90,7 @@ function show(before = '') {
     : route.name === 'costs' ? costs.mount(page, { month: route.month })
     : route.name === 'runs' ? runs.mount(page, { crop: route.crop }) // ---- Runs ----
     : route.name === 'run' ? runs.mountRun(view, { id: route.id })
+    : route.name === 'summary' ? summary.mount(page, {}) // ---- Summary ----
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
     : route.name === 'batches' ? batches.mount(page, { run: route.run })
     : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })

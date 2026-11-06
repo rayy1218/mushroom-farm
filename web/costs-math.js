@@ -37,7 +37,7 @@ const isLoss = (text) => text.startsWith(MINUS); // from the shown (rounded) fig
 
 export { monthTitle, shiftMonth as addMonths }; // "November 2026"; one month on or back, 'YYYY-MM'
 const monthShort = (month) => `${monthTitle(month).slice(0, 3)} ${month.slice(0, 4)}`; // "Nov 2026"
-const monthName = (month) => monthTitle(month).split(' ')[0]; // "November"
+export const monthName = (month) => monthTitle(month).split(' ')[0]; // "November" (the Summary's too)
 // "Jul–Nov 2026", "Dec 2025–Feb 2026", "Nov 2026".
 export function monthSpan(a, b) {
   if (a === b) return monthShort(a);
