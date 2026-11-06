@@ -8,6 +8,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/main.js",
     "device": "node --disable-warning=ExperimentalWarning device/main.js",
+    "owner": "node --disable-warning=ExperimentalWarning server/owner.js",
     "test": "node --disable-warning=ExperimentalWarning --test --test-timeout=60000 tests/*.test.js"
   },
   "engines": { "node": ">=22.13" }
