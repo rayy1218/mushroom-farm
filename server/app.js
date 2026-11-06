@@ -8,7 +8,7 @@ import { createApi, send } from './api.js';
 import { createStatic } from './static.js';
 import { createSse } from './live.js';
 import { DEFAULT_GATEWAY } from './gateways.js';
-import { createAuth, readCookie, clearCookie } from './auth.js';
+import { createAuth } from './auth.js';
 import { createAuthRoutes } from './auth-api.js';
 import { workerMay, filterWorkerReplies } from './roles.js';
 
@@ -32,11 +32,9 @@ export function createApp(db, {
       if (isApi && auth) {
         if (await authRoutes(req, res, url.pathname)) return;
         req.who = auth.who(req, res);
-        if (!req.who) {
-          // a cookie whose session has ended or expired goes too, so the browser stops sending it
-          if (readCookie(req.headers.cookie)) res.setHeader('set-cookie', clearCookie());
-          return send(res, 401, { error: 'Sign in' });
-        }
+        // (a stale cookie is cleared only by GET /api/session's 401, not here: a request in flight with the old cookie whose
+        // 401 landed after a fresh sign-in would delete the new cookie)
+        if (!req.who) return send(res, 401, { error: 'Sign in' });
         if (req.who.role !== 'owner') {
           if (!workerMay(req.method, url.pathname)) return send(res, 403, { error: 'Ask the owner' });
           filterWorkerReplies(res, url.pathname);

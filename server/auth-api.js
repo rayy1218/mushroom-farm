@@ -27,7 +27,9 @@ export function createAuthRoutes({ auth }) {
       const me = auth.who(req, res);
       if (me) send(res, 200, { id: me.id, name: me.name, role: me.role });
       else {
-        // a cookie whose session has ended or expired goes too, so the browser stops sending it
+        // a cookie whose session has ended or expired goes too, so the browser stops sending it. Only here, the page's check
+        // at start: the gate's 401 leaves it, as a request in flight with the old cookie whose 401 lands after a fresh
+        // sign-in would otherwise delete the new cookie.
         if (readCookie(req.headers.cookie)) res.setHeader('set-cookie', clearCookie());
         send(res, 401, { error: 'Sign in' });
       }

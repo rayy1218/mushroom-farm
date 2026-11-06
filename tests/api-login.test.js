@@ -76,7 +76,10 @@ const ROUTES = [
 // Every route the API answers, from the server sources (spec 7: a new route missing from ROUTES fails here): each
 // `path === '/api/…'` (or !==) literal, each regex literal /^\/api…/ and each new RegExp(`^/api…`) of server/api.js and
 // server/*-api.js (not auth-api.js: the sign-in routes are before the gate, tested on their own). A regex is expanded into
-// every path it answers, an id group as 1 and a machine name as ac; a part this cannot expand fails the test.
+// every path it answers, an id group as 1 and a machine name as ac; a part this cannot expand fails the test. It matches
+// paths, not methods: a new method on a path already in ROUTES passes it (and is still closed to workers, as the allow-list
+// is per method). So the readers miss nothing, every '/api…' string and /^\/api regex in those files must be one they read,
+// or one of LEFT_ALONE.
 const SERVER = new URL('../server/', import.meta.url);
 const ID_SOURCE = '[1-9][0-9]{0,14}';
 
@@ -105,24 +108,42 @@ function expand(source) {
   return paths;
 }
 
+// The '/api…' strings that name no route: inventory-api's early return for every path outside /api/inventory.
+const LEFT_ALONE = [['inventory-api.js', "!path.startsWith('/api/inventory/')"]];
+
+// → { paths: every route path, unread: each '/api…' string or /^\/api regex of those files that no reader took }.
 function serverRoutes() {
   const names = readdirSync(SERVER).filter((n) => n === 'api.js' || (n.endsWith('-api.js') && n !== 'auth-api.js'));
   const paths = new Set();
+  const unread = [];
   for (const name of names) {
     const text = readFileSync(new URL(name, SERVER), 'utf8');
-    for (const [, p] of text.matchAll(/path [!=]== '(\/api\/[^']*)'/g)) paths.add(p);
-    for (const [, src] of text.matchAll(/\/(\^\\\/api(?:\\.|[^/\\\n])*)\//g)) for (const p of expand(src)) paths.add(p);
-    for (const [, src] of text.matchAll(/new RegExp\(`(\^\/api[^`]*)`\)/g)) {
+    const read = []; // [start, end) of each place a reader took
+    const take = (m) => { read.push([m.index, m.index + m[0].length]); return m; };
+    for (const m of text.matchAll(/path [!=]== '(\/api\/[^']*)'/g)) paths.add(take(m)[1]);
+    for (const m of text.matchAll(/\/(\^\\\/api(?:\\.|[^/\\\n])*)\//g)) for (const p of expand(take(m)[1])) paths.add(p);
+    for (const m of text.matchAll(/new RegExp\(`(\^\/api[^`]*)`\)/g)) {
+      const src = take(m)[1];
       const plain = src.replaceAll('${ID}', ID_SOURCE);
       assert.ok(!plain.includes('${'), `${name}: ${src} has a part this cannot read`);
       for (const p of expand(plain)) paths.add(p);
     }
+    for (const [file, code] of LEFT_ALONE) {
+      if (file !== name) continue;
+      const at = text.indexOf(code);
+      assert.ok(at >= 0, `${name}: ${code} is gone; take it out of LEFT_ALONE`);
+      read.push([at, at + code.length]);
+    }
+    for (const m of text.matchAll(/(['"`])\^?\/api[^'"`\n]*\1|\/\^\\\/api/g)) {
+      if (!read.some(([a, b]) => a <= m.index && m.index + m[0].length <= b)) unread.push(`${name}: ${m[0]}`);
+    }
   }
-  return [...paths];
+  return { paths: [...paths], unread };
 }
 
 test('ROUTES has a row for every route the server sources answer, and no row for one they do not', () => {
-  const routes = serverRoutes();
+  const { paths: routes, unread } = serverRoutes();
+  assert.deepEqual(unread, [], "'/api…' strings or regexes the readers did not take: read them, or add them to LEFT_ALONE");
   assert.ok(routes.length > 80, `found only ${routes.length}`);
   for (const known of ['/api/settings', '/api/rooms/1/machines/ac', '/api/batches/1/loads', '/api/workers/1/sign-out', '/api/runs/1']) {
     assert.ok(routes.includes(known), `the reading missed ${known}`);
@@ -253,16 +274,28 @@ test("a worker may not change a password: POST /api/session/password is 403", as
   assert.deepEqual([r.status, r.body], [403, { error: 'Ask the owner' }]);
 });
 
-test('a cookie with no session behind it gets its 401 with the cookie cleared; no cookie, no Set-Cookie', async (t) => {
+test("a cookie with no session: GET /api/session's 401 clears it; the gate's 401 leaves it; no cookie, no Set-Cookie", async (t) => {
+  // Only the start-up check clears it: a request in flight with the old cookie whose 401 lands after a fresh sign-in would
+  // otherwise delete the new cookie.
   const { call, worker } = await farm(t);
   assert.equal((await call('POST', '/api/logout', undefined, worker)).status, 204);
-  for (const path of ['/api/rooms', '/api/session']) {
-    const stale = await call('GET', path, undefined, worker);
-    assert.equal(stale.status, 401, path);
-    assert.match(stale.cookie ?? '', /^farm_session=; .*Max-Age=0$/, path);
-    assert.equal((await call('GET', path, undefined, 'farm_session=never-was')).cookie?.endsWith('Max-Age=0'), true, path);
-    assert.equal((await call('GET', path)).cookie, null, path);
+  for (const cookie of [worker, 'farm_session=never-was']) {
+    const session = await call('GET', '/api/session', undefined, cookie);
+    assert.equal(session.status, 401);
+    assert.match(session.cookie ?? '', /^farm_session=; .*Max-Age=0$/);
+    const gate = await call('GET', '/api/rooms', undefined, cookie);
+    assert.deepEqual([gate.status, gate.cookie], [401, null]);
   }
+  for (const path of ['/api/rooms', '/api/session']) assert.equal((await call('GET', path)).cookie, null, path);
+});
+
+test("a worker's undo of a cancelled long-term task is undo's own 409, not 403", async (t) => {
+  const { call, owner, worker } = await farm(t);
+  const room = (await call('POST', '/api/rooms', ROOM, owner)).body.id;
+  const task = (await call('POST', `/api/rooms/${room}/tasks`, { text: 'Fix the door' }, owner)).body.rows[0];
+  assert.equal((await call('POST', `/api/tasks/${task.id}/cancel`, { reason: 'Done already' }, owner)).status, 200);
+  const r = await call('POST', `/api/tasks/${task.id}/undo`, undefined, worker);
+  assert.deepEqual([r.status, r.body], [409, { error: 'Only a daily task can be undone' }]);
 });
 
 test('the server closes its sign-in timer on its own (closeAuth), before the database goes', async () => {
