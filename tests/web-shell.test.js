@@ -65,11 +65,9 @@ test('the top bar: one Business link after Harvest, before Overview, current on 
   assert.ok(app.includes('if (name === current)'));
 });
 
-test('#/business opens the tab last used (farm.business), in place of its own address; the strip over the four pages', () => {
+test('#/business is the Summary tab itself: no memory of the last tab (farm.business gone); the strip over the six pages', () => {
   const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
-  assert.ok(app.includes("const BUSINESS_KEY = 'farm.business';"));
-  assert.match(app, /if \(route\.name === 'business'\) \{\n\s*history\.replaceState\(null, '', businessLanding\(lastBusiness\(\)\)\);\n\s*show\(before\);\n\s*return;\n\s*\}/);
-  assert.ok(app.includes('if (tab) keepBusiness(tab);'));
+  for (const gone of ['farm.business', 'businessLanding', 'lastBusiness', 'keepBusiness']) assert.ok(!app.includes(gone), gone);
   assert.ok(app.includes('view.append(businessTabs(businessStrip(route)), page);'));
   for (const m of ['sales.mount(page,', 'costs.mount(page,', 'batches.mount(page,', 'inventory.mount(page,']) assert.ok(app.includes(m), m);
   for (const m of ['batchSheet.mountSheet(view,', 'inventorySheet.mount(view,', 'batches.mountBatch(view,', 'inventoryItem.mount(view,', 'inventoryCount.mount(view,']) assert.ok(app.includes(m), `${m} no strip`);

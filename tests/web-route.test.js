@@ -188,35 +188,25 @@ test('the Sales page (spec 2026-11-05-sales-design.md 6): #/business/sales with 
   assert.equal(canonicalHash({ name: 'sales', days: 365 }), '#/business/sales?days=365');
 });
 
-// ---- Business (the integration, 2026-11-05): one top-bar entry, #/business, and the strip of the four pages ----
-test('#/business: its own route, canonical as it is, a trailing slash tidied', async () => {
+// ---- Business (the integration, 2026-11-05): one top-bar entry, #/business (the Summary tab since 2026-11-06), and the strip of the six pages ----
+test('#/business: the Summary tab\'s own route, canonical as it is, a trailing slash tidied', async () => {
   const { BUSINESS_HASH } = await import('../web/route.js');
   assert.equal(BUSINESS_HASH, '#/business');
-  assert.deepEqual(parseRoute('#/business'), { name: 'business' });
-  assert.deepEqual(parseRoute('#/business/'), { name: 'business' });
+  assert.deepEqual(parseRoute('#/business'), { name: 'summary' });
+  assert.deepEqual(parseRoute('#/business/'), { name: 'summary' });
   assert.equal(isCanonical('#/business'), true);
   assert.equal(isCanonical('#/business/'), false);
-  assert.equal(canonicalHash({ name: 'business' }), '#/business');
+  assert.equal(canonicalHash({ name: 'summary' }), '#/business');
   assert.deepEqual(parseRoute('#/business/nope'), { name: 'overview' }, 'an unknown business page is unknown, as elsewhere');
   assert.deepEqual(parseRoute('#/businesses'), { name: 'overview' });
 });
 
-test('the Business tabs: Batches, Inventory, Sales, Costs, Runs, each its page', async () => {
-  const { BUSINESS_TABS, INVENTORY_HASH, COSTS_HASH, RUNS_HASH } = await import('../web/route.js');
-  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['batches', 'inventory', 'sales', 'costs', 'runs']);
-  assert.deepEqual(BUSINESS_TABS.map((t) => t.label), ['Batches', 'Inventory', 'Sales', 'Costs', 'Runs']);
-  assert.deepEqual(BUSINESS_TABS.map((t) => t.hash), [BATCHES_HASH, INVENTORY_HASH, SALES_HASH, COSTS_HASH, RUNS_HASH]);
+test('the Business tabs: Summary, Batches, Inventory, Sales, Costs, Runs, each its page', async () => {
+  const { BUSINESS_TABS, BUSINESS_HASH, INVENTORY_HASH, COSTS_HASH, RUNS_HASH } = await import('../web/route.js');
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['summary', 'batches', 'inventory', 'sales', 'costs', 'runs']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.label), ['Summary', 'Batches', 'Inventory', 'Sales', 'Costs', 'Runs']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.hash), [BUSINESS_HASH, BATCHES_HASH, INVENTORY_HASH, SALES_HASH, COSTS_HASH, RUNS_HASH]);
   for (const t of BUSINESS_TABS) assert.ok(isCanonical(t.hash), t.hash);
-});
-
-test('businessLanding: the tab last used in this browser, Batches the first time or for a key that is not one', async () => {
-  const { businessLanding } = await import('../web/route.js');
-  assert.equal(businessLanding(null), '#/business/batches');
-  assert.equal(businessLanding('inventory'), '#/business/inventory');
-  assert.equal(businessLanding('sales'), '#/business/sales');
-  assert.equal(businessLanding('costs'), '#/business/costs');
-  assert.equal(businessLanding('nope'), '#/business/batches');
-  assert.equal(businessLanding('toString'), '#/business/batches', 'not a property of an object');
 });
 
 test('businessTabOf: every #/business page belongs to its tab (the top bar marks Business; the browser keeps the tab)', async () => {
@@ -228,19 +218,19 @@ test('businessTabOf: every #/business page belongs to its tab (the top bar marks
     '#/business/inventory/sheet?days=90': 'inventory',
     '#/business/sales': 'sales', '#/business/sales?days=7': 'sales',
     '#/business/costs': 'costs', '#/business/costs?month=2026-10': 'costs',
-    '#/business': null, '#/harvest': null, '#/harvest/sheet?days=30': null, '#/rooms/7/harvest': null, '#/overview': null,
+    '#/business': 'summary', '#/harvest': null, '#/harvest/sheet?days=30': null, '#/rooms/7/harvest': null, '#/overview': null,
   };
   for (const [hash, tab] of Object.entries(cases)) assert.equal(businessTabOf(parseRoute(hash)), tab, hash);
   assert.equal(businessTabOf(null), null);
 });
 
-test('businessStrip: the strip shows on the four pages only (not a batch, an item, Count stock, or a sheet for print)', async () => {
+test('businessStrip: the strip shows on the six pages only (not a batch, an item, Count stock, or a sheet for print)', async () => {
   const { businessStrip } = await import('../web/route.js');
   const cases = {
     '#/business/batches': 'batches', '#/business/batches?run=4': 'batches', '#/business/inventory': 'inventory',
     '#/business/sales?days=90': 'sales', '#/business/costs?month=2026-10': 'costs',
     '#/business/batches/7': null, '#/business/batches/sheet': null, '#/business/inventory/3': null,
-    '#/business/inventory/count': null, '#/business/inventory/sheet?days=30': null, '#/business': null, '#/overview': null,
+    '#/business/inventory/count': null, '#/business/inventory/sheet?days=30': null, '#/business': 'summary', '#/overview': null,
   };
   for (const [hash, tab] of Object.entries(cases)) assert.equal(businessStrip(parseRoute(hash)), tab, hash);
 });
