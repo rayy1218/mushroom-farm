@@ -11,6 +11,7 @@ import { roomUsage, farmUsage } from './usage.js';
 import { bucketUsage } from './usage-buckets.js';
 import { changeFilter, lastCounted } from './filter.js';
 import { createCropApi } from './crop-api.js';
+import { createAccountRoutes } from './accounts-api.js'; // ---- Login ----
 import { createSimulationRoutes } from './simulation-api.js';
 import { createTaskRoutes } from './tasks-api.js';
 import { createTasks } from './tasks.js';
@@ -134,6 +135,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   }
 
   const crop = createCropApi({ db });
+  const accountRoutes = createAccountRoutes({ db }); // ---- Login ---- (spec 2026-11-06-login-design.md 5)
 
   const settingsReply = () => ({ ...settingsView(db, telegram?.status()), farmGateway }); // the farm's gateway: read only
 
@@ -143,6 +145,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   };
 
   async function route(req, res, path, url) {
+    if (await accountRoutes(req, res, path, { send, readJson, HttpError })) return; // ---- Login ----
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (await harvestRoutes(req, res, path, { send, readJson, HttpError, url })) return;
