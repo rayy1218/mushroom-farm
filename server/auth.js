@@ -63,16 +63,23 @@ export function readCookie(header, name = COOKIE) {
   return null;
 }
 
-export const sessionCookie = (token, ms) => `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${Math.floor(ms / 1000)}`;
-export const clearCookie = () => `${COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
+// secure: the request came through Tailscale's https proxy (viaProxy). Straight to the app on the tailnet IP it is plain
+// http, which a browser would not keep a Secure cookie from; that traffic is inside Tailscale's encrypted tunnel, and the
+// app's port is not open to the internet, so the cookie goes without Secure there.
+const flags = (secure) => `HttpOnly; ${secure ? 'Secure; ' : ''}SameSite=Strict; Path=/`;
+export const sessionCookie = (token, ms, secure = true) => `${COOKIE}=${token}; ${flags(secure)}; Max-Age=${Math.floor(ms / 1000)}`;
+export const clearCookie = (secure = true) => `${COOKIE}=; ${flags(secure)}; Max-Age=0`;
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// The request came from this machine: Tailscale's proxy (serve or Funnel, https), or a browser on the farm computer itself.
+export const viaProxy = (req) => LOOPBACK.has(req.socket?.remoteAddress ?? '');
 
 // Who is asking, for the per-address limit: behind Tailscale (serve or Funnel) the request comes from this machine and
 // the proxy adds the client to X-Forwarded-For's end (one trusted hop; an earlier entry is the client's own word); from
 // anywhere else the header is ignored.
 export function clientAddress(req) {
   const socket = req.socket?.remoteAddress ?? '';
-  const local = socket === '127.0.0.1' || socket === '::1' || socket === '::ffff:127.0.0.1';
-  const forwarded = local ? String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim() : '';
+  const forwarded = viaProxy(req) ? String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim() : '';
   return forwarded || socket;
 }
 
@@ -128,7 +135,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     const ms = SESSION_MS[account.role];
     const userAgent = String(req.headers['user-agent'] ?? '').slice(0, 200) || null;
     db.addSession({ tokenHash: tokenHash(token), workerId: account.id, at: t, expiresAt: t + ms, userAgent });
-    return sessionCookie(token, ms);
+    return sessionCookie(token, ms, viaProxy(req));
   }
 
   async function login(req, body) {
@@ -191,7 +198,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     if (t - s.lastSeen >= TOUCH_MS) {
       const ms = SESSION_MS[s.role];
       db.touchSession(s.id, t, t + ms);
-      res.setHeader('set-cookie', sessionCookie(token, ms));
+      res.setHeader('set-cookie', sessionCookie(token, ms, viaProxy(req)));
     }
     return { id: s.workerId, name: s.name, role: s.role, sessionId: s.id };
   }

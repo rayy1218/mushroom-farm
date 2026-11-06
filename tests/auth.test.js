@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hashSecret, checkSecret, pinError, passwordError, newToken, tokenHash, readCookie, sessionCookie, clearCookie, clientAddress, COOKIE,
+  hashSecret, checkSecret, pinError, passwordError, newToken, tokenHash, readCookie, sessionCookie, clearCookie, clientAddress, viaProxy, COOKIE,
 } from '../server/auth.js';
 
 test('a hashed secret checks against itself only; each hash has its own salt', async () => {
@@ -48,6 +48,8 @@ test('the cookie: read from among others; set HttpOnly, Secure, SameSite=Strict 
   assert.equal(readCookie(undefined), null);
   assert.equal(sessionCookie('abc', 30 * 86_400_000), 'farm_session=abc; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000');
   assert.equal(clearCookie(), 'farm_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');
+  assert.equal(sessionCookie('abc', 1000, false), 'farm_session=abc; HttpOnly; SameSite=Strict; Path=/; Max-Age=1', 'over the tailnet IP (http)');
+  assert.equal(clearCookie(false), 'farm_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
 });
 
 test("the client's address: X-Forwarded-For's last entry, only from Tailscale's proxy on this machine", () => {
@@ -56,4 +58,10 @@ test("the client's address: X-Forwarded-For's last entry, only from Tailscale's 
   assert.equal(clientAddress(req('::ffff:127.0.0.1', '203.0.113.9')), '203.0.113.9');
   assert.equal(clientAddress(req('100.64.0.5', '203.0.113.9')), '100.64.0.5');
   assert.equal(clientAddress(req('127.0.0.1')), '127.0.0.1');
+});
+
+test("viaProxy: a request through Tailscale's https proxy comes from this machine; one to the tailnet IP does not", () => {
+  const req = (remoteAddress) => ({ socket: { remoteAddress }, headers: {} });
+  for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) assert.equal(viaProxy(req(a)), true, a);
+  for (const a of ['100.64.0.5', '192.168.1.9', '']) assert.equal(viaProxy(req(a)), false, a);
 });

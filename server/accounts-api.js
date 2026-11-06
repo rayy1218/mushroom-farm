@@ -2,7 +2,7 @@
 // worker's routes): GET /api/workers/accounts, POST /api/workers/:id/secret { secret }, PUT /api/workers/:id/role { role },
 // POST /api/workers/:id/unlock and POST /api/workers/:id/sign-out. Each change answers { account } as the list has it.
 
-import { hashSecret, pinError, passwordError, clearCookie } from './auth.js';
+import { hashSecret, pinError, passwordError, clearCookie, viaProxy } from './auth.js';
 
 const ONE = /^\/api\/workers\/([1-9][0-9]{0,14})\/(secret|role|unlock|sign-out)$/;
 
@@ -50,7 +50,7 @@ export function createAccountRoutes({ db, now = Date.now }) {
       db.signOutEverywhere(account.id);
       ownSessionEnds = req.who?.id === account.id;
     }
-    if (ownSessionEnds) res.setHeader('set-cookie', clearCookie());
+    if (ownSessionEnds) res.setHeader('set-cookie', clearCookie(viaProxy(req)));
     send(res, 200, { account: accountOf(account.id) });
     return true;
   };

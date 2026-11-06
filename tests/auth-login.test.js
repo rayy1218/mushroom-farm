@@ -34,13 +34,20 @@ test('the right PIN signs a worker in for 30 days: the reply, the cookie, the se
   const r = await auth.login(req(), { id: ali, secret: '482913' });
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, { id: ali, name: 'Ali', role: 'worker' });
-  assert.match(r.cookie, /^farm_session=[A-Za-z0-9_-]{43}; HttpOnly; Secure; SameSite=Strict; Path=\/; Max-Age=2592000$/);
+  // (from a tailnet address: plain http straight to the app, so no Secure; through the https proxy it has it, below)
+  assert.match(r.cookie, /^farm_session=[A-Za-z0-9_-]{43}; HttpOnly; SameSite=Strict; Path=\/; Max-Age=2592000$/);
   const s = db.session(tokenHash(tokenOf(r.cookie)));
   assert.deepEqual([s.workerId, s.expiresAt], [ali, T + 30 * 86_400_000]);
   assert.deepEqual(auth.who(req({ cookie: `farm_session=${tokenOf(r.cookie)}` }), res()), { id: ali, name: 'Ali', role: 'worker', sessionId: s.id });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^login 2026-11-06T02:00:00\.000Z 100\.64\.0\.9 worker \d+ right$/);
   assert.ok(!lines[0].includes('482913'));
+});
+
+test("through Tailscale's https proxy (from this machine) the cookie is Secure; straight to the tailnet IP it is not", async (t) => {
+  const { auth, ali, req } = await setup(t);
+  assert.match((await auth.login(req({ address: '127.0.0.1' }), { id: ali, secret: '482913' })).cookie, /; HttpOnly; Secure; SameSite=Strict;/);
+  assert.match((await auth.login(req({ address: '100.64.0.9' }), { id: ali, secret: '482913' })).cookie, /; HttpOnly; SameSite=Strict;/);
 });
 
 test("the right password signs an owner in for 7 days", async (t) => {
