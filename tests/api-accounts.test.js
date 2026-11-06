@@ -45,8 +45,9 @@ test('Set PIN: a worker\'s 6 digits; then they can sign in', async (t) => {
 });
 
 test("Set password: an owner's 12 characters or more", async (t) => {
-  const { call, ray, owner } = await farm(t);
-  assert.deepEqual((await call('POST', `/api/workers/${ray}/secret`, { secret: '482913' }, owner)).body,
+  const { call, ali, owner } = await farm(t);
+  await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner); // not your own row: that is Change password
+  assert.deepEqual((await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner)).body,
     { error: 'The password must be at least 12 characters', field: 'secret' });
 });
 
@@ -81,4 +82,64 @@ test('PUT /api/workers keeps an active owner', async (t) => {
   const off = await call('PUT', '/api/workers', { workers: [{ id: ali, name: 'Ali', active: true }, { id: ray, name: 'Ray', active: false }] }, owner);
   assert.equal(off.status, 400);
   assert.equal((await call('PUT', '/api/workers', { workers: [{ id: ali, name: 'Ali', active: true }, { id: ray, name: 'Ray K', active: true }] }, owner)).status, 200);
+});
+
+test('the farm keeps an owner who can sign in: an owner without a password does not count', async (t) => {
+  const { db, call, ali, ray, owner } = await farm(t);
+  await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner); // Ali: owner, no password yet
+  const names = () => db.loginNames().map((n) => n.id);
+  const demote = await call('PUT', `/api/workers/${ray}/role`, { role: 'worker' }, owner);
+  assert.deepEqual([demote.status, demote.body], [400, { error: 'The farm needs an owner', field: 'role' }]);
+  const left = await call('PUT', '/api/workers', { workers: [{ id: ali, name: 'Ali', active: true }] }, owner);
+  assert.deepEqual([left.status, left.body.field], [400, 'workers']);
+  const off = await call('PUT', '/api/workers', { workers: [{ id: ali, name: 'Ali', active: true }, { id: ray, name: 'Ray', active: false }] }, owner);
+  assert.deepEqual([off.status, off.body.field], [400, 'workers']);
+  assert.deepEqual(names(), [ray]);
+});
+
+test('an owner who is inactive may be demoted', async (t) => {
+  const { db, call, ali, ray, owner } = await farm(t);
+  await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: 'another long password' }, owner);
+  db.setWorkers([{ id: ali, name: 'Ali', active: false }, { id: ray, name: 'Ray', active: true }]);
+  assert.equal((await call('PUT', `/api/workers/${ali}/role`, { role: 'worker' }, owner)).status, 200);
+});
+
+test('a role change clears a lock', async (t) => {
+  const { db, call, ali, owner } = await farm(t);
+  db.setTries(ali, 0, Date.now() + 60_000);
+  const r = await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner);
+  assert.equal(r.body.account.lockedUntil, null);
+});
+
+test('your own row: no Set password here; demoting or signing out yourself clears your cookie', async (t) => {
+  const { call, ali, ray, owner } = await farm(t);
+  assert.deepEqual((await call('POST', `/api/workers/${ray}/secret`, { secret: 'a brand new password' }, owner)).body,
+    { error: 'Use Change password on Settings', field: 'secret' });
+  await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: 'another long password' }, owner); // a second usable owner
+  const out = await call('POST', `/api/workers/${ray}/sign-out`, undefined, owner);
+  assert.match(out.cookie, /^farm_session=;.*Max-Age=0/);
+  const again = (await call('POST', '/api/login', { id: ray, secret: 'long enough password' })).cookie.split(';')[0];
+  const demoted = await call('PUT', `/api/workers/${ray}/role`, { role: 'worker' }, again);
+  assert.deepEqual([demoted.status, /Max-Age=0/.test(demoted.cookie)], [200, true]);
+});
+
+test('the secret and the role racing: a PIN is not written over a changed role', async (t) => {
+  const { db, ali } = await farm(t);
+  const checkedRole = db.account(ali).role; // the route's check
+  db.setRole(ali, 'owner'); // the role changes while the hash is slow
+  assert.equal(db.setSecret(ali, 'pin-hash', checkedRole), false);
+  assert.equal(db.account(ali).secretHash, null);
+});
+
+test('a worker gets 403 on the owner\'s tools; a wrong method gets 404', async (t) => {
+  const { call, ali, ray, owner, signIn } = await farm(t);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner);
+  const worker = await signIn(ali, '482913');
+  assert.equal((await call('GET', '/api/workers/accounts', undefined, worker)).status, 403);
+  assert.equal((await call('POST', `/api/workers/${ali}/secret`, { secret: '591347' }, worker)).status, 403);
+  assert.equal((await call('POST', '/api/workers/accounts', undefined, owner)).status, 404);
+  assert.equal((await call('GET', `/api/workers/${ray}/unlock`, undefined, owner)).status, 404);
+  assert.equal((await call('POST', `/api/workers/${ray}/role`, { role: 'worker' }, owner)).status, 404);
 });

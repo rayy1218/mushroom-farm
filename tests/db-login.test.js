@@ -50,12 +50,12 @@ test('loginNames: the active workers with a secret, by name, with the kind of se
   const db = openDb(':memory:');
   db.setWorkers([{ name: 'Siti', active: true }, { name: 'Ali', active: true }, { name: 'Ah Kow', active: false }, { name: 'New', active: true }]);
   const id = (n) => db.listWorkers().find((w) => w.name === n).id;
+  db.setRole(id('Siti'), 'owner'); // a role change clears the secret, so it comes first
   db.setSecret(id('Siti'), 'h1');
   db.setSecret(id('Ali'), 'h2');
   db.setSecret(id('Ah Kow'), 'h3');
-  db.setRole(id('Siti'), 'owner');
   assert.deepEqual(db.loginNames(), [{ id: id('Ali'), name: 'Ali', kind: 'pin' }, { id: id('Siti'), name: 'Siti', kind: 'password' }]);
-  assert.equal(db.ownerCount(), 1);
+  assert.deepEqual(db.usableOwners(), [id('Siti')]);
 });
 
 test('a session: added, found by its token hash with its worker, touched, ended; expired ones pruned', () => {
@@ -119,5 +119,29 @@ test('setOwner: finds the named worker (any case) or adds them, an active owner 
   assert.equal(db.session('r'), null);
   const kelvin = db.setOwner('Kelvin', 'hash2');
   assert.deepEqual(pick(db.account(kelvin)), { name: 'Kelvin', active: true, role: 'owner', secretHash: 'hash2' });
-  assert.equal(db.ownerCount(), 2);
+  assert.deepEqual(db.usableOwners(), [ray.id, kelvin]);
+});
+
+test('setRole clears the secret, the lock and the sessions in one go; setSecret with a role writes only while the role holds', () => {
+  const db = openDb(':memory:');
+  db.setWorkers([{ name: 'Ali', active: true }]);
+  const ali = db.listWorkers()[0];
+  db.setSecret(ali.id, 'pin');
+  db.setTries(ali.id, 2, T + 60_000);
+  db.setRole(ali.id, 'owner');
+  assert.deepEqual([db.account(ali.id).secretHash, db.accounts(T)[0].lockedUntil], [null, null]);
+  assert.deepEqual(db.usableOwners(), []);
+  // the race: the route checked the role 'worker', the hash was slow, the role changed meanwhile
+  assert.equal(db.setSecret(ali.id, 'pin-hash', 'worker'), false);
+  assert.equal(db.account(ali.id).secretHash, null);
+  assert.equal(db.setSecret(ali.id, 'password-hash', 'owner'), true);
+  assert.deepEqual(db.usableOwners(), [ali.id]);
+});
+
+test('accounts: a lock that has passed is null', () => {
+  const db = openDb(':memory:');
+  db.setWorkers([{ name: 'Ali', active: true }]);
+  const ali = db.listWorkers()[0];
+  db.setTries(ali.id, 0, T - 1);
+  assert.equal(db.accounts(T)[0].lockedUntil, null);
 });

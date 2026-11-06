@@ -1141,10 +1141,12 @@ export function openDb(path, { log = console.error } = {}) {
     account: db.prepare('SELECT * FROM workers WHERE id = ?'),
     accountByName: db.prepare('SELECT * FROM workers WHERE name = ?'), // the column is NOCASE
     loginNames: db.prepare('SELECT id, name, role FROM workers WHERE active = 1 AND secret_hash IS NOT NULL ORDER BY name, id'),
-    ownerCount: db.prepare("SELECT COUNT(*) AS n FROM workers WHERE role = 'owner' AND active = 1"),
+    usableOwners: db.prepare("SELECT id FROM workers WHERE role = 'owner' AND active = 1 AND secret_hash IS NOT NULL ORDER BY id"),
     activate: db.prepare('UPDATE workers SET active = 1 WHERE id = ?'),
     setSecret: db.prepare('UPDATE workers SET secret_hash = ?, failed_tries = 0, locked_until = NULL WHERE id = ?'),
+    setSecretFor: db.prepare('UPDATE workers SET secret_hash = ?, failed_tries = 0, locked_until = NULL WHERE id = ? AND role = ?'),
     setRole: db.prepare('UPDATE workers SET role = ? WHERE id = ?'),
+    resetSecret: db.prepare('UPDATE workers SET secret_hash = NULL, failed_tries = 0, locked_until = NULL WHERE id = ?'),
     setTries: db.prepare('UPDATE workers SET failed_tries = ?, locked_until = ? WHERE id = ?'),
     insertSession: db.prepare(`INSERT INTO sessions (token_hash, worker_id, created_at, last_seen, expires_at, user_agent)
                                VALUES (?, ?, ?, ?, ?, ?)`),
@@ -2190,7 +2192,8 @@ export function openDb(path, { log = console.error } = {}) {
     accounts(now) {
       const counts = new Map(q.sessionCounts.all(now).map((r) => [r.worker_id, r.n]));
       return q.workers.all().map((r) => ({
-        id: r.id, name: r.name, active: r.active === 1, role: r.role, hasSecret: r.secret_hash !== null, lockedUntil: r.locked_until,
+        id: r.id, name: r.name, active: r.active === 1, role: r.role, hasSecret: r.secret_hash !== null,
+        lockedUntil: r.locked_until !== null && r.locked_until > now ? r.locked_until : null,
         sessions: counts.get(r.id) ?? 0,
       }));
     },
@@ -2200,19 +2203,26 @@ export function openDb(path, { log = console.error } = {}) {
       return q.loginNames.all().map((r) => ({ id: r.id, name: r.name, kind: r.role === 'owner' ? 'password' : 'pin' }));
     },
 
-    // The active owners.
-    ownerCount() {
-      return q.ownerCount.get().n;
+    // The ids of the owners who can sign in: active, with a password.
+    usableOwners() {
+      return q.usableOwners.all().map((r) => r.id);
     },
 
-    // A new secret (its hash) clears the wrong tries and the lock and signs the worker out everywhere.
-    setSecret(id, hash) {
-      inTransaction(() => { q.setSecret.run(hash, id); q.deleteSessionsOf.run(id); });
+    // A new secret (its hash) clears the wrong tries and the lock and signs the worker out everywhere. With role: only while
+    // the worker still has that role (a role change during a slow hash must not be overwritten). → whether it was written.
+    setSecret(id, hash, role) {
+      let changed = false;
+      inTransaction(() => {
+        changed = Number((role === undefined ? q.setSecret.run(hash, id) : q.setSecretFor.run(hash, id, role)).changes) > 0;
+        if (changed) q.deleteSessionsOf.run(id);
+      });
+      return changed;
     },
 
-    // 'owner' or 'worker'; the worker is signed out everywhere, so their pages follow the new role at the next sign-in.
+    // 'owner' or 'worker'. A PIN is no password: the secret, the wrong tries and the lock go, and the worker is signed out
+    // everywhere, all in one transaction.
     setRole(id, role) {
-      inTransaction(() => { q.setRole.run(role, id); q.deleteSessionsOf.run(id); });
+      inTransaction(() => { q.setRole.run(role, id); q.resetSecret.run(id); q.deleteSessionsOf.run(id); });
     },
 
     setTries(id, tries, lockedUntil) {

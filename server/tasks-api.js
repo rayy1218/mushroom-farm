@@ -233,9 +233,9 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       if (req.method !== 'PUT') throw notFound();
       // The whole list: done rows keep the name they were done by (text), so a rename or removal leaves the log as it was.
       const list = readWorkers(await readJson(req), db.listWorkers(), HttpError);
-      // ---- Login ---- once the farm has an owner, the list keeps one active (spec 2026-11-06-login-design.md 5)
-      const owners = db.accounts(Date.now()).filter((a) => a.role === 'owner' && a.active).map((a) => a.id);
-      if (owners.length && !list.some((w) => owners.includes(w.id) && w.active)) throw new HttpError(400, 'The farm needs an owner');
+      // ---- Login ---- the list keeps an owner who can sign in (spec 2026-11-06-login-design.md 5)
+      const owners = db.usableOwners();
+      if (owners.length && !list.some((w) => owners.includes(w.id) && w.active)) throw new HttpError(400, 'The farm needs an owner', 'workers');
       db.setWorkers(list);
       send(res, 200, { workers: db.listWorkers() });
       return true;
