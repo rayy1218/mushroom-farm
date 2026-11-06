@@ -35,3 +35,17 @@ test('"Doing the rounds as" is gone: who did it is the signed-in name', () => {
   assert.ok(!src('task-dialogs.js').includes("'farm.worker'"));
   assert.ok(src('task-dialogs.js').includes('me()?.name'));
 });
+
+test("a worker's pages ask only for what they may read (no 403 on the room page, Today or the Overview)", () => {
+  const room = src('room-detail.js');
+  assert.ok(room.includes("isOwner() ? request('GET', `/api/rooms/${id}/control`).catch(() => null) : null,"), 'the control settings');
+  assert.ok(room.includes('if (isOwner()) simulationsCard ??= createSimulationsCard('), 'the Simulations card');
+  assert.ok(src('today-page.js').includes('const stopBatches = isOwner() ? todayWaiting(container) : () => {};'), 'Blocks waiting');
+  assert.ok(src('overview.js').includes('const wantUsage = isOwner() && Date.now() - usageAt >= USAGE_REFRESH_MS;'), "the farm's usage");
+});
+
+test('Sign out looks like the other top links; the picker\'s rules are gone', () => {
+  const css = src('styles.css');
+  assert.ok(css.includes('.top-signout { border: 0; background: none; transition: none; }'));
+  assert.ok(!/\.tk-as\b|\.td-picker\b/.test(css));
+});

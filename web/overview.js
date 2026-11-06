@@ -155,7 +155,7 @@ export function mount(container) {
   async function load() {
     clearTimeout(timer);
     const seq = ++loadSeq;
-    const wantUsage = Date.now() - usageAt >= USAGE_REFRESH_MS;
+    const wantUsage = isOwner() && Date.now() - usageAt >= USAGE_REFRESH_MS; // ---- Login ---- the farm's usage is the owner's (RM)
     const wantHarvest = Date.now() - harvestAt >= USAGE_REFRESH_MS;
     const [result, settings, outdoorData, usageData, harvestData] = await Promise.all([
       loadOverview(),

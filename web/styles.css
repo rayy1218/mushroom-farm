@@ -1571,13 +1571,9 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
 .tk-fold > summary:hover { color: var(--ink); }
 .tk-later { margin-top: 6px; border-top: 1px solid var(--border); padding-top: 4px; }
 
-.tk-as { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--ink-2); }
-.tk-as > span { white-space: nowrap; }
-.tk-as select { font: inherit; color: var(--ink); min-width: 0; min-height: 36px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); }
 /* the Log */
 
 /* the Today page: the rooms two by two from 1,100 px, then the long-term tasks */
-.td-picker { flex: none; }
 .td-rooms { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 1100px) { .td-rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .td-room-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
@@ -1680,9 +1676,6 @@ button.tk-tick:is(:hover, :focus-visible) .tk-mark { opacity: 1; }
   .tk-actions { margin: -12px -10px -12px 0; }
   .tk-quiet { min-height: 44px; padding: 0 10px; }
   .tk-fold > summary { min-height: 44px; padding: 12px 0; }
-  .tk-as { width: 100%; }
-  .tk-as select { flex: 1 1 auto; min-height: 44px; }
-  .td-picker { width: 100%; }
   .td-long-list a { display: inline-flex; align-items: center; min-height: 44px; }
   .td-room h2 a { display: inline-block; padding: 11px 4px; margin: -11px -4px; } /* 44 px to tap; the margin keeps the card's spacing, and a long name still wraps */
   .td-room h2 a:focus-visible { outline-offset: -2px; } /* the ring hugs the 44 px link, 4 px off the name's sides ... */
@@ -2895,6 +2888,11 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
 /* ---- Login ---- the sign-in view (spec 2026-11-06-login-design.md 6); the top bar's links wait until someone is signed in */
 html[data-signin] .top-link, html[data-signin] .top-alarm, html[data-signin] .theme-btn, html[data-signin] .live-mark, html[data-signin] [data-signout] { display: none; }
 html[data-role="worker"] [data-owner-only] { display: none !important; }
+/* Sign out: a top link that is a button (no button frame or fill; .top-link gives its size, padding, colour and focus ring) */
+.top-signout { border: 0; background: none; transition: none; }
+/* an owner's bar has one item more since Sign out: under 400 px the icons are 36 px wide (44 px tall) so the mark keeps its
+   28 px at 390 px with or without the alarm button; narrower, it goes when there is no room for it whole (the rules above) */
+@media (max-width: 399px) { .top-link { min-width: 36px; } .topbar .theme-btn { width: 36px; min-width: 36px; } }
 .login { max-width: 416px; margin: 32px auto; }
 .login-names { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
 .login-name { width: 100%; min-height: 44px; text-align: left; font-size: var(--fs-lg); }

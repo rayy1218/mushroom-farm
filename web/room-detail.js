@@ -355,7 +355,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
         request('GET', `/api/rooms/${id}/sensors`),
         // The machines are optional: a failing or missing route must not take the sensors down.
         request('GET', `/api/rooms/${id}/machines`).catch(() => null),
-        request('GET', `/api/rooms/${id}/control`).catch(() => null), // optional in the same way
+        // optional in the same way; ---- Login ---- the control settings are the owner's (a worker's card stays hidden)
+        isOwner() ? request('GET', `/api/rooms/${id}/control`).catch(() => null) : null,
         request('GET', '/api/settings').catch(() => null), // a failure keeps the 5 s refresh
         request('GET', `/api/rooms/${id}/alarms`).catch(() => null), // optional: alarms
         request('GET', '/api/outdoor').catch(() => null), // optional: the outdoor sensor
@@ -569,7 +570,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     equipmentTab.update(room, { sensors, machines: machineData ?? lastMachines, farmGateway }); // the cards' status lines and hints
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
-    simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
+    if (isOwner()) simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room }); // ---- Login ---- the owner's tab
     // the grid's week in the address, in place (as the Calendar keeps its day): ‹ › add no history entry each (window's:
     // history here is the History tab's)
     tasksCard ??= createTasksCard(els.tasksHost, {
