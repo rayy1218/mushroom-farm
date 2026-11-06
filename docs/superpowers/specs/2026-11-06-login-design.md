@@ -56,7 +56,7 @@ A worker's sessions are deleted when their secret or role changes, when they are
 | PIN | Exactly 6 digits (400 otherwise, field `secret`); not all one digit, not 123456 or 654321 when set |
 | Password | 12 to 200 characters when set |
 | Lockout, account | 5 wrong tries in a row lock the account 15 minutes; the owner can unlock in Settings → Workers |
-| Lockout, address | 20 tries in 15 minutes from one address get 429 for the rest of the window (in memory). The address is `X-Forwarded-For`'s first entry when the request comes from 127.0.0.1 (Tailscale's proxy), else the socket's |
+| Lockout, address | 20 tries in 15 minutes from one address get 429 for the rest of the window (in memory). The address is `X-Forwarded-For`'s last entry (the one Tailscale's proxy adds) when the request comes from 127.0.0.1 (Tailscale's proxy), else the socket's |
 | Log | Every try to the app's log: time, address, worker id, right / wrong / locked; never the secret |
 | Who am I | `GET /api/session` → `{ id, name, role }` or 401 |
 | Sign out | `POST /api/logout` → deletes this session, clears the cookie, 204 |

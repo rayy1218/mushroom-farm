@@ -16,6 +16,8 @@ test('a hashed secret checks against itself only; each hash has its own salt', a
   assert.equal(await checkSecret('482913', null), false);
   assert.equal(await checkSecret('482913', 'garbage'), false);
   assert.equal(await checkSecret(undefined, h), false);
+  assert.equal(await checkSecret('482913', h.replace('$32768$', '$1000$')), false);
+  assert.equal(await checkSecret('482913', h.replace('$8$1$', '$8$1000$')), false);
 });
 
 test('a PIN is 6 digits, not one digit six times, not 123456 or 654321', () => {
@@ -28,6 +30,7 @@ test('a password is 12 to 200 characters', () => {
   assert.equal(passwordError('a'.repeat(12)), null);
   assert.equal(passwordError('a'.repeat(11)), 'The password must be at least 12 characters');
   assert.equal(passwordError('a'.repeat(201)), 'The password must be at most 200 characters');
+  assert.equal(passwordError('e\u0301'.repeat(6)), 'The password must be at least 12 characters'); // 12 code points, 6 characters once normalized
   assert.equal(passwordError(null), 'The password must be at least 12 characters');
 });
 
@@ -47,9 +50,9 @@ test('the cookie: read from among others; set HttpOnly, Secure, SameSite=Strict 
   assert.equal(clearCookie(), 'farm_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0');
 });
 
-test("the client's address: X-Forwarded-For's first entry, only from Tailscale's proxy on this machine", () => {
+test("the client's address: X-Forwarded-For's last entry, only from Tailscale's proxy on this machine", () => {
   const req = (remoteAddress, xff) => ({ socket: { remoteAddress }, headers: xff ? { 'x-forwarded-for': xff } : {} });
-  assert.equal(clientAddress(req('127.0.0.1', '203.0.113.9, 10.0.0.1')), '203.0.113.9');
+  assert.equal(clientAddress(req('127.0.0.1', '203.0.113.9, 10.0.0.1')), '10.0.0.1');
   assert.equal(clientAddress(req('::ffff:127.0.0.1', '203.0.113.9')), '203.0.113.9');
   assert.equal(clientAddress(req('100.64.0.5', '203.0.113.9')), '100.64.0.5');
   assert.equal(clientAddress(req('127.0.0.1')), '127.0.0.1');

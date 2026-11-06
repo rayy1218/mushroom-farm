@@ -26,9 +26,13 @@ export async function checkSecret(secret, stored) {
   const [N, r, p] = parts.slice(1, 4).map(Number);
   const salt = Buffer.from(parts[4], 'base64');
   const want = Buffer.from(parts[5], 'base64');
-  if (!(N > 1 && r > 0 && p > 0) || want.length === 0) return false;
-  const got = await scryptAsync(secret.normalize('NFC'), salt, want.length, { N, r, p, maxmem: MAXMEM });
-  return timingSafeEqual(got, want);
+  if (!(Number.isInteger(N) && N > 1 && N <= 2 ** 20 && Number.isInteger(r) && r >= 1 && r <= 32 && Number.isInteger(p) && p >= 1 && p <= 16) || want.length < 16 || want.length > 64) return false;
+  try {
+    const got = await scryptAsync(secret.normalize('NFC'), salt, want.length, { N, r, p, maxmem: MAXMEM });
+    return timingSafeEqual(got, want);
+  } catch {
+    return false; // a stored hash scrypt refuses: not a match
+  }
 }
 
 // A worker's PIN: exactly 6 digits, not one digit six times, not 123456 or 654321. → the error, or null.
@@ -40,7 +44,7 @@ export function pinError(pin) {
 
 // An owner's password: 12 to 200 characters. → the error, or null.
 export function passwordError(password) {
-  const length = typeof password === 'string' ? [...password].length : 0;
+  const length = typeof password === 'string' ? [...password.normalize('NFC')].length : 0;
   if (length < 12) return 'The password must be at least 12 characters';
   if (length > 200) return 'The password must be at most 200 characters';
   return null;
@@ -62,10 +66,11 @@ export const sessionCookie = (token, ms) => `${COOKIE}=${token}; HttpOnly; Secur
 export const clearCookie = () => `${COOKIE}=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0`;
 
 // Who is asking, for the per-address limit: behind Tailscale (serve or Funnel) the request comes from this machine and
-// X-Forwarded-For names the client; from anywhere else the header is the client's own word and is ignored.
+// the proxy adds the client to X-Forwarded-For's end (one trusted hop; an earlier entry is the client's own word); from
+// anywhere else the header is ignored.
 export function clientAddress(req) {
   const socket = req.socket?.remoteAddress ?? '';
   const local = socket === '127.0.0.1' || socket === '::1' || socket === '::ffff:127.0.0.1';
-  const forwarded = local ? String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() : '';
+  const forwarded = local ? String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim() : '';
   return forwarded || socket;
 }
