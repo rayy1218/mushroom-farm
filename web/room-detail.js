@@ -183,7 +183,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
   const tabBar = q('[data-tabs]');
   let tasksLink = null;
   let tasksDot = null;
-  for (const t of ROOM_TABS.filter((tab) => isOwner() || !OWNER_TABS.includes(tab.key))) { // ---- Login ---- a worker's tabs
+  for (const t of ROOM_TABS.filter((t) => isOwner() || !OWNER_TABS.includes(t.key))) { // ---- Login ---- a worker's tabs
     const a = document.createElement('a');
     a.href = roomHash(id, t.key);
     a.dataset.tab = t.key;
@@ -578,8 +578,10 @@ export function mount(container, { id, tab = 'now', week = null }) {
       onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },
     });
     harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });
-    filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
-    filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
+    if (isOwner()) { // ---- Login ---- the Intake filter card is the Setup tab's (its Filter changed the owner's)
+      filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
+      filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
+    }
     // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.
     ({ last: filterLast, filter: filterNow } = filterFrom({ last: filterLast, room, sensor: sensors.dp, machines: machineData ?? lastMachines }));
     stopLoop ??= startLoop(() => (roomCardUi ? [roomCardUi.mimic] : [])); // (again after a missing room came back)

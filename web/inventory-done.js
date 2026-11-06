@@ -7,6 +7,7 @@
 //   result: { text, moves: [ids] (Undo; none: no Undo), at (ms, when it was saved) }
 
 import { request } from './api.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { errorText } from './task-dialogs.js';
 import { DOT } from './text-math.js';
 import { undoLeft } from './inventory-math.js';
@@ -45,11 +46,11 @@ export function createDoneLine(node, { onUndone, onError } = {}) {
     later(ms);
   }
 
-  async function undo(result, button) {
+  async function undo(moves, button) {
     button.disabled = true;
     const hadFocus = document.activeElement === button;
     try {
-      for (const id of result.moves) {
+      for (const id of moves) {
         try {
           await request('DELETE', `/api/inventory/moves/${id}`);
         } catch (err) {
@@ -69,9 +70,11 @@ export function createDoneLine(node, { onUndone, onError } = {}) {
 
   function show(result) {
     if (!result?.text) return;
-    const left = result.moves?.length ? undoLeft(result.at ?? Date.now(), Date.now()) : 0;
+    // ---- Login ---- deleting a move is the owner's: a worker's record is said without Undo
+    const moves = isOwner() ? result.moves : null;
+    const left = moves?.length ? undoLeft(result.at ?? Date.now(), Date.now()) : 0;
     if (!left) {
-      if (result.moves?.length) return; // a flash whose minute is over: nothing to say any more
+      if (moves?.length) return; // a flash whose minute is over: nothing to say any more
       say(result.text, 10_000);
       return;
     }
@@ -79,7 +82,7 @@ export function createDoneLine(node, { onUndone, onError } = {}) {
     b.type = 'button';
     b.className = 'iv-link iv-undo';
     b.textContent = 'Undo';
-    b.addEventListener('click', () => undo(result, b));
+    b.addEventListener('click', () => undo(moves, b));
     node.replaceChildren(result.text, DOT, b);
     node.hidden = false;
     later(left);

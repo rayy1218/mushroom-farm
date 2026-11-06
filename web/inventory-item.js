@@ -49,7 +49,7 @@ const TEMPLATE = `
       <h2 id="iv-lots-title">Lots</h2>
       <div class="us-table-wrap"><table class="us-table iv-lot-table">
         <caption class="sr-only">Lots</caption>
-        <thead><tr><th scope="col">From</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Left</th><th scope="col">Use by</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+        <thead><tr><th scope="col">From</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Left</th><th scope="col">Use by</th><th scope="col" data-owner-only><span class="sr-only">Action</span></th></tr></thead>
         <tbody data-lots></tbody>
       </table></div>
     </section>
@@ -179,6 +179,7 @@ export function mount(container, { id }) {
       if (lp) useBy.append(pillNode(lp));
       else useBy.textContent = lot.useBy ? dayNear(lot.useBy, today) : '—';
       const action = el('td', 'iv-lot-action');
+      action.dataset.ownerOnly = ''; // ---- Login ---- Throw out is the owner's: a worker's table has no Action column
       if (lot.state) {
         const b = el('button', 'danger-text', 'Throw out');
         b.type = 'button';

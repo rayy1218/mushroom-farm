@@ -16,7 +16,7 @@ import { weekOf, shiftWeek, weekTitle, gridColumns, gridCells, menuItems, legend
   sheetMonth, unitHead, deskWidth, doneSplit, createUndoLine } from './task-grid-math.js';
 import { amountText, farmTime, farmDate } from './tasks-math.js';
 import { dayTitle } from './calendar-math.js';
-import { openForm, loadWorkers, errorText } from './task-dialogs.js';
+import { openForm, activeWorkers, errorText } from './task-dialogs.js';
 import { el, button } from './task-list.js';
 import { picture } from './pictures.js';
 import { keepLines, DOT } from './text-math.js';
@@ -126,7 +126,7 @@ export function createTaskGrid(host, { roomId, week = null, shown: started = tru
     paint();
   }
   // without them, a clash shows only among the week's (read with the week's first read)
-  const readWorkers = () => loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});
+  const readWorkers = () => activeWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});
 
   const shown = () => weekOf(week ?? cal?.today ?? localToday());
   function go(w) {

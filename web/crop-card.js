@@ -14,6 +14,7 @@
 import { picture } from './pictures.js';
 import { mainCrop } from './room-card-math.js';
 import { request, OFFLINE } from './api.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { live } from './live.js';
 import { createThrottle } from './live-math.js';
 import { roomHash } from './route.js';
@@ -224,6 +225,8 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
   // needed Save), shown while something in it is changed.
   const programSave = button('Save', 'cp-program-save');
   programSave.hidden = true;
+  // ---- Login ---- the program's fields and Save are the owner's (the harvest line stays)
+  for (const node of [rampField, lightField, autoField, programSave]) node.dataset.ownerOnly = '';
   actionButtons.add(programSave);
   const programErr = el('p', 'm-error');
   programErr.setAttribute('role', 'status');
@@ -461,6 +464,8 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     pencil.title = pencil.getAttribute('aria-label');
     pencil.setAttribute('aria-expanded', 'false');
     const start = button('Start this stage');
+    pencil.dataset.ownerOnly = ''; // ---- Login ---- a worker reads the stages; the owner changes and starts them
+    start.dataset.ownerOnly = '';
     actions.append(pencil, start);
     const bagHost = el('span', 'cp-bag'); // the main crop's bag as it looks in this stage, painted with the crops
     const named = el('div', 'cp-stage-named');
@@ -499,6 +504,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     grid.append(fieldOf(`lightHours.${stage}`, 'Light hours (0–24)'));
     grid.lastChild.classList.add('cp-light-h');
     const editSave = button('Save', 'primary');
+    editSave.dataset.ownerOnly = ''; // ---- Login ----
     const editCancel = button('Cancel');
     const editRow = el('div', 'ac-send');
     editRow.append(editSave, editCancel);
@@ -520,6 +526,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
     roomNote.hidden = true;
     const roomNoteText = el('span', '', 'Changed by hand on the Setup tab: the room runs these until the next stage.');
     const backBtn = button('Back to stage values');
+    backBtn.dataset.ownerOnly = ''; // ---- Login ---- the room's bands are the owner's
     const backErr = el('p', 'm-error');
     backErr.setAttribute('role', 'status');
     backErr.hidden = true;
@@ -655,7 +662,7 @@ export function createCropCard(host, { roomId, onChange, onData, onOffline, onGo
       else if (e.dates) words.append(el('span', 'cp-step-dates', e.dates));
       b.append(el('span', 'cp-dot'), words);
       b.addEventListener('click', () => {
-        if (e.stage === null) { if (!editing) openEditor(); return; } // Replace the blocks: the editor offers New blocks
+        if (e.stage === null) { if (!editing && isOwner()) openEditor(); return; } // Replace the blocks: the editor offers New blocks
         const sec = sections.get(e.stage);
         if (!sec) return;
         sec.root.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });

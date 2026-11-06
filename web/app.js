@@ -26,7 +26,7 @@ import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
 import { fallbackMs, liveMark } from './live-math.js';
-import { request } from './api.js';
+import { request, OFFLINE } from './api.js';
 import { me, isOwner } from './session.js'; // ---- Login ----
 import { todayCount, todayLinkLabel, countText } from './tasks-math.js';
 
@@ -267,7 +267,6 @@ window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknow
 window.addEventListener('hashchange', (e) => { show(e.oldURL ? new URL(e.oldURL).hash : ''); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
 // ---- Login ---- the name signed in and Sign out; a worker's Business link is their Inventory (spec 2026-11-06-login-design.md 5, 6)
 for (const el of document.querySelectorAll('[data-me-name]')) el.textContent = me()?.name ?? '';
-for (const b of document.querySelectorAll('[data-signout]')) b.setAttribute('aria-label', me() ? `${me().name}: Sign out` : 'Sign out');
 if (!isOwner()) {
   for (const a of menuLinks.business) {
     a.href = '#/business/inventory';
@@ -275,11 +274,22 @@ if (!isOwner()) {
     a.querySelector('span').textContent = 'Inventory';
   }
 }
-document.querySelector('[data-signout]')?.addEventListener('click', async () => {
-  try { await request('POST', '/api/logout'); } catch { /* the cookie may stay: the page asks again */ }
+// Signed out: the page starts again at the sign-in view. A 401 (the session had ended already) reloads in request() itself;
+// any other failure leaves the person signed in, so it is said and the page stays.
+async function signOut() {
+  try {
+    await request('POST', '/api/logout');
+  } catch (err) {
+    alert(`Not signed out: ${err.status === 0 ? OFFLINE : err.message}. Try again.`);
+    return;
+  }
   history.replaceState(null, '', '#/');
   location.reload();
-});
+}
+for (const b of document.querySelectorAll('[data-signout]')) {
+  b.setAttribute('aria-label', me() ? `${me().name}: Sign out` : 'Sign out');
+  b.addEventListener('click', signOut);
+}
 show();
 refreshBadge();
 refreshToday();

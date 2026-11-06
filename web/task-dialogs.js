@@ -6,7 +6,7 @@
 //   (done, skip and cancel end, after their dialog closes, with true when something changed: the list will be asked again)
 //   openPlanDialog({ roomId, roomName, rank, plan, onPlanned(rows, replaced) })
 //   closeTaskDialog() · openForm(options) (below; the Harvest tab's Record and Edit use it too) · loadWorkers() · getWorker()
-//   · setWorker() · workerField(names, label) · errorText(err)
+//   · activeWorkers() · workerField(names, label) · errorText(err)
 
 import { request, OFFLINE } from './api.js';
 import { live } from './live.js';
@@ -56,15 +56,16 @@ export function getWorker() {
   return me()?.name ?? null;
 }
 
-// The name picked in a dialog was kept for the next Done until Login: the signed-in name is the default now, so there is
-// nothing to keep (the callers still call it after a save; a name the server refused sends 'farm:worker' itself).
-export function setWorker() {}
-
-// The names a "who did it" box offers: an owner, the active workers (GET /api/workers); a worker, their own.
-export async function loadWorkers() {
-  if (!isOwner()) return me() ? [me().name] : [];
+// The active workers' names (GET /api/workers, a worker may read it too: the Tasks grid's initials).
+export async function activeWorkers() {
   const data = await request('GET', '/api/workers');
   return (Array.isArray(data?.workers) ? data.workers : []).filter((w) => w.active).map((w) => w.name);
+}
+
+// The names a "who did it" box offers: an owner, the active workers; a worker, their own.
+export async function loadWorkers() {
+  if (!isOwner()) return me() ? [me().name] : [];
+  return activeWorkers();
 }
 
 // The dialog's "Who did it" box: the names loadWorkers gives, the one signed in picked.
@@ -513,15 +514,18 @@ export function createTaskActions({ onChanged, onError }) {
   async function machineDone(row) {
     const list = await workers();
     if (!list) return;
-    let room;
-    try {
-      room = await request('GET', `/api/rooms/${row.roomId}`);
-    } catch (err) {
-      if (alive) onError?.(errorText(err));
-      return;
+    // ---- Login ---- Setup is the owner's: a worker's Done only records the change (no room to read, nothing to save)
+    let room = null;
+    if (isOwner()) {
+      try {
+        room = await request('GET', `/api/rooms/${row.roomId}`);
+      } catch (err) {
+        if (alive) onError?.(errorText(err));
+        return;
+      }
     }
     if (!alive) return;
-    const update = setupUpdate(row.source, room);
+    const update = isOwner() ? setupUpdate(row.source, room) : null;
     const mark = async (v, form) => {
       const w = picked(v);
       if (!w) return { field: 'worker', message: 'Pick who did it' };
@@ -529,7 +533,7 @@ export function createTaskActions({ onChanged, onError }) {
     };
     if (!update) {
       await ask({
-        title: 'Mark done', lead: leadOf(row, list, ['Setup keeps no fan flow, so Done only records the change.']),
+        title: 'Mark done', lead: leadOf(row, list, isOwner() ? ['Setup keeps no fan flow, so Done only records the change.'] : []),
         fields: [workerField(list)], buttons: [{ value: 'done', label: 'Done', primary: true }], submit: (v, _which, form) => mark(v, form),
       }).closed;
       return;

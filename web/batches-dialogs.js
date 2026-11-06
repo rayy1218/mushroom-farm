@@ -4,7 +4,7 @@
 
 import { request } from './api.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
-import { openForm, loadWorkers, workerField, errorText, setWorker } from './task-dialogs.js';
+import { openForm, loadWorkers, workerField, errorText } from './task-dialogs.js';
 import { dateHint, whenBoxes } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import { batchHash } from './route.js';
@@ -273,7 +273,6 @@ export function createBatchDialogs({ onChanged, onError, alive = () => true }) {
       submit: async (v) => {
         const r = checkBody(v, { edit: Boolean(c) });
         if (!r.body) return r;
-        if (r.body.worker) setWorker(r.body.worker); // the next dialog picks the same name
         return closing(await (c ? send('PUT', `/api/batch-checks/${c.id}`, r.body) : send('POST', `/api/batches/${b.id}/checks`, r.body)));
       },
     });

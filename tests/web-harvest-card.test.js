@@ -163,7 +163,7 @@ test("This run: the run's batches read with its harvests under the same token, a
   assert.ok(card.includes("import { batchLineFor } from './batches-math.js';"));
   assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/batches?run=${run.id}`) };"));
   const load = card.slice(card.indexOf('async function refresh() {'), card.indexOf('// ---- Batches ---- the current run'));
-  assert.match(load, /const \[runBlocks, runProfit\] = await Promise\.all\(\[readBlocks\(data\.current\), readProfit\(data\.current\)\]\);\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*profit = runProfit;\n\s*paint\(\);/,
+  assert.match(load, /const \[runBlocks, runProfit\] = await Promise\.all\(\[isOwner\(\) \? readBlocks\(data\.current\) : null, isOwner\(\) \? readProfit\(data\.current\) : null\]\);\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*profit = runProfit;\n\s*paint\(\);/,
     'a stale answer is dropped before anything changes');
   assert.ok(card.includes('return blocks?.runId === run.id ? blocks : null;'), 'a failed read keeps the same run\'s line');
   assert.ok(card.includes('const key = JSON.stringify([view, showAll, [...allOf], blocks, profit]);'), 'a new answer repaints');

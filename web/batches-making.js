@@ -7,7 +7,7 @@
 
 import { request } from './api.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
-import { loadWorkers, workerField, errorText, setWorker } from './task-dialogs.js';
+import { loadWorkers, workerField, errorText } from './task-dialogs.js';
 import { dateHint } from './harvest-math.js';
 import { farmDate, farmTime } from './tasks-math.js';
 import { batchHash } from './route.js';
@@ -391,7 +391,6 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
       submit: async (values) => {
         const out = loadBody(values, { edit: Boolean(load) });
         if (!out.body) return out;
-        if (out.body.worker) setWorker(out.body.worker); // the next dialog picks the same name
         const answer = closing(await (load ? send('PUT', `/api/batch-loads/${load.id}`, out.body) : send('POST', `/api/batches/${b.id}/loads`, out.body)));
         // a time refused on a day that is fine (later than now): under the time box
         return timeProblem(answer, { date: values.hotDate, min: mixedDay, max: today(), dateBox: 'hotDate', timeBox: 'hotTime' });

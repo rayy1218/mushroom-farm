@@ -50,7 +50,7 @@ test('a long-term machine task: Save and mark done saves Setup first and marks i
   assert.ok(save > 0 && put > save && mark > put, 'Setup first, then Done');
   has("buttons: [{ value: 'just', label: 'Just mark done' }, { value: 'save', label: 'Save and mark done', primary: true }],");
   has('message: `Setup not saved: ${errorText(err)}`');
-  has('const update = setupUpdate(row.source, room);');
+  has('const update = isOwner() ? setupUpdate(row.source, room) : null;'); // a worker: the plain Mark done (Setup is the owner's)
   has('Setup keeps no fan flow, so Done only records the change.');
 });
 

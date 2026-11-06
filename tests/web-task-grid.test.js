@@ -165,7 +165,7 @@ test('the menu holds the repaint and closes on a scroll; a dialog gives the focu
   // after Done's or Skip's dialog, Details and a task's full text: the box again when the focus fell to the page
   assert.ok(grid.includes('refocus(at);') && grid.split('.closed.then(() => refocus(at));').length === 2);
   assert.ok(grid.includes("if (!alive || !at || (a && a !== document.body && a.isConnected && !a.closest('dialog:not([open])'))) return;"));
-  assert.ok(grid.includes('loadWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});'));
+  assert.ok(grid.includes('activeWorkers().then((list) => { if (alive) { workers = list; paint(); } }, () => {});'));
   assert.ok(grid.includes("const text = typeof r.text === 'string' && r.text.trim() ? [r.text] : [];"), 'Details: no empty line');
   const load = grid.slice(grid.indexOf('async function load() {'), grid.indexOf("await request('GET', `/api/calendar"));
   assert.ok(load.includes('print.href = taskSheetHash(roomId, sheetMonth({ from, to }, cal?.today ?? localToday()));'), 'Print month has an address while the week loads');

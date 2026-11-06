@@ -5,13 +5,14 @@
 // blocks starts a run), when the stream comes back, and on a timer (60 s; slower while the stream is up).
 
 import { request, OUTDATED, routeMissing } from './api.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { cropShortName } from './crops.js';
 import { picture } from './pictures.js';
 import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
-import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText, pickGuard } from './task-dialogs.js';
+import { openForm, closeTaskDialog, loadWorkers, workerField, errorText, pickGuard } from './task-dialogs.js';
 import {
   runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, pastColumns, hasMoney, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
   byCropColumns, byCropRows, runTiles, pricesNote,
@@ -240,7 +241,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function paintRun(run) {
-    runLine.replaceChildren(runHead(run), DOT, runPageLink(run, getRoom()?.name)); // ---- Runs ---- the run's page after its head
+    // ---- Runs ---- the run's page after its head (---- Login ---- a Business page: the owner's)
+    runLine.replaceChildren(runHead(run), ...(isOwner() ? [DOT, runPageLink(run, getRoom()?.name)] : []));
     // ---- Batches ----
     const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);
     blocksLine.hidden = !line;
@@ -295,9 +297,11 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     cell.colSpan = pastColumns(money).length;
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
-    const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
-    page.append(runPageLink(run, getRoom()?.name));
-    body.append(page);
+    if (isOwner()) { // ---- Login ---- the run's page is a Business page: the owner's
+      const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
+      page.append(runPageLink(run, getRoom()?.name));
+      body.append(page);
+    }
     const note = missingLine(run.missing);
     if (note) body.append(note);
     if ((run.flushes ?? []).length) body.append(flushTable(run));
@@ -381,8 +385,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     try {
       const data = await request('GET', `/api/rooms/${roomId}/harvests`);
       if (!alive || me !== seq) return;
-      // ---- Batches, Costs ---- the run's blocks and profit, together
-      const [runBlocks, runProfit] = await Promise.all([readBlocks(data.current), readProfit(data.current)]);
+      // ---- Batches, Costs ---- the run's blocks and profit, together (---- Login ---- the owner's: Business)
+      const [runBlocks, runProfit] = await Promise.all([isOwner() ? readBlocks(data.current) : null, isOwner() ? readProfit(data.current) : null]);
       if (!alive || me !== seq) return;
       view = data;
       blocks = runBlocks;
@@ -498,7 +502,6 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
         if (body.error) return { field: body.field, message: body.error };
         const asked = implausible(form, recordPicks(body, run));
         if (asked) return asked;
-        setWorker(body.worker); // kept for the next Done, as the Done dialog does
         return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));
       },
     });

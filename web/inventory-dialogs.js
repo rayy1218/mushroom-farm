@@ -5,7 +5,7 @@
 // when the record was gone or changed) and onLost(text) (a failure that came back after the dialog closed).
 
 import { request, routeMissing, OUTDATED } from './api.js';
-import { openForm as openTaskForm, loadWorkers, setWorker, workerField, errorText } from './task-dialogs.js';
+import { openForm as openTaskForm, loadWorkers, workerField, errorText } from './task-dialogs.js';
 import { whenBoxes, dateHint } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
 import {
@@ -362,7 +362,6 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
       if (body.error) return { field: body.field, message: body.error };
       const asked = guard(form, item, body.qty);
       if (asked) return asked;
-      setWorker(body.worker); // kept for the next time, as the Done dialog does
       const sent = await send('POST', '/api/inventory/uses', body);
       if (sent.ok) keepItem('use', body.itemId);
       const room = body.roomId === null ? null : rooms.find((r) => r.id === body.roomId)?.name ?? null;
@@ -479,7 +478,6 @@ export async function openThrowOutDialog({ lot, item, onDone, onLost, alive = ()
     onLost,
     submit: async (v) => {
       if (!v.worker) return { field: 'worker', message: 'Pick who threw it out' };
-      setWorker(v.worker);
       return finish(await send('POST', `/api/inventory/lots/${lot.moveId}/throw-out`, { worker: v.worker }), onDone,
         made(doneText({ kind: 'throwOut', qty: lot.left, unit: item.unit, name: item.name, worker: v.worker })));
     },
