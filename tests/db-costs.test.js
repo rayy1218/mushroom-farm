@@ -1,4 +1,4 @@
-// The costs table (spec 2026-11-05-costs-design.md 2): the step to version 24, the rows' writes, a monthly item's change and
+// The costs table (spec 2026-11-05-costs-design.md 2): the step to version 25, the rows' writes, a monthly item's change and
 // stop, and the triggers that keep a deleted room's costs as the farm's and drop a deleted run.
 
 import { test } from 'node:test';
@@ -15,11 +15,11 @@ const ROOM = { name: 'Container 1', length: 6, width: 2.4, height: 2.4, trhAddre
 const ONE = { date: '2026-11-03', category: 'repairs', amount: 120.5, roomId: null, runId: null, note: 'Fan belt' };
 const RENT = { date: '2026-08-31', category: 'rent', amount: 1500, note: 'Shop lot', repeat: 'monthly' };
 
-test('a new database is at version 24 with a STRICT costs table', () => {
+test('a new database is at version 25 with a STRICT costs table', () => {
   const file = fileOf();
   openDb(file).close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 25);
   const { sql } = raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'costs'").get();
   assert.match(sql, /STRICT/);
   const triggers = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'costs_%' ORDER BY name").all().map((r) => r.name);
@@ -27,7 +27,7 @@ test('a new database is at version 24 with a STRICT costs table', () => {
   raw.close();
 });
 
-test('a version 20 database is upgraded to 24 and keeps its rows', () => {
+test('a version 20 database is upgraded to 25 and keeps its rows', () => {
   const file = fileOf();
   const db = openDb(file);
   const room = db.createRoom(ROOM, Date.now());
@@ -108,7 +108,7 @@ test('deleting only a run drops the cost\'s run and keeps its room', () => {
   db.close();
 });
 
-test('a version 24 file re-opens unchanged with its rows', () => {
+test('a version 25 file re-opens unchanged with its rows', () => {
   const file = fileOf();
   const db = openDb(file);
   const cost = db.insertCost(ONE, 1000);
@@ -118,6 +118,6 @@ test('a version 24 file re-opens unchanged with its rows', () => {
   assert.equal(again.listCosts().length, 1);
   again.close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 25);
   raw.close();
 });

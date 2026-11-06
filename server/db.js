@@ -8,7 +8,7 @@ import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 import { readSources } from './costs-sources.js'; // ---- Costs ----
 
-const VERSION = 24;
+const VERSION = 25;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -437,6 +437,30 @@ CREATE TRIGGER IF NOT EXISTS costs_run_gone AFTER DELETE ON runs BEGIN
   UPDATE costs SET run_id = NULL WHERE run_id = OLD.id;
 END;`;
 
+// ---- Login ---- (spec 2026-11-06-login-design.md 2): how each worker signs in (an owner's password or a worker's PIN, as a
+// scrypt hash; null: cannot sign in), the wrong tries and the lock, and the signed-in browsers (only the token's SHA-256).
+const LOGIN_COLUMNS = `
+ALTER TABLE workers ADD COLUMN role TEXT NOT NULL DEFAULT 'worker' CHECK (role IN ('owner', 'worker'));
+ALTER TABLE workers ADD COLUMN secret_hash TEXT;
+ALTER TABLE workers ADD COLUMN failed_tries INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE workers ADD COLUMN locked_until INTEGER;`;
+const LOGIN = `
+CREATE TABLE IF NOT EXISTS sessions (
+  id         INTEGER PRIMARY KEY,
+  token_hash TEXT    NOT NULL UNIQUE,
+  worker_id  INTEGER NOT NULL REFERENCES workers (id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  last_seen  INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  user_agent TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS sessions_by_worker ON sessions (worker_id);`;
+
+const accountRow = (r) => ({
+  id: r.id, name: r.name, active: r.active === 1, role: r.role, secretHash: r.secret_hash, failedTries: r.failed_tries,
+  lockedUntil: r.locked_until,
+});
+
 const ALARMS = `
 CREATE TABLE alarms (
   id         INTEGER PRIMARY KEY,
@@ -784,6 +808,12 @@ function migrate(db) {
     if (version < 23) db.exec(SALES);
     // ---- Costs ---- (spec 2026-11-05-costs-design.md 2)
     if (version < 24) db.exec(COSTS);
+    // ---- Login ---- (spec 2026-11-06-login-design.md 2): every worker of before is a worker who cannot sign in yet.
+    if (version < 25) {
+      // A file the tests only stamped with an older version already has the columns (as with the steps above).
+      if (!db.prepare('PRAGMA table_info(workers)').all().some((c) => c.name === 'role')) db.exec(LOGIN_COLUMNS);
+      db.exec(LOGIN);
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -1105,6 +1135,25 @@ export function openDb(path, { log = console.error } = {}) {
     updateWorker: db.prepare('UPDATE workers SET name = ?, active = ? WHERE id = ?'),
     deleteWorker: db.prepare('DELETE FROM workers WHERE id = ?'),
     parkWorker: db.prepare('UPDATE workers SET name = ? WHERE id = ?'),
+    // ---- Login ----
+    account: db.prepare('SELECT * FROM workers WHERE id = ?'),
+    accountByName: db.prepare('SELECT * FROM workers WHERE name = ?'), // the column is NOCASE
+    loginNames: db.prepare('SELECT id, name, role FROM workers WHERE active = 1 AND secret_hash IS NOT NULL ORDER BY name, id'),
+    ownerCount: db.prepare("SELECT COUNT(*) AS n FROM workers WHERE role = 'owner' AND active = 1"),
+    activate: db.prepare('UPDATE workers SET active = 1 WHERE id = ?'),
+    setSecret: db.prepare('UPDATE workers SET secret_hash = ?, failed_tries = 0, locked_until = NULL WHERE id = ?'),
+    setRole: db.prepare('UPDATE workers SET role = ? WHERE id = ?'),
+    setTries: db.prepare('UPDATE workers SET failed_tries = ?, locked_until = ? WHERE id = ?'),
+    insertSession: db.prepare(`INSERT INTO sessions (token_hash, worker_id, created_at, last_seen, expires_at, user_agent)
+                               VALUES (?, ?, ?, ?, ?, ?)`),
+    sessionByHash: db.prepare(`SELECT s.id, s.worker_id, s.last_seen, s.expires_at, w.name, w.role, w.active
+                               FROM sessions s JOIN workers w ON w.id = s.worker_id WHERE s.token_hash = ?`),
+    touchSession: db.prepare('UPDATE sessions SET last_seen = ?, expires_at = ? WHERE id = ?'),
+    deleteSession: db.prepare('DELETE FROM sessions WHERE id = ?'),
+    deleteSessionsOf: db.prepare('DELETE FROM sessions WHERE worker_id = ?'),
+    deleteSessionsOfInactive: db.prepare('DELETE FROM sessions WHERE worker_id IN (SELECT id FROM workers WHERE active = 0)'),
+    pruneSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
+    sessionCounts: db.prepare('SELECT worker_id, COUNT(*) AS n FROM sessions WHERE expires_at > ? GROUP BY worker_id'),
     ruleSettings: db.prepare('SELECT * FROM task_rule_settings ORDER BY key'),
     clearRuleSettings: db.prepare('DELETE FROM task_rule_settings'),
     insertRuleSetting: db.prepare('INSERT INTO task_rule_settings (key, enabled, every_days) VALUES (?, ?, ?)'),
@@ -2116,10 +2165,100 @@ export function openDb(path, { log = console.error } = {}) {
     // Replaces the list: a worker with a known id is updated (a rename), one without is added, one left out is removed (the
     // tasks keep the name as text). → the new list.
     setWorkers(list) {
-      return replaceList(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
+      const saved = replaceList(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
         (w) => q.insertWorker.run(w.name, w.active ? 1 : 0), () => this.listWorkers(),
         // Parked names start with \u0001, not \u0000: NOCASE stops comparing at a NUL, so every \u0000 name would be the same.
         (kept) => { for (const id of kept) q.parkWorker.run(`\u0001${id}`, id); });
+      q.deleteSessionsOfInactive.run(); // ---- Login ---- a worker made inactive is signed out (a removed one's went with the row)
+      return saved;
+    },
+
+    // ---- Login (spec 2026-11-06-login-design.md 2) ----
+
+    // A worker's sign-in row: { id, name, active, role, secretHash, failedTries, lockedUntil }, or null.
+    account(id) {
+      const r = q.account.get(id);
+      return r ? accountRow(r) : null;
+    },
+
+    // Settings → Workers' sign-in state, by name: [{ id, name, active, role, hasSecret, lockedUntil, sessions }]; sessions:
+    // those not expired at now.
+    accounts(now) {
+      const counts = new Map(q.sessionCounts.all(now).map((r) => [r.worker_id, r.n]));
+      return q.workers.all().map((r) => ({
+        id: r.id, name: r.name, active: r.active === 1, role: r.role, hasSecret: r.secret_hash !== null, lockedUntil: r.locked_until,
+        sessions: counts.get(r.id) ?? 0,
+      }));
+    },
+
+    // The names on the sign-in page: the active workers with a secret, by name; kind 'password' for an owner, else 'pin'.
+    loginNames() {
+      return q.loginNames.all().map((r) => ({ id: r.id, name: r.name, kind: r.role === 'owner' ? 'password' : 'pin' }));
+    },
+
+    // The active owners.
+    ownerCount() {
+      return q.ownerCount.get().n;
+    },
+
+    // A new secret (its hash) clears the wrong tries and the lock and signs the worker out everywhere.
+    setSecret(id, hash) {
+      inTransaction(() => { q.setSecret.run(hash, id); q.deleteSessionsOf.run(id); });
+    },
+
+    // 'owner' or 'worker'; the worker is signed out everywhere, so their pages follow the new role at the next sign-in.
+    setRole(id, role) {
+      inTransaction(() => { q.setRole.run(role, id); q.deleteSessionsOf.run(id); });
+    },
+
+    setTries(id, tries, lockedUntil) {
+      q.setTries.run(tries, lockedUntil, id);
+    },
+
+    // → the number of sessions ended.
+    signOutEverywhere(id) {
+      return Number(q.deleteSessionsOf.run(id).changes);
+    },
+
+    // The first owner and a lost password (server/owner.js): the worker of that name (any case), added when missing, becomes
+    // an active owner with the hash, signed out everywhere. → their id.
+    setOwner(name, hash) {
+      let id;
+      inTransaction(() => {
+        const row = q.accountByName.get(name);
+        id = row ? row.id : Number(q.insertWorker.run(name, 1).lastInsertRowid);
+        q.activate.run(id);
+        q.setRole.run('owner', id);
+        q.setSecret.run(hash, id);
+        q.deleteSessionsOf.run(id);
+      });
+      return id;
+    },
+
+    // → the new session's id.
+    addSession({ tokenHash, workerId, at, expiresAt, userAgent }) {
+      return Number(q.insertSession.run(tokenHash, workerId, at, at, expiresAt, userAgent).lastInsertRowid);
+    },
+
+    // The session of a token's hash with its worker: { id, workerId, name, role, active, lastSeen, expiresAt }, or null.
+    session(tokenHash) {
+      const r = q.sessionByHash.get(tokenHash);
+      return r ? {
+        id: r.id, workerId: r.worker_id, name: r.name, role: r.role, active: r.active === 1, lastSeen: r.last_seen, expiresAt: r.expires_at,
+      } : null;
+    },
+
+    touchSession(id, at, expiresAt) {
+      q.touchSession.run(at, expiresAt, id);
+    },
+
+    endSession(id) {
+      q.deleteSession.run(id);
+    },
+
+    // → the number of expired sessions deleted.
+    pruneSessions(now) {
+      return Number(q.pruneSessions.run(now).changes);
     },
 
     // The owner's changes of the built-in rules: [{ key, enabled, everyDays }] (everyDays null: the rule's own).
