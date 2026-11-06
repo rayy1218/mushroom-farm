@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody, accountLine, secretAction } from '../web/settings-math.js';
+import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody, accountLine, secretAction, accountActions, otherOwnerCanSignIn, roleConfirm, signOutConfirm, removeConfirm, accountDone, isNameField } from '../web/settings-math.js';
 import { readFileSync } from 'node:fs';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -163,4 +163,67 @@ test("a worker's sign-in line on Settings → Workers", () => {
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 600_000, sessions: 0 }, at), 'Worker · locked until 10:10');
   assert.deepEqual(secretAction({ role: 'worker', hasSecret: false }), { label: 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' });
   assert.deepEqual(secretAction({ role: 'owner', hasSecret: true }), { label: 'Change password', field: 'Password (12 characters or more)', kind: 'password' });
+});
+
+// Review of Task 11: which of a row's sign-in buttons show, and the confirms' words, as pure functions.
+test("a row's sign-in buttons: none of your own secret or Remove; Make worker on yours only with another owner who can sign in", () => {
+  const now = Date.UTC(2026, 10, 6, 2);
+  const worker = { role: 'worker', hasSecret: true, lockedUntil: null, sessions: 0 };
+  const owner = { role: 'owner', hasSecret: true, lockedUntil: null, sessions: 1 };
+  assert.deepEqual(accountActions(worker, { self: false, otherOwner: false, now }), {
+    secret: { label: 'Change PIN', field: 'PIN (6 digits)', kind: 'pin' }, role: { to: 'owner', label: 'Make owner' }, unlock: false, signOut: false, remove: true,
+  });
+  const mine = accountActions(owner, { self: true, otherOwner: false, now });
+  assert.equal(mine.secret, null, 'your own password is the Your password card');
+  assert.equal(mine.remove, false, 'another owner removes you');
+  assert.equal(mine.role, null, 'the last owner who can sign in');
+  assert.deepEqual(accountActions(owner, { self: true, otherOwner: true, now }).role, { to: 'worker', label: 'Make worker' });
+  assert.deepEqual(accountActions(owner, { self: false, otherOwner: false, now }).role, { to: 'worker', label: 'Make worker' });
+  assert.equal(accountActions(owner, { self: true, otherOwner: false, now }).signOut, true);
+  assert.equal(accountActions({ ...worker, lockedUntil: now + 1 }, { self: false, otherOwner: false, now }).unlock, true);
+  assert.equal(accountActions({ ...worker, lockedUntil: now }, { self: false, otherOwner: false, now }).unlock, false, 'the lock ran out');
+  assert.equal(accountActions({ ...worker, sessions: 2 }, { self: false, otherOwner: false, now }).signOut, true);
+});
+
+test('another owner who can sign in: active, an owner, a password set, not this one', () => {
+  const list = [
+    { id: 1, role: 'owner', active: true, hasSecret: true },
+    { id: 2, role: 'owner', active: true, hasSecret: false },
+    { id: 3, role: 'owner', active: false, hasSecret: true },
+    { id: 4, role: 'worker', active: true, hasSecret: true },
+  ];
+  assert.equal(otherOwnerCanSignIn(list, 1), false);
+  assert.equal(otherOwnerCanSignIn(list, 2), true);
+  assert.equal(otherOwnerCanSignIn([...list, { id: 5, role: 'owner', active: true, hasSecret: true }], 1), true);
+});
+
+test("the confirms' words: a role, Sign out everywhere, removing an owner; your own say the page goes to the sign-in view", () => {
+  assert.deepEqual(roleConfirm('Ali', 'owner', false), {
+    title: 'Make Ali an owner', text: 'Ali becomes an owner: they see the money and Settings, and need a password to sign in.', go: 'Make owner',
+  });
+  assert.deepEqual(roleConfirm('Ray', 'worker', false), { title: 'Make Ray a worker', text: 'Ray becomes a worker: they need a PIN to sign in.', go: 'Make worker' });
+  assert.match(roleConfirm('Ray', 'worker', true).text, /sign-in view/);
+  assert.equal(roleConfirm('Ray', 'worker', true).title, 'Make yourself a worker');
+  assert.equal(signOutConfirm('Ali', false), null, "another's: at once");
+  assert.match(signOutConfirm('Ray', true).text, /sign-in view/);
+  assert.equal(signOutConfirm('Ray', true).go, 'Sign out');
+  assert.equal(removeConfirm('Ali', { role: 'worker' }), null, 'a worker: at once, as before');
+  assert.deepEqual(removeConfirm('Ali', { role: 'owner' }), { title: 'Remove Ali', text: 'Ali is an owner: removing them signs them out everywhere.', go: 'Remove' });
+});
+
+test("the Workers card's line after a sign-in change", () => {
+  assert.equal(accountDone('Ali', 'unlock'), 'Ali is unlocked');
+  assert.equal(accountDone('Ali', 'sign-out'), 'Ali is signed out everywhere');
+  assert.equal(accountDone('Ali', 'role', 'owner'), 'Ali is an owner now — set their password');
+  assert.equal(accountDone('Ray', 'role', 'worker'), 'Ray is a worker now — set their PIN');
+  assert.equal(accountDone('Ali', 'secret', 'worker'), 'Ali signs in with a PIN now');
+  assert.equal(accountDone('Ali', 'secret', 'owner'), 'Ali signs in with a password now');
+});
+
+test("PUT /api/workers' refusals of a name go under the name's box; the rest (the farm needs an owner) to the card's line", () => {
+  assert.equal(isNameField('workers.0.name'), true);
+  assert.equal(isNameField('workers.12.name'), true);
+  assert.equal(isNameField('workers'), false);
+  assert.equal(isNameField('workers.0.id'), false);
+  assert.equal(isNameField(undefined), false);
 });

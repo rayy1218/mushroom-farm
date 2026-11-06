@@ -230,3 +230,53 @@ export function secretAction(a) {
     ? { label: a.hasSecret ? 'Change password' : 'Set password', field: 'Password (12 characters or more)', kind: 'password' }
     : { label: a.hasSecret ? 'Change PIN' : 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' };
 }
+
+// Another owner who can sign in (active, a password set): only then may the one signed in make themselves a worker (the
+// server refuses the last one: "The farm needs an owner"). list: GET /api/workers/accounts' accounts.
+export const otherOwnerCanSignIn = (list, id) => list.some((a) => a.id !== id && a.role === 'owner' && a.active && a.hasSecret);
+
+// Which of a row's sign-in buttons show. self: the row is the one signed in (their password is the Your password card, and
+// another owner removes them); otherOwner: otherOwnerCanSignIn. → { secret: secretAction or null, role: { to, label } or null,
+// unlock: while locked, signOut: while signed in somewhere, remove }.
+export function accountActions(a, { self, otherOwner, now }) {
+  return {
+    secret: self ? null : secretAction(a),
+    role: a.role === 'worker' ? { to: 'owner', label: 'Make owner' } : !self || otherOwner ? { to: 'worker', label: 'Make worker' } : null,
+    unlock: a.lockedUntil !== null && a.lockedUntil > now,
+    signOut: a.sessions > 0,
+    remove: !self,
+  };
+}
+
+// The confirms' words → { title, text, go }. Your own role or sign-out ends this page's session: it goes to the sign-in view.
+export function roleConfirm(name, role, self) {
+  if (role === 'owner') {
+    return { title: `Make ${name} an owner`, text: `${name} becomes an owner: they see the money and Settings, and need a password to sign in.`, go: 'Make owner' };
+  }
+  return self
+    ? { title: 'Make yourself a worker', text: 'You become a worker and are signed out: another owner sets your PIN. This page goes to the sign-in view.', go: 'Make worker' }
+    : { title: `Make ${name} a worker`, text: `${name} becomes a worker: they need a PIN to sign in.`, go: 'Make worker' };
+}
+
+// Only your own row asks (another's is signed out at once). → the words, or null.
+export const signOutConfirm = (name, self) => (self
+  ? { title: 'Sign out everywhere', text: 'You are signed out on every device, this one too. This page goes to the sign-in view.', go: 'Sign out' }
+  : null);
+
+// Removing an owner asks first (a worker goes at once, as before). → the words, or null.
+export const removeConfirm = (name, a) => (a?.role === 'owner'
+  ? { title: `Remove ${name}`, text: `${name} is an owner: removing them signs them out everywhere.`, go: 'Remove' }
+  : null);
+
+// The Workers card's line once a sign-in change is saved. what: unlock, sign-out, role (role: the new one) or secret (role:
+// the account's).
+export function accountDone(name, what, role) {
+  if (what === 'unlock') return `${name} is unlocked`;
+  if (what === 'sign-out') return `${name} is signed out everywhere`;
+  if (what === 'role') return role === 'owner' ? `${name} is an owner now — set their password` : `${name} is a worker now — set their PIN`;
+  return `${name} signs in with ${role === 'owner' ? 'a password' : 'a PIN'} now`;
+}
+
+// PUT /api/workers' field of a refused name ("workers.2.name"); the list's own refusals ("workers": the farm needs an owner)
+// are not a name's.
+export const isNameField = (field) => /^workers\.\d+\.name$/.test(field ?? '');

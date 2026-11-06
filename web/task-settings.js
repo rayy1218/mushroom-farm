@@ -1,19 +1,20 @@
 // The Settings page's Workers and Task rules cards (spec 2026-10-30-tasks-design.md 7.3). Workers: everyone who signs in
 // (add, rename, remove; a removed name stays on the tasks it closed), with each one's sign-in state and controls (spec
-// 2026-11-06-login-design.md 5: Set PIN or password, Make owner or worker, Unlock, Sign out everywhere). Task rules: every built-in rule with what it
-// applies to and an On/Off switch, the upkeep rules' intervals, and the owner's own rules (Add your own, Edit, Remove). Each
-// change is saved at once (PUT /api/workers with the whole list; PUT /api/task-rules with every switch, an interval only
-// where it changed and the whole own list). mountTaskSettings(container) → unmount().
+// 2026-11-06-login-design.md 5: Set PIN or password, Make owner or worker, Unlock, Sign out everywhere; which show:
+// settings-math.js accountActions). Task rules: every built-in rule with what it applies to and an On/Off switch, the
+// upkeep rules' intervals, and the owner's own rules (Add your own, Edit, Remove). Each change is saved at once (PUT
+// /api/workers with the whole list; PUT /api/task-rules with every switch, an interval only where it changed and the whole
+// own list). mountTaskSettings(container) → unmount().
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { ruleLine, customLine, taskParts, SLOT_LABELS } from './tasks-math.js';
 import {
   parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX,
+  accountLine, secretAction, accountActions, otherOwnerCanSignIn, roleConfirm, signOutConfirm, removeConfirm, accountDone, isNameField,
 } from './settings-math.js';
 import { el, keepFocus } from './task-list.js';
-import { openForm as openDialog } from './task-dialogs.js';
-import { me } from './session.js';
-import { accountLine, secretAction } from './settings-math.js';
+import { openForm as openDialog, closeTaskDialog } from './task-dialogs.js';
+import { me, setMe } from './session.js';
 import { picture } from './pictures.js';
 import { taskPicture } from './pictures-data.js';
 
@@ -41,6 +42,7 @@ const TEMPLATE = `
       </div>
       <button type="submit">Add</button>
     </form>
+    <p class="s-saved" data-workers-saved role="status" hidden></p>
     <p class="field-error" data-workers-error role="status"></p>
     <dialog class="confirm" data-account-dialog aria-labelledby="tk-account-title">
       <form method="dialog">
@@ -123,7 +125,9 @@ export function mountTaskSettings(container) {
   let workersBusy = false; // the Workers card's change on its way
   let rulesBusy = false; // the Task rules card's
   let workers = []; // GET /api/workers' list, the removed ones too
-  let accounts = new Map(); // GET /api/workers/accounts by id: role, secret set, lock, sessions (empty when it failed)
+  let accounts = new Map(); // GET /api/workers/accounts by id: role, secret set, lock, sessions (null when it failed)
+  let accountsSeq = 0; // each read of the accounts; an older reply that comes last is dropped
+  let secretForm = null; // the Set PIN or password dialog's handle (openForm's), closed with the page
   let renaming = null; // the name being renamed: { id, value, error }, kept through a repaint
   let rules = null; // GET /api/task-rules
   let rooms = []; // GET /api/rooms, for the own rules' room names
@@ -134,7 +138,7 @@ export function mountTaskSettings(container) {
   const q = (sel) => container.querySelector(sel);
   const w = {
     card: q('[data-workers-card]'), list: q('[data-workers]'), form: q('[data-add-worker]'), input: q('#f-worker-new'), err: q('#e-worker-new'),
-    error: q('[data-workers-error]'),
+    error: q('[data-workers-error]'), saved: q('[data-workers-saved]'),
     dialog: q('[data-account-dialog]'), dialogTitle: q('[data-account-title]'), dialogText: q('[data-account-text]'), dialogGo: q('[data-account-go]'),
   };
   const r = {
@@ -167,6 +171,7 @@ export function mountTaskSettings(container) {
     if (workersBusy) { w.error.textContent = STILL_SAVING; return false; }
     workersBusy = true;
     w.error.textContent = '';
+    w.saved.hidden = true;
     try {
       const data = await request('PUT', '/api/workers', { workers: list }, COMMAND_TIMEOUT);
       if (!alive) return false;
@@ -175,8 +180,8 @@ export function mountTaskSettings(container) {
       return true;
     } catch (err) {
       if (!alive) return false;
-      if (err.status === 400 && onField) onField(err.message);
-      else w.error.textContent = errorText(err);
+      if (err.status === 400 && onField && isNameField(err.field)) onField(err.message);
+      else w.error.textContent = errorText(err); // the list's own refusal too (the farm needs an owner)
       return false;
     } finally {
       workersBusy = false;
@@ -189,6 +194,9 @@ export function mountTaskSettings(container) {
     const rename = button('Rename');
     rename.setAttribute('aria-label', `Rename ${x.name}`);
     rename.dataset.focusKey = `rename-${x.id}`;
+    const self = x.id === me()?.id;
+    const account = accounts?.get(x.id) ?? (accounts ? NO_ACCOUNT : null); // a name just added has no account row yet
+    const acts = account && accountActions(account, { self, otherOwner: otherOwnerCanSignIn([...accounts.values()], x.id), now: Date.now() });
     const remove = button('Remove', 'danger-text');
     remove.setAttribute('aria-label', `Remove ${x.name}`);
     remove.dataset.focusKey = `remove-${x.id}`;
@@ -199,17 +207,19 @@ export function mountTaskSettings(container) {
     });
     remove.addEventListener('click', async () => {
       const next = idAfter(workers.filter((y) => y.active).map((y) => y.id), x.id);
+      const ask = removeConfirm(x.name, account); // an owner: their sessions go with them
+      if (ask && !(await confirmFirst(ask, `remove-${x.id}`))) return;
       if (await putWorkers(workersAfter(workers, { remove: x.id }))) {
         paintWorkers();
         focusTo(next === null ? null : `rename-${next}`, w.input);
       }
     });
-    const account = accounts?.get(x.id) ?? (accounts ? NO_ACCOUNT : null); // a name just added has no account row yet
     const who = el('div', 'tk-worker-who');
     who.append(el('span', 'tk-worker-name', x.name));
     if (account) who.append(el('span', 'tk-worker-account muted', accountLine(account, Date.now())));
     const actions = el('div', 'tk-worker-actions');
-    actions.append(...(account ? accountButtons(x, account) : []), rename, remove);
+    actions.append(...(acts ? accountButtons(x, account, acts) : []), rename);
+    if (!self) actions.append(remove); // you: another owner removes you (it would sign you out everywhere)
     li.append(who, actions);
     return li;
   }
@@ -217,20 +227,34 @@ export function mountTaskSettings(container) {
   // ---- Workers: signing in ----
 
   const NO_ACCOUNT = { role: 'worker', hasSecret: false, lockedUntil: null, sessions: 0 };
-  // Another owner who can sign in (active, a password set): only then may the one signed in make themselves a worker (the
-  // server refuses the last one anyway: "The farm needs an owner").
-  const otherOwner = (id) => [...accounts.values()].some((a) => a.id !== id && a.role === 'owner' && a.active && a.hasSecret);
 
   // The sign-in state of everyone, read again after each change. A failure leaves the rows without it (null), said once.
   async function loadAccounts() {
+    const mine = ++accountsSeq;
     try {
       const data = await request('GET', '/api/workers/accounts');
-      if (alive) accounts = new Map((Array.isArray(data?.accounts) ? data.accounts : []).map((a) => [a.id, a]));
+      if (alive && mine === accountsSeq) accounts = new Map((Array.isArray(data?.accounts) ? data.accounts : []).map((a) => [a.id, a]));
     } catch (err) {
-      if (!alive) return;
+      if (!alive || mine !== accountsSeq) return;
       accounts = null;
       w.error.textContent = `Couldn't load who can sign in: ${errorText(err)}`;
     }
+  }
+
+  // The names and the accounts as the server has them now (a name removed in another window), painted.
+  async function reloadWorkers() {
+    try {
+      const data = await request('GET', '/api/workers');
+      if (alive && Array.isArray(data?.workers)) workers = data.workers;
+    } catch { /* the rows stay as they were */ }
+    await loadAccounts();
+    if (alive) paintWorkers();
+  }
+
+  // The card's line once a change is saved (the error line stays for failures).
+  function said(text) {
+    w.saved.textContent = text;
+    w.saved.hidden = false;
   }
 
   // A quiet button of a worker's row: label, its focus key, the words a screen reader says.
@@ -242,36 +266,31 @@ export function mountTaskSettings(container) {
     return b;
   }
 
-  // The secret (not on your own row: Your password is its card), the role, Unlock while locked, Sign out everywhere while
-  // signed in somewhere.
-  function accountButtons(x, a) {
-    const self = x.id === me()?.id;
+  // The buttons accountActions shows: the secret, the role, Unlock, Sign out everywhere.
+  function accountButtons(x, a, acts) {
     const out = [];
-    if (!self) {
-      const action = secretAction(a);
-      out.push(quiet(action.label, `secret-${x.id}`, `${action.label} for ${x.name}`, () => openSecret(x, a)));
-    }
-    if (a.role === 'worker') out.push(quiet('Make owner', `role-${x.id}`, `Make owner: ${x.name}`, () => changeRole(x, 'owner')));
-    else if (!self || otherOwner(x.id)) out.push(quiet('Make worker', `role-${x.id}`, `Make worker: ${x.name}`, () => changeRole(x, 'worker')));
-    if (a.lockedUntil !== null && a.lockedUntil > Date.now()) {
-      out.push(quiet('Unlock', `unlock-${x.id}`, `Unlock ${x.name}`, () => accountChange(x, 'POST', 'unlock')));
-    }
-    if (a.sessions > 0) out.push(quiet('Sign out everywhere', `sign-out-${x.id}`, `Sign out everywhere: ${x.name}`, () => signOut(x)));
+    if (acts.secret) out.push(quiet(acts.secret.label, `secret-${x.id}`, `${acts.secret.label} for ${x.name}`, () => openSecret(x, a)));
+    if (acts.role) out.push(quiet(acts.role.label, `role-${x.id}`, `${acts.role.label}: ${x.name}`, () => changeRole(x, acts.role.to)));
+    if (acts.unlock) out.push(quiet('Unlock', `unlock-${x.id}`, `Unlock ${x.name}`, () => accountChange(x, 'POST', 'unlock')));
+    if (acts.signOut) out.push(quiet('Sign out everywhere', `sign-out-${x.id}`, `Sign out everywhere: ${x.name}`, () => signOut(x)));
     return out;
   }
 
-  // One change of a worker's sign-in (what: unlock, sign-out or role → { account }), the accounts read again and the row
-  // painted; the cursor stays on the button, else (Unlock and Sign out go once done) on the row's first. → true once done.
+  // One change of a worker's sign-in (what: unlock, sign-out or role → { account }), the accounts read again, the row
+  // painted and the card's line saying it; the cursor stays on the button, else (Unlock and Sign out go once done) on the
+  // row's first. → true once done.
   async function accountChange(x, method, what, body) {
     if (workersBusy) { w.error.textContent = STILL_SAVING; return false; }
     workersBusy = true;
     w.error.textContent = '';
+    w.saved.hidden = true;
     try {
       await request(method, `/api/workers/${x.id}/${what}`, body, COMMAND_TIMEOUT);
       if (!alive) return false;
       await loadAccounts(); // your own sign-out or demotion: a 401 here, and the page goes to the sign-in view
       if (!alive) return false;
       paintWorkers();
+      said(accountDone(x.name, what, body?.role));
       focusTo(`${what}-${x.id}`, q(`[data-focus-key="secret-${x.id}"], [data-focus-key="role-${x.id}"], [data-focus-key="rename-${x.id}"]`));
       return true;
     } catch (err) {
@@ -284,48 +303,42 @@ export function mountTaskSettings(container) {
     }
   }
 
-  // The card's confirm: → true when go was chosen (false on Cancel, Esc or the page left).
-  function confirmAccount(title, text, go) {
-    w.dialogTitle.textContent = title;
-    w.dialogText.textContent = text;
-    w.dialogGo.textContent = go;
+  // The card's confirm on ask ({ title, text, go }: settings-math.js) → true when go was chosen; false on Cancel, Esc or the
+  // page left, the cursor back on the button of focus key `key`. None opens while a change is on its way.
+  async function confirmFirst(ask, key) {
+    if (workersBusy) { w.error.textContent = STILL_SAVING; return false; }
+    w.dialogTitle.textContent = ask.title;
+    w.dialogText.textContent = ask.text;
+    w.dialogGo.textContent = ask.go;
     w.dialog.returnValue = '';
     w.dialog.showModal();
-    return new Promise((resolve) => w.dialog.addEventListener('close', () => resolve(w.dialog.returnValue === 'go'), { once: true }));
+    await new Promise((resolve) => w.dialog.addEventListener('close', resolve, { once: true }));
+    if (!alive) return false;
+    if (w.dialog.returnValue === 'go') return true;
+    focusTo(key);
+    return false;
   }
 
   // Make owner or Make worker, after a confirm: a new role needs a new PIN or password (the server clears the old one).
   async function changeRole(x, role) {
-    const self = x.id === me()?.id;
-    const ok = await confirmAccount(
-      self ? 'Make yourself a worker' : role === 'owner' ? `Make ${x.name} an owner` : `Make ${x.name} a worker`,
-      role === 'owner'
-        ? `${x.name} becomes an owner: they see the money and Settings, and need a password to sign in.`
-        : self
-          ? 'You become a worker and are signed out: another owner sets your PIN. This page goes to the sign-in view.'
-          : `${x.name} becomes a worker: they need a PIN to sign in.`,
-      role === 'owner' ? 'Make owner' : 'Make worker',
-    );
-    if (!alive) return;
-    if (!ok) { focusTo(`role-${x.id}`); return; }
+    if (!(await confirmFirst(roleConfirm(x.name, role, x.id === me()?.id), `role-${x.id}`))) return;
     if (!(await accountChange(x, 'PUT', 'role', { role })) && alive) focusTo(`role-${x.id}`);
   }
 
   // Sign out everywhere; your own row asks first (this page signs out too).
   async function signOut(x) {
-    if (x.id === me()?.id) {
-      const ok = await confirmAccount('Sign out everywhere', 'You are signed out on every device, this one too. This page goes to the sign-in view.', 'Sign out');
-      if (!alive) return;
-      if (!ok) { focusTo(`sign-out-${x.id}`); return; }
-    }
+    const ask = signOutConfirm(x.name, x.id === me()?.id);
+    if (ask && !(await confirmFirst(ask, `sign-out-${x.id}`))) return;
     await accountChange(x, 'POST', 'sign-out');
   }
 
   // Set or change a worker's PIN, or another owner's password: the task dialog with one box; a new one signs them out
-  // everywhere (the server's setSecret).
+  // everywhere (the server's setSecret). None opens while a change is on its way.
   function openSecret(x, a) {
+    if (workersBusy) { w.error.textContent = STILL_SAVING; return; }
     const action = secretAction(a);
     const key = `secret-${x.id}`;
+    w.saved.hidden = true;
     const form = openDialog({
       title: `${action.label}: ${x.name}`,
       lead: [`${x.name} signs in with ${action.kind === 'pin' ? 'their name and this PIN' : 'this password'}. Saving it signs them out on every device.`],
@@ -336,23 +349,38 @@ export function mountTaskSettings(container) {
           await request('POST', `/api/workers/${x.id}/secret`, { secret }, COMMAND_TIMEOUT);
         } catch (err) {
           if (err.status === 400) return { field: 'secret', message: err.message };
-          if (err.status === 409) { // made an owner or a worker meanwhile: the box asks for the other kind now
+          if (err.status === 409) { // made an owner or a worker meanwhile: the box was for the other kind; close, open again
             await loadAccounts();
             if (alive) paintWorkers();
+            return { message: err.message, final: true };
+          }
+          if (err.status === 404 && !routeMissing(err)) { // removed in another window: the row goes
+            await reloadWorkers();
             return { message: err.message, final: true };
           }
           return { message: errorText(err) };
         }
         await loadAccounts();
-        if (alive) paintWorkers();
+        if (alive) {
+          paintWorkers();
+          said(accountDone(x.name, 'secret', a.role));
+        }
         return true;
       },
       onLost: (message) => { if (alive) w.error.textContent = message; },
     });
+    secretForm = form;
     const box = form.input('secret');
     box.type = 'password';
-    box.autocomplete = 'new-password';
-    form.closed.then(() => { if (alive) focusTo(key, q(`[data-focus-key="rename-${x.id}"]`)); });
+    box.autocomplete = action.kind === 'pin' ? 'off' : 'new-password'; // a PIN box: no "suggest strong password"
+    form.closed.then(() => { if (alive) focusTo(key, q(`[data-focus-key="rename-${x.id}"]`) || w.input); });
+  }
+
+  // Renaming yourself: the session's name and the top bar's follow (app.js wrote them at start).
+  function renamedMe(name) {
+    setMe({ ...me(), name });
+    for (const node of document.querySelectorAll('[data-me-name]')) node.textContent = name;
+    for (const b of document.querySelectorAll('[data-signout]')) b.setAttribute('aria-label', `${name}: Sign out`);
   }
 
   function cancelRename(x) {
@@ -399,6 +427,7 @@ export function mountTaskSettings(container) {
       const p = parseWorkerName(input.value, workers, x.id);
       if (p.error) return onField(p.error);
       if (await putWorkers(workersAfter(workers, { rename: { id: x.id, name: p.value } }), onField)) {
+        if (x.id === me()?.id) renamedMe(p.value);
         renaming = null;
         paintWorkers();
         focusTo(`rename-${x.id}`);
@@ -694,6 +723,7 @@ export function mountTaskSettings(container) {
     removing = null;
     if (r.removeDialog.open) r.removeDialog.close();
     if (w.dialog.open) w.dialog.close();
+    if (secretForm?.alive()) closeTaskDialog();
     container.replaceChildren();
   };
 }
