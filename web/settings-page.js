@@ -1,21 +1,25 @@
-// Settings page: the farm-wide reading interval, the outdoor sensor address, the electricity and water prices, phone alarms, the crops' yield,
-// and the tasks' workers and rules (task-settings.js).
+// Settings page: the owner's own password, the farm-wide reading interval, the outdoor sensor address, the electricity and water
+// prices, phone alarms, the crops' yield, and the workers (their sign-in too) and the task rules (task-settings.js).
 
 import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
 import { mountTaskSettings } from './task-settings.js';
 import { mountYield } from './yield-card.js';
 import { mountInventorySettings } from './inventory-settings.js';
+import { me } from './session.js';
 import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings, liveHint } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
 const SAVED = 'Saved — applies from the next reading';
+// ---- Login ---- Your password (spec 2026-11-06-login-design.md 5)
+const PASSWORD_SAVED = 'Saved: your other devices are signed out.';
+const PASSWORDS_DIFFER = 'The two new passwords differ';
 
 const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Settings</h1>
-      <p class="page-sub">How often rooms are read, prices, the outdoor sensor, phone alarms, the workers and the task rules: one set for the whole farm.</p>
+      <p class="page-sub">Your password, then one set for the whole farm: how often rooms are read, prices, the outdoor sensor, phone alarms, the workers and the task rules.</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -23,6 +27,29 @@ const TEMPLATE = `
     <button type="button" data-retry>Retry</button>
   </div>
   <div class="settings-grid">
+  <form class="card settings s-password" data-password novalidate>
+    <h2>Your password</h2>
+    <input type="text" name="username" autocomplete="username" hidden data-pw-name>
+    <div class="field">
+      <label for="f-pw-current">Current password</label>
+      <input id="f-pw-current" name="current" type="password" autocomplete="current-password" aria-describedby="e-pw-current">
+      <p class="field-error" id="e-pw-current" role="status"></p>
+    </div>
+    <div class="field">
+      <label for="f-pw-next">New password (12 characters or more)</label>
+      <input id="f-pw-next" name="next" type="password" autocomplete="new-password" aria-describedby="e-pw-next">
+      <p class="field-error" id="e-pw-next" role="status"></p>
+    </div>
+    <div class="field">
+      <label for="f-pw-again">New password again</label>
+      <input id="f-pw-again" name="again" type="password" autocomplete="new-password" aria-describedby="e-pw-again">
+      <p class="field-error" id="e-pw-again" role="status"></p>
+    </div>
+    <div class="ac-send">
+      <button type="submit" class="primary" data-pw-save>Change password</button>
+    </div>
+    <p class="s-saved" data-pw-saved role="status" hidden></p>
+  </form>
   <form class="card settings" data-form novalidate hidden>
     <h2>Readings</h2>
     <div class="field">
@@ -192,6 +219,7 @@ export function mount(container) {
 
   retry.addEventListener('click', load);
   load();
+  mountPassword(q('[data-password]'), alive);
   const unmountTelegram = mountTelegram(q('[data-telegram]'));
   const unmountYield = mountYield(q('[data-yield]'));
   const unmountTaskSettings = mountTaskSettings(q('[data-task-settings]'));
@@ -206,4 +234,56 @@ export function mount(container) {
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };
+}
+
+// ---- Login ---- Your password: the current one, the new one twice. POST /api/session/password { current, next } → 204 (the
+// owner's other sessions end, this one stays); a 400 names its box (current or next).
+function mountPassword(form, alive) {
+  const q = (sel) => form.querySelector(sel);
+  const boxes = {
+    current: { input: q('#f-pw-current'), err: q('#e-pw-current') },
+    next: { input: q('#f-pw-next'), err: q('#e-pw-next') },
+    again: { input: q('#f-pw-again'), err: q('#e-pw-again') },
+  };
+  const save = q('[data-pw-save]');
+  const saved = q('[data-pw-saved]');
+  q('[data-pw-name]').value = me()?.name ?? ''; // for a password manager: whose password this is
+  let saving = false;
+
+  function setError(name, text) {
+    const { input, err } = boxes[name];
+    err.textContent = text;
+    if (text) input.setAttribute('aria-invalid', 'true');
+    else input.removeAttribute('aria-invalid');
+  }
+  const fail = (name, text) => { setError(name, text); boxes[name].input.focus(); };
+  for (const [name, { input }] of Object.entries(boxes)) {
+    input.addEventListener('input', () => { setError(name, ''); saved.hidden = true; });
+  }
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (saving) return;
+    for (const name of Object.keys(boxes)) setError(name, '');
+    saved.hidden = true;
+    const current = boxes.current.input.value;
+    const next = boxes.next.input.value;
+    if (next !== boxes.again.input.value) return fail('again', PASSWORDS_DIFFER);
+    saving = true;
+    save.disabled = true;
+    try {
+      await request('POST', '/api/session/password', { current, next }, COMMAND_TIMEOUT);
+      if (!alive()) return;
+      for (const { input } of Object.values(boxes)) input.value = '';
+      saved.textContent = PASSWORD_SAVED;
+      saved.hidden = false;
+    } catch (err) {
+      if (!alive()) return;
+      if (err.status === 400 && (err.field === 'current' || err.field === 'next')) fail(err.field, err.message);
+      else fail('current', err.status === 0 ? `${OFFLINE}. Try again.` : err.message);
+    } finally {
+      saving = false;
+      if (alive()) save.disabled = false;
+    }
+  });
 }

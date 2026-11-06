@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody } from '../web/settings-math.js';
+import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody, accountLine, secretAction } from '../web/settings-math.js';
 import { readFileSync } from 'node:fs';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -153,4 +153,14 @@ test('yieldBody: a bad input is named by field and crop, with the range', () => 
 test('the Settings price is the expected price (Sales, spec 2026-11-05 6)', async () => {
   const { YIELD_NOTE } = await import('../web/settings-math.js');
   assert.ok(YIELD_NOTE.endsWith('The prices you get are recorded in Sales.'));
+});
+
+test("a worker's sign-in line on Settings → Workers", () => {
+  const at = Date.UTC(2026, 10, 6, 2);
+  assert.equal(accountLine({ role: 'worker', hasSecret: false, lockedUntil: null, sessions: 0 }, at), 'Worker · no PIN yet: cannot sign in');
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: null, sessions: 2 }, at), 'Worker · signed in on 2 devices');
+  assert.equal(accountLine({ role: 'owner', hasSecret: true, lockedUntil: null, sessions: 1 }, at), 'Owner · signed in on 1 device');
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 600_000, sessions: 0 }, at), 'Worker · locked until 10:10');
+  assert.deepEqual(secretAction({ role: 'worker', hasSecret: false }), { label: 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' });
+  assert.deepEqual(secretAction({ role: 'owner', hasSecret: true }), { label: 'Change password', field: 'Password (12 characters or more)', kind: 'password' });
 });

@@ -211,3 +211,22 @@ export function yieldBody(rows) {
   }
   return { cropYield };
 }
+
+// ---- Login ---- Settings → Workers' sign-in state (spec 2026-11-06-login-design.md 5)
+const farmClock = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(11, 16); // the farm's UTC+8, no summer time
+
+// "Worker · signed in on 2 devices", "Owner · no password yet: cannot sign in", "Worker · locked until 10:10".
+export function accountLine(a, now) {
+  const role = a.role === 'owner' ? 'Owner' : 'Worker';
+  if (!a.hasSecret) return `${role} · no ${a.role === 'owner' ? 'password' : 'PIN'} yet: cannot sign in`;
+  if (a.lockedUntil !== null && a.lockedUntil > now) return `${role} · locked until ${farmClock(a.lockedUntil)}`;
+  if (a.sessions > 0) return `${role} · signed in on ${a.sessions} ${a.sessions === 1 ? 'device' : 'devices'}`;
+  return role;
+}
+
+// The row's button for the secret and its dialog's box.
+export function secretAction(a) {
+  return a.role === 'owner'
+    ? { label: a.hasSecret ? 'Change password' : 'Set password', field: 'Password (12 characters or more)', kind: 'password' }
+    : { label: a.hasSecret ? 'Change PIN' : 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' };
+}

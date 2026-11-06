@@ -1,5 +1,6 @@
-// The Settings page's Workers and Task rules cards (spec 2026-10-30-tasks-design.md 7.3). Workers: the names picked on Done
-// and Skip (add, rename, remove; a removed name stays on the tasks it closed). Task rules: every built-in rule with what it
+// The Settings page's Workers and Task rules cards (spec 2026-10-30-tasks-design.md 7.3). Workers: everyone who signs in
+// (add, rename, remove; a removed name stays on the tasks it closed), with each one's sign-in state and controls (spec
+// 2026-11-06-login-design.md 5: Set PIN or password, Make owner or worker, Unlock, Sign out everywhere). Task rules: every built-in rule with what it
 // applies to and an On/Off switch, the upkeep rules' intervals, and the owner's own rules (Add your own, Edit, Remove). Each
 // change is saved at once (PUT /api/workers with the whole list; PUT /api/task-rules with every switch, an interval only
 // where it changed and the whole own list). mountTaskSettings(container) → unmount().
@@ -10,6 +11,9 @@ import {
   parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX,
 } from './settings-math.js';
 import { el, keepFocus } from './task-list.js';
+import { openForm as openDialog } from './task-dialogs.js';
+import { me } from './session.js';
+import { accountLine, secretAction } from './settings-math.js';
 import { picture } from './pictures.js';
 import { taskPicture } from './pictures-data.js';
 
@@ -27,7 +31,7 @@ const SLOT_OPTIONS = Object.entries(SLOT_LABELS).map(([value, label]) => `<optio
 const TEMPLATE = `
   <section class="card settings tk-workers" data-workers-card hidden>
     <h2>Workers</h2>
-    <p class="muted s-hint">The names to pick from on Done and Skip, on a room's Tasks tab and the Today page. A removed name stays on the tasks it closed.</p>
+    <p class="muted s-hint">Everyone signs in: a worker with their name and a 6-digit PIN, an owner with a password. Workers do the rounds and see no money.</p>
     <ul class="tk-workers-list" data-workers></ul>
     <form class="tk-add" data-add-worker novalidate>
       <div class="field">
@@ -38,6 +42,16 @@ const TEMPLATE = `
       <button type="submit">Add</button>
     </form>
     <p class="field-error" data-workers-error role="status"></p>
+    <dialog class="confirm" data-account-dialog aria-labelledby="tk-account-title">
+      <form method="dialog">
+        <h2 id="tk-account-title" data-account-title></h2>
+        <p data-account-text></p>
+        <div class="actions">
+          <button value="cancel">Cancel</button>
+          <button value="go" class="primary" data-account-go></button>
+        </div>
+      </form>
+    </dialog>
   </section>
   <section class="card settings tk-rules" data-rules-card hidden>
     <h2>Task rules</h2>
@@ -109,6 +123,7 @@ export function mountTaskSettings(container) {
   let workersBusy = false; // the Workers card's change on its way
   let rulesBusy = false; // the Task rules card's
   let workers = []; // GET /api/workers' list, the removed ones too
+  let accounts = new Map(); // GET /api/workers/accounts by id: role, secret set, lock, sessions (empty when it failed)
   let renaming = null; // the name being renamed: { id, value, error }, kept through a repaint
   let rules = null; // GET /api/task-rules
   let rooms = []; // GET /api/rooms, for the own rules' room names
@@ -120,6 +135,7 @@ export function mountTaskSettings(container) {
   const w = {
     card: q('[data-workers-card]'), list: q('[data-workers]'), form: q('[data-add-worker]'), input: q('#f-worker-new'), err: q('#e-worker-new'),
     error: q('[data-workers-error]'),
+    dialog: q('[data-account-dialog]'), dialogTitle: q('[data-account-title]'), dialogText: q('[data-account-text]'), dialogGo: q('[data-account-go]'),
   };
   const r = {
     card: q('[data-rules-card]'), daily: q('[data-daily]'), upkeep: q('[data-upkeep]'), custom: q('[data-custom]'), none: q('[data-custom-none]'),
@@ -155,6 +171,7 @@ export function mountTaskSettings(container) {
       const data = await request('PUT', '/api/workers', { workers: list }, COMMAND_TIMEOUT);
       if (!alive) return false;
       workers = Array.isArray(data?.workers) ? data.workers : list;
+      await loadAccounts(); // a new name has no PIN yet; a removed one is signed out
       return true;
     } catch (err) {
       if (!alive) return false;
@@ -187,8 +204,155 @@ export function mountTaskSettings(container) {
         focusTo(next === null ? null : `rename-${next}`, w.input);
       }
     });
-    li.append(el('span', 'tk-worker-name', x.name), rename, remove);
+    const account = accounts?.get(x.id) ?? (accounts ? NO_ACCOUNT : null); // a name just added has no account row yet
+    const who = el('div', 'tk-worker-who');
+    who.append(el('span', 'tk-worker-name', x.name));
+    if (account) who.append(el('span', 'tk-worker-account muted', accountLine(account, Date.now())));
+    const actions = el('div', 'tk-worker-actions');
+    actions.append(...(account ? accountButtons(x, account) : []), rename, remove);
+    li.append(who, actions);
     return li;
+  }
+
+  // ---- Workers: signing in ----
+
+  const NO_ACCOUNT = { role: 'worker', hasSecret: false, lockedUntil: null, sessions: 0 };
+  // Another owner who can sign in (active, a password set): only then may the one signed in make themselves a worker (the
+  // server refuses the last one anyway: "The farm needs an owner").
+  const otherOwner = (id) => [...accounts.values()].some((a) => a.id !== id && a.role === 'owner' && a.active && a.hasSecret);
+
+  // The sign-in state of everyone, read again after each change. A failure leaves the rows without it (null), said once.
+  async function loadAccounts() {
+    try {
+      const data = await request('GET', '/api/workers/accounts');
+      if (alive) accounts = new Map((Array.isArray(data?.accounts) ? data.accounts : []).map((a) => [a.id, a]));
+    } catch (err) {
+      if (!alive) return;
+      accounts = null;
+      w.error.textContent = `Couldn't load who can sign in: ${errorText(err)}`;
+    }
+  }
+
+  // A quiet button of a worker's row: label, its focus key, the words a screen reader says.
+  function quiet(label, key, aria, onClick) {
+    const b = button(label, 'tk-quiet');
+    b.setAttribute('aria-label', aria);
+    b.dataset.focusKey = key;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  // The secret (not on your own row: Your password is its card), the role, Unlock while locked, Sign out everywhere while
+  // signed in somewhere.
+  function accountButtons(x, a) {
+    const self = x.id === me()?.id;
+    const out = [];
+    if (!self) {
+      const action = secretAction(a);
+      out.push(quiet(action.label, `secret-${x.id}`, `${action.label} for ${x.name}`, () => openSecret(x, a)));
+    }
+    if (a.role === 'worker') out.push(quiet('Make owner', `role-${x.id}`, `Make owner: ${x.name}`, () => changeRole(x, 'owner')));
+    else if (!self || otherOwner(x.id)) out.push(quiet('Make worker', `role-${x.id}`, `Make worker: ${x.name}`, () => changeRole(x, 'worker')));
+    if (a.lockedUntil !== null && a.lockedUntil > Date.now()) {
+      out.push(quiet('Unlock', `unlock-${x.id}`, `Unlock ${x.name}`, () => accountChange(x, 'POST', 'unlock')));
+    }
+    if (a.sessions > 0) out.push(quiet('Sign out everywhere', `sign-out-${x.id}`, `Sign out everywhere: ${x.name}`, () => signOut(x)));
+    return out;
+  }
+
+  // One change of a worker's sign-in (what: unlock, sign-out or role → { account }), the accounts read again and the row
+  // painted; the cursor stays on the button, else (Unlock and Sign out go once done) on the row's first. → true once done.
+  async function accountChange(x, method, what, body) {
+    if (workersBusy) { w.error.textContent = STILL_SAVING; return false; }
+    workersBusy = true;
+    w.error.textContent = '';
+    try {
+      await request(method, `/api/workers/${x.id}/${what}`, body, COMMAND_TIMEOUT);
+      if (!alive) return false;
+      await loadAccounts(); // your own sign-out or demotion: a 401 here, and the page goes to the sign-in view
+      if (!alive) return false;
+      paintWorkers();
+      focusTo(`${what}-${x.id}`, q(`[data-focus-key="secret-${x.id}"], [data-focus-key="role-${x.id}"], [data-focus-key="rename-${x.id}"]`));
+      return true;
+    } catch (err) {
+      if (!alive) return false;
+      w.error.textContent = errorText(err); // the last owner made a worker: "The farm needs an owner"
+      return false;
+    } finally {
+      workersBusy = false;
+      if (w.error.textContent === STILL_SAVING) w.error.textContent = '';
+    }
+  }
+
+  // The card's confirm: → true when go was chosen (false on Cancel, Esc or the page left).
+  function confirmAccount(title, text, go) {
+    w.dialogTitle.textContent = title;
+    w.dialogText.textContent = text;
+    w.dialogGo.textContent = go;
+    w.dialog.returnValue = '';
+    w.dialog.showModal();
+    return new Promise((resolve) => w.dialog.addEventListener('close', () => resolve(w.dialog.returnValue === 'go'), { once: true }));
+  }
+
+  // Make owner or Make worker, after a confirm: a new role needs a new PIN or password (the server clears the old one).
+  async function changeRole(x, role) {
+    const self = x.id === me()?.id;
+    const ok = await confirmAccount(
+      self ? 'Make yourself a worker' : role === 'owner' ? `Make ${x.name} an owner` : `Make ${x.name} a worker`,
+      role === 'owner'
+        ? `${x.name} becomes an owner: they see the money and Settings, and need a password to sign in.`
+        : self
+          ? 'You become a worker and are signed out: another owner sets your PIN. This page goes to the sign-in view.'
+          : `${x.name} becomes a worker: they need a PIN to sign in.`,
+      role === 'owner' ? 'Make owner' : 'Make worker',
+    );
+    if (!alive) return;
+    if (!ok) { focusTo(`role-${x.id}`); return; }
+    if (!(await accountChange(x, 'PUT', 'role', { role })) && alive) focusTo(`role-${x.id}`);
+  }
+
+  // Sign out everywhere; your own row asks first (this page signs out too).
+  async function signOut(x) {
+    if (x.id === me()?.id) {
+      const ok = await confirmAccount('Sign out everywhere', 'You are signed out on every device, this one too. This page goes to the sign-in view.', 'Sign out');
+      if (!alive) return;
+      if (!ok) { focusTo(`sign-out-${x.id}`); return; }
+    }
+    await accountChange(x, 'POST', 'sign-out');
+  }
+
+  // Set or change a worker's PIN, or another owner's password: the task dialog with one box; a new one signs them out
+  // everywhere (the server's setSecret).
+  function openSecret(x, a) {
+    const action = secretAction(a);
+    const key = `secret-${x.id}`;
+    const form = openDialog({
+      title: `${action.label}: ${x.name}`,
+      lead: [`${x.name} signs in with ${action.kind === 'pin' ? 'their name and this PIN' : 'this password'}. Saving it signs them out on every device.`],
+      fields: [{ name: 'secret', label: action.field, kind: 'text', ...(action.kind === 'pin' ? { inputMode: 'numeric' } : {}) }],
+      buttons: [{ value: 'save', label: 'Save', primary: true }],
+      submit: async ({ secret }) => {
+        try {
+          await request('POST', `/api/workers/${x.id}/secret`, { secret }, COMMAND_TIMEOUT);
+        } catch (err) {
+          if (err.status === 400) return { field: 'secret', message: err.message };
+          if (err.status === 409) { // made an owner or a worker meanwhile: the box asks for the other kind now
+            await loadAccounts();
+            if (alive) paintWorkers();
+            return { message: err.message, final: true };
+          }
+          return { message: errorText(err) };
+        }
+        await loadAccounts();
+        if (alive) paintWorkers();
+        return true;
+      },
+      onLost: (message) => { if (alive) w.error.textContent = message; },
+    });
+    const box = form.input('secret');
+    box.type = 'password';
+    box.autocomplete = 'new-password';
+    form.closed.then(() => { if (alive) focusTo(key, q(`[data-focus-key="rename-${x.id}"]`)); });
   }
 
   function cancelRename(x) {
@@ -499,7 +663,9 @@ export function mountTaskSettings(container) {
   // ---- loading ----
 
   async function load() {
-    const [wk, rl, rm] = await Promise.allSettled([request('GET', '/api/workers'), request('GET', '/api/task-rules'), request('GET', '/api/rooms')]);
+    const [wk, rl, rm] = await Promise.allSettled([
+      request('GET', '/api/workers'), request('GET', '/api/task-rules'), request('GET', '/api/rooms'), loadAccounts(),
+    ]);
     if (!alive) return;
     if (rm.status === 'fulfilled' && Array.isArray(rm.value)) rooms = rm.value;
     // A farm app from before the tasks has neither route: the two cards stay hidden.
@@ -527,6 +693,7 @@ export function mountTaskSettings(container) {
     alive = false;
     removing = null;
     if (r.removeDialog.open) r.removeDialog.close();
+    if (w.dialog.open) w.dialog.close();
     container.replaceChildren();
   };
 }
