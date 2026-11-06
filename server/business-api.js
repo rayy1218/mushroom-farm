@@ -18,7 +18,7 @@ export function createBusinessRoutes({ db, events = null, harvests, batches, now
   const stopTelling = costs.onChange(() => events?.publish('costs', {}));
   const sales = createSales({ db, now });
   const business = createBusiness({
-    costs, sales, inventory: createInventory({ db, now }), batches, runs: createRuns({ db, harvests, batches, sales, costs }), log,
+    costs, sales, inventory: createInventory({ db, now }), batches, runs: createRuns({ db, harvests, batches, sales, costs }), zone, log,
   });
 
   async function businessRoutes(req, res, path, { send, HttpError }) {

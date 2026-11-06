@@ -31,7 +31,7 @@ function setup(t, overrides = {}) {
   const inventory = createInventory({ db, now });
   const runs = createRuns({ db, harvests, batches, sales, costs });
   const logged = [];
-  const business = createBusiness({ costs, sales, inventory, batches, runs, log: (err) => logged.push(err.message), ...overrides });
+  const business = createBusiness({ costs, sales, inventory, batches, runs, zone, log: (what, err) => logged.push(`${what} ${err.message}`), ...overrides });
   t.after(async () => {
     harvests.stop();
     costs.stop();
@@ -72,9 +72,9 @@ function farm(s) {
   inventory.purchase({ itemId: lime.id, qty: 10, total: 8, day: '2026-11-05', useBy: '2026-11-13' });
   const bleach = inventory.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
   inventory.purchase({ itemId: bleach.id, qty: 5, total: 25, day: '2026-11-14', useBy: '2026-11-18' });
-  batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-14'), blocks: 400 });
+  const pink = batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-14'), blocks: 400 });
   batches.mix({ crop: 'oyster', blocks: 100 });
-  return { room, run, kedai, pasar, sawdust, bags, lime, bleach };
+  return { room, run, kedai, pasar, sawdust, bags, lime, bleach, pink };
 }
 
 test('summary: the reply\'s parts; the month\'s money is Costs\' own, last month its result', async (t) => {
@@ -84,7 +84,7 @@ test('summary: the reply\'s parts; the month\'s money is Costs\' own, last month
   const r = s.business.summary();
   assert.deepEqual(Object.keys(r), ['month', 'lastMonth', 'needs', 'runs', 'errors']);
   const view = s.costs.monthView();
-  assert.deepEqual(r.month, { month: '2026-11', pending: false, tiles: view.tiles });
+  assert.deepEqual(r.month, { month: '2026-11', today: '2026-11-15', pending: false, tiles: view.tiles, repeating: view.repeating });
   assert.equal(r.month.tiles.income, 120, 'the two sales');
   assert.equal(r.month.tiles.incomplete, true, 'the pink blocks have no price');
   assert.deepEqual(r.month.tiles.unsold, { kg: 10, value: null }, '20 kg picked, 10 sold; no expected price set');
@@ -108,15 +108,98 @@ test('summary: every kind of need, in its order, each with where it is fixed', a
   const { needs } = s.business.summary();
   assert.deepEqual(needs.map((n) => n.kind), ['owed', 'below-zero', 'low', 'use-by', 'use-by', 'blocks', 'unpriced']);
   const [owed, below, low, lime, bleach, blocks, unpriced] = needs;
-  assert.deepEqual(owed, { kind: 'owed', total: 120, count: 2, oldestAt: at('2026-11-05'), buyers: ['Kedai Ah Seng', 'Pasar Tani'], href: '#/business/sales' },
-    'the buyers most owed first');
-  assert.deepEqual(below, { kind: 'below-zero', items: [{ id: f.sawdust.id, name: 'Sawdust', qty: -30, unit: 'kg' }], href: '#/business/inventory' });
-  assert.deepEqual(low, { kind: 'low', items: [{ id: f.bags.id, name: 'Grow bags', qty: 120, unit: 'pcs', reorderAt: 200 }], href: '#/business/inventory' });
+  assert.deepEqual(owed, {
+    kind: 'owed', total: 120, count: 2, oldestAt: at('2026-11-05'), oldestBuyer: 'Kedai Ah Seng', buyers: ['Kedai Ah Seng', 'Pasar Tani'], href: '#/business/sales',
+  }, 'the buyers most owed first; whose sale is the oldest');
+  assert.deepEqual(below, { kind: 'below-zero', items: [{ id: f.sawdust.id, name: 'Sawdust', qty: -30, unit: 'kg' }], href: `#/business/inventory/${f.sawdust.id}` },
+    'one item: its own page');
+  assert.deepEqual(low, { kind: 'low', items: [{ id: f.bags.id, name: 'Grow bags', qty: 120, unit: 'pcs', reorderAt: 200 }], href: `#/business/inventory/${f.bags.id}` });
   assert.deepEqual(lime, { kind: 'use-by', id: f.lime.id, name: 'Lime', unit: 'kg', useBy: { date: '2026-11-13', state: 'expired', qty: 10 }, href: `#/business/inventory/${f.lime.id}` },
     'the expired first');
   assert.deepEqual(bleach, { kind: 'use-by', id: f.bleach.id, name: 'Bleach', unit: 'L', useBy: { date: '2026-11-18', state: 'soon', qty: 5 }, href: `#/business/inventory/${f.bleach.id}` });
-  assert.deepEqual(blocks, { kind: 'blocks', waiting: { blocks: 400, crops: ['pink'] }, making: { blocks: 100, crops: ['oyster'] }, href: '#/business/batches' });
-  assert.deepEqual(unpriced, { kind: 'unpriced', notes: [{ text: 'Blocks received 14 Nov have no price', runId: null }], href: '#/business/batches' });
+  assert.deepEqual(blocks, { kind: 'blocks', blocks: 400, crops: ['pink'], href: '#/business/batches' }, 'ready for a room only: blocks being made are not a to-do');
+  assert.deepEqual(unpriced, { kind: 'unpriced', notes: [{ text: 'Blocks received 14 Nov have no price', runId: null }], batchId: f.pink.id, href: `#/business/batches/${f.pink.id}` },
+    'one delivery with no price: its batch page');
+});
+
+test('summary: several items below zero or low: Inventory; several deliveries with no price: Batches', async (t) => {
+  const s = setup(t);
+  for (const name of ['Gypsum', 'Lime']) {
+    const it = s.inventory.addItem({ name, kind: 'other', unit: 'kg', reorderAt: 5 });
+    s.inventory.use({ itemId: it.id, qty: 1, worker: 'Ali' });
+  }
+  for (const name of ['Bags', 'Gloves']) {
+    const it = s.inventory.addItem({ name, kind: 'other', unit: 'pcs', reorderAt: 50 });
+    s.inventory.purchase({ itemId: it.id, qty: 10, total: 5, day: '2026-11-10' });
+  }
+  s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-13'), blocks: 50 });
+  s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-14'), blocks: 50 });
+  await s.warm();
+  const byKind = Object.fromEntries(s.business.summary().needs.map((n) => [n.kind, n]));
+  assert.deepEqual(byKind['below-zero'].items.map((i) => i.name), ['Gypsum', 'Lime']);
+  assert.equal(byKind['below-zero'].href, '#/business/inventory');
+  assert.equal(byKind.low.href, '#/business/inventory');
+  assert.equal(byKind.unpriced.notes.length, 2);
+  assert.deepEqual([byKind.unpriced.batchId, byKind.unpriced.href], [null, '#/business/batches']);
+});
+
+test('summary: a priced delivery and one with no price received last month: no batch to name', async (t) => {
+  const s = setup(t);
+  s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-10-20'), blocks: 50 });
+  s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-14'), blocks: 50, pricePerBlock: 2 });
+  await s.warm();
+  assert.deepEqual(s.business.summary().needs.filter((n) => n.kind === 'unpriced'), [], 'October\'s is not this month\'s note');
+});
+
+test('summary: one owed buyer is its own oldest; the oldest sale\'s buyer when several', async (t) => {
+  const s = setup(t);
+  const a = s.sales.addBuyer({ name: 'Ah Seng' });
+  const b = s.sales.addBuyer({ name: 'Borneo Fresh' });
+  s.sales.record({ soldAt: at('2026-10-01'), buyerId: b.id, lines: [{ crop: 'oyster', kg: 1, priceKg: 10 }] });
+  s.sales.record({ soldAt: at('2026-11-10'), buyerId: a.id, lines: [{ crop: 'oyster', kg: 9, priceKg: 10 }] });
+  await s.warm();
+  const [owed] = s.business.summary().needs;
+  assert.deepEqual([owed.buyers, owed.oldestBuyer, owed.oldestAt], [['Ah Seng', 'Borneo Fresh'], 'Borneo Fresh', at('2026-10-01')]);
+});
+
+test('summary: two use-by items in the same state: the earlier day first; an archived item is not read', async (t) => {
+  const s = setup(t);
+  const item = (name, useBy) => {
+    const it = s.inventory.addItem({ name, kind: 'other', unit: 'kg' });
+    s.inventory.purchase({ itemId: it.id, qty: 1, total: 1, day: '2026-11-10', useBy });
+    return it;
+  };
+  item('Apple', '2026-11-19');
+  item('Zinc', '2026-11-16');
+  const gone = item('Old lime', '2026-11-12');
+  const salt = s.inventory.addItem({ name: 'Salt', kind: 'other', unit: 'kg', reorderAt: 5 });
+  s.inventory.use({ itemId: salt.id, qty: 2, worker: 'Ali' });
+  s.inventory.editItem(gone.id, { archived: true });
+  s.inventory.editItem(salt.id, { archived: true });
+  await s.warm();
+  const { needs } = s.business.summary();
+  assert.deepEqual(needs.map((n) => [n.kind, n.name]), [['use-by', 'Zinc'], ['use-by', 'Apple']]);
+});
+
+test('summary: an item at 0 at or under its level is low (not below zero)', async (t) => {
+  const s = setup(t);
+  const it = s.inventory.addItem({ name: 'Gloves', kind: 'other', unit: 'pcs', reorderAt: 10 });
+  await s.warm();
+  const { needs } = s.business.summary();
+  assert.deepEqual(needs.map((n) => [n.kind, n.items.map((i) => [i.id, i.qty])]), [['low', [[it.id, 0]]]]);
+});
+
+test('summary: blocks ready for a room: the good ones summed, several crops in the order first met', async (t) => {
+  const s = setup(t);
+  const pink = s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-12'), blocks: 100, pricePerBlock: 2 });
+  s.batches.receive({ crop: 'oyster', supplier: 'Agro Supplies', receivedAt: at('2026-11-13'), blocks: 50, pricePerBlock: 2 });
+  s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-14'), blocks: 20, pricePerBlock: 2 });
+  s.batches.addCheck(pink.id, { lost: 30, cause: 'green', worker: 'Ali' });
+  s.batches.mix({ crop: 'oyster', blocks: 100 });
+  await s.warm();
+  const { needs } = s.business.summary();
+  assert.deepEqual(needs, [{ kind: 'blocks', blocks: 140, crops: ['pink', 'oyster'], href: '#/business/batches' }],
+    '70 of 100 good, 50 and 20; newest received first, so pink first; the 100 being made not a need');
 });
 
 test('summary: an item below zero is not also low; a lost batch is not waiting', async (t) => {
@@ -170,7 +253,7 @@ test('summary: a module that fails leaves only its own part out, says so and log
   assert.deepEqual(r.needs.map((n) => n.kind), ['blocks', 'unpriced'], 'Batches\' and Costs\' needs still there');
   assert.equal(r.month.month, '2026-11');
   assert.equal(r.runs.length, 1);
-  assert.deepEqual(s.logged, ['sales broke', 'list broke']);
+  assert.deepEqual(s.logged, ["Business summary: couldn't read sales: sales broke", "Business summary: couldn't read inventory: list broke"], 'the part named, the cause kept');
 });
 
 test('summary: every module failing: each part null or empty, every part named', (t) => {
