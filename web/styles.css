@@ -2850,12 +2850,30 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
 .sm-page .none { margin: 0; color: var(--muted); }
 .sm-line { margin: 8px 0 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .sm-money .co-tiles + .sm-line { margin-top: 12px; }
-/* Needs you: a line each, the whole line its link; a module not read in a muted line under them */
+/* the kg not sold and last month: lines under the tiles, tiles 4 and 5 on a wide desk (the card's row has room for five) */
+.sm-money .sm-wide { display: none; }
+@media (min-width: 1100px) {
+  .sm-money .sm-wide { display: block; }
+  .sm-money .sm-narrow { display: none; }
+}
+/* a part not read: its words in the warning tone, Retry beside them */
+.sm-failed { margin: 0; color: var(--warning-text); }
+.sm-failed .sm-retry { margin-left: 4px; vertical-align: middle; }
+/* Needs you: a line each, the whole line its link (underlined on hover and focus only), its state's dot before it: red for
+   below zero and expired, amber for low, a use-by near, money owed over 30 days, a price left out and a part not read */
 :is(.sm-needs-list, .sm-runs-list) { list-style: none; margin: 0; padding: 0; }
-.sm-need { padding: 8px 0; border-top: 1px solid var(--border); font-size: var(--fs-sm); }
-.sm-need:first-child { border-top: 0; padding-top: 0; }
-.sm-needs-list + .sm-failed { margin-top: 8px; }
-/* Runs in progress: the container (its main crop's picture) with the money so far beside it, then its crops, days, kg and Run page */
+.sm-need { border-top: 1px solid var(--border); }
+.sm-need:first-child { border-top: 0; }
+.sm-need-row { display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 10px; align-items: start; padding: 9px 0; font-size: var(--fs-md); line-height: 1.45; }
+.sm-need:first-child > .sm-need-row { padding-top: 0; }
+.sm-need-link { color: var(--ink); text-decoration: none; }
+.sm-need-link:is(:hover, :focus-visible) .sm-need-text { text-decoration: underline; text-underline-offset: 3px; }
+.sm-dot { width: 8px; height: 8px; margin-top: calc((1.45em - 8px) / 2); border-radius: 50%; }
+.sm-need[data-tone="critical"] .sm-dot { background: var(--critical); }
+.sm-need[data-tone="warning"] .sm-dot { background: var(--warning); }
+.sm-need-row.sm-failed { display: block; padding-left: 18px; }
+/* Runs in progress: the container (the run page's link, its main crop's picture) with the money so far beside it, then its
+   crops, days and kg */
 .sm-run { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--border); }
 .sm-run:first-child { border-top: 0; padding-top: 0; }
 .sm-run-head { display: flex; align-items: start; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
@@ -2866,10 +2884,11 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
 .sm-run-line { margin: 0; font-size: var(--fs-sm); }
 .sm-foot { margin: 10px 0 0; font-size: var(--fs-sm); }
 @media (max-width: 600px) {
-  /* a finger's tap: every link reaches 44 px, its padding over the line (inline, as the run page's); a need's line a block */
-  .sm-page .co-link { padding-block: 14px; }
-  .sm-need { padding: 0; }
-  .sm-need .co-link { display: block; padding-block: 12px; }
+  /* a finger's tap: every link and Retry reaches 44 px. The card heads' links and a run's container fill 44 px with no
+     padding over their line (as the run page's); a need's line takes 12 px over and under; the rooms link its padding */
+  .sm-page :is(.card-head .co-link, .sm-room) { display: inline-flex; align-items: center; min-height: 44px; padding-block: 0; }
+  .sm-foot .co-link { padding-block: 14px; }
+  .sm-need-row { padding-block: 12px; }
   .sm-so-far { text-align: left; }
 }
 /* ---- end Summary ---- */
