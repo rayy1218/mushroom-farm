@@ -265,7 +265,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const prices = pricesNote(run.cost);
     const parts = [prices && el('p', 'muted hv-missing', prices), missingLine(run.missing)].filter(Boolean);
     if ((run.flushes ?? []).length) parts.push(flushTable(run));
-    if ((run.crops ?? []).length > 1) parts.push(table('By crop', byCropColumns(hasMoney(run)), byCropRows(run, hasMoney(run)), 1));
+    const withMoney = hasMoney(run);
+    if ((run.crops ?? []).length > 1) parts.push(table('By crop', byCropColumns(withMoney), byCropRows(run, withMoney), 1));
     runBody.replaceChildren(...parts);
     const harvests = run.harvests ?? [];
     const shown = showAll ? harvests : harvests.slice(0, window.matchMedia?.(PHONE).matches ? SHOWN_PHONE : SHOWN);
@@ -276,8 +277,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   // A past run: its row (the dates a button that opens it) and the row under it with its flushes and latest harvests.
-  function pastRun(run) {
-    const money = hasMoney(run);
+  function pastRun(run, money) {
+    const columns = pastColumns(money);
     const row = pastRow(run, money);
     const tr = el('tr', 'hv-run-row');
     const name = el('th');
@@ -288,13 +289,13 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     name.append(toggle);
     tr.append(name, ...row.cells.map((c, i) => {
       const td = el('td', i >= 1 ? 'num' : 'hv-run-crops', c);
-      td.dataset.label = pastColumns(money)[i + 1];
+      td.dataset.label = columns[i + 1];
       return td;
     }));
     const detail = el('tr', 'hv-run-detail');
     detail.id = `hv-run-${run.id}`;
     const cell = el('td');
-    cell.colSpan = pastColumns(money).length;
+    cell.colSpan = columns.length;
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
     if (isOwner()) { // ---- Login ---- the run's page is a Business page: the owner's
@@ -342,7 +343,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const t = el('table', 'us-table hv-table hv-runs-table');
     t.append(el('caption', 'sr-only', 'Past runs'), headRow(pastColumns(money), 2));
     const body = el('tbody');
-    for (const run of past) body.append(...pastRun(run));
+    for (const run of past) body.append(...pastRun(run, money));
     t.append(body);
     return t;
   }

@@ -44,7 +44,7 @@ test('This run: the notes right under the tiles; Past runs a table whose rows op
   assert.ok(card.indexOf('missingLine(run.missing)].filter(Boolean)') < card.indexOf('parts.push(flushTable(run))'));
   assert.ok(card.includes("const toggle = button(row.title, 'hv-run-toggle');"));
   assert.ok(card.includes("toggle.setAttribute('aria-expanded', String(open));"));
-  assert.ok(card.includes('cell.colSpan = pastColumns(money).length;'));
+  assert.ok(card.includes('cell.colSpan = columns.length;'));
   assert.ok(card.includes('const SHOWN_PAST = 8;'));
   assert.match(css, /\.hv-run-body \{ padding-left: 12px; border-left: 2px solid var\(--border\); \}/);
 });

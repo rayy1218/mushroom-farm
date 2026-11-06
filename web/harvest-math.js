@@ -143,7 +143,12 @@ export function harvestLine(h, { mixed = false } = {}) {
   return { when: whenText(h.pickedAt), what, kg: kgText(h.kg, { exact: true }), who: h.worker ?? '', from: h.taskId ? 'from the harvest check' : '' };
 }
 
-// The Past runs table: a row per run, its dates first (the row's name, opening the run), then PAST_COLUMNS' figures.
+// ---- Login ---- whether a reply carries the money: a worker's leaves value out (spec 2026-11-06-login-design.md 4)
+export const hasMoney = (figures) => figures !== null && typeof figures === 'object' && 'value' in figures;
+const MONEY_COLUMNS = new Set(['Expected value', 'Energy per kg']);
+const columnsFor = (columns, money) => (money ? columns : columns.filter((c) => !MONEY_COLUMNS.has(c)));
+
+// The Past runs table: a row per run, its dates first (the row's name, opening the run), then pastColumns(money)' figures.
 export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Energy per kg'];
 export const pastColumns = (money = true) => columnsFor(PAST_COLUMNS, money);
 
@@ -194,16 +199,11 @@ export function flushRows(run) {
 export const BY_CROP_COLUMNS = ['Crop', 'Blocks', 'kg', 'kg per block', 'BE', 'Expected value'];
 export const byCropColumns = (money = true) => columnsFor(BY_CROP_COLUMNS, money);
 
-// The By crop table of a mixed room, in BY_CROP_COLUMNS' order.
+// The By crop table of a mixed room, in byCropColumns(money)'s order.
 export const byCropRows = (run, money = true) => (run.byCrop ?? []).map((c) => [
   cropName(c.crop), blocksText(c.blocks), kgText(c.kg), perBlockText(c.perBlock, { cell: true }), beText(c.be, { cell: true }),
   ...(money ? [rmText(c.value)] : []),
 ]);
-
-// ---- Login ---- whether a reply carries the money: a worker's leaves value out (spec 2026-11-06-login-design.md 4)
-export const hasMoney = (figures) => figures !== null && typeof figures === 'object' && 'value' in figures;
-const MONEY_COLUMNS = new Set(['Expected value', 'Energy per kg']);
-const columnsFor = (columns, money) => (money ? columns : columns.filter((c) => !MONEY_COLUMNS.has(c)));
 
 // This run's tiles: [{ label, title? (the label in full: BE), value, line? }], named as the tables' heads name them;
 // the expected value and energy tiles only when the reply has money.

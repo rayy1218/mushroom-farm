@@ -60,7 +60,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 // ---- Task 9: the Harvest room tab ----
 
 import { flushSplits, flushPerCrop } from '../web/harvest-math.js';
-import { recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, pastColumns, byCropColumns, roomColumns, cropColumns, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { hasMoney, recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, pastColumns, byCropColumns, roomColumns, cropColumns, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -469,4 +469,23 @@ test("a worker's run and farm (no money in the reply): no value or energy tiles,
   assert.equal(roomRows(farm, false)[0].cells.length, 3);
   assert.deepEqual(cropColumns(false), ['Crop', 'kg']);
   assert.equal(cropRows(farm, false)[0].cells.length, 1);
+});
+
+test('hasMoney: a reply with a value key (even null) has money; anything else does not', () => {
+  assert.equal(hasMoney({ value: null }), true);
+  assert.equal(hasMoney({ value: 12 }), true);
+  assert.equal(hasMoney({}), false);
+  assert.equal(hasMoney(null), false);
+  assert.equal(hasMoney(undefined), false);
+  assert.equal(hasMoney(5), false);
+});
+
+test("a worker-shaped farm: the Overview tile has no line or note, no notes, no 'without'", () => {
+  const farm = { today: { kg: 1 }, last7: { kg: 2 }, last30: { kg: 3 }, rooms: [{ id: 1, name: 'Room 1', kg: 3, crops: ['oyster'], current: null }] };
+  const thirty = overviewTiles(farm).tiles[2];
+  assert.equal(thirty.line, null);
+  assert.equal(thirty.note, null);
+  assert.equal(pricesNote(undefined), null);
+  assert.equal(missingNote(undefined), null);
+  assert.equal(roomRows(farm, false)[0].without, null);
 });
