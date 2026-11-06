@@ -40,7 +40,7 @@ const TEMPLATE = `
         <button type="button" class="co-step" data-next aria-label="Next month" disabled><span aria-hidden="true">›</span></button>
       </nav>
       <button type="button" class="primary" data-add>Add a cost</button>
-      <a class="button" data-csv href="/api/costs.csv" download>Export CSV</a>
+      <a class="button" data-csv href='/api/costs.csv' download>Export CSV</a>
     </div>
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>
