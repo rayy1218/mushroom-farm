@@ -28,7 +28,7 @@
 
 | File | Status | Responsibility |
 |---|---|---|
-| `web/economics-model.js` | Create (Task 1) | `DAYS_A_MONTH`, `HOUSE_BLOCKS`, `grow`, `trade`, `housesOf`, `inputsOf`, `compare` (spec 5) |
+| `web/economics-model.js` | Create (Task 1) | `DAYS_A_MONTH`, `HOUSE_BLOCKS`, `blockLife`, `grow`, `trade`, `housesOf`, `inputsOf`, `compare` (spec 5) |
 | `web/economics-defaults.js` | Create (Task 2) | `ECONOMICS_CROPS`, `WAYS`, `LEFT`, `WAY_NAMES`, `FIGURES`, `figureOf`, `figuresFor`, `placeOf`, `checkFigure`, `researchOf`, `sizeOf`, `SOURCES` (spec 4, appendix 1 and 6) |
 | `server/db.js` | Modify (Task 3, own block) | `economics_figures`, its index and trigger, version 26, six methods, `SIM_KEY` |
 | `server/economics-runs.js` | Create (Task 4) | `yourRuns`: Your runs' figures (spec 4.4, 4.5) |
@@ -38,13 +38,13 @@
 | `server/api.js` | Modify (Task 7, four marked lines) | Import, make, route, close |
 | `server/live.js` | Modify (Task 7, marked) | `OWNER_EVENTS`: a worker's stream never carries `economics` |
 | `web/route.js`, `web/business-tabs.js`, `web/live.js` | Modify (Task 8, marked) | The seventh tab, the `economics` route, `'economics'` in `EVENT_TYPES` |
-| `web/economics-math.js` | Create (Task 9) | The comparison's words: `monthsText`, `figureText`, `wayName`, `headline`, `rows`, `fillLine`, `sizedLine`, `neverLine`, `leftLine` (spec 8.2–8.4, 8.7) |
-| `web/economics-figures.js` | Create (Task 10) | The Figures card's words and the typed figures: `foldsOf`, `foldHead`, `tagText`, `appliesText`, `noteParts`, `sourcesLine`, `simText`, `valuesOf`, `typed`, `boxText`, `savedText`, `partsLine` (spec 8.5, 8.6, 6.3) |
+| `web/economics-math.js` | Create (Task 9) | The comparison's words: `monthsText`, `figureText`, `rangeText`, `wayName`, `headline`, `ROWS`, `rows`, `fillLine`, `sizedLine`, `neverLine`, `leftLine` (spec 8.2–8.4, 8.7) |
+| `web/economics-figures.js` | Create (Task 10) | The Figures card's words and the typed figures: `foldsOf`, `foldHead`, `tagText`, `appliesText`, `noteParts`, `simText`, `sourcesLine`, `valuesOf`, `typed`, `boxText`, `savedText`, `partsLine`, `createDraft` (spec 8.5, 8.6, 6.3, 9.2) |
 | `web/economics-page.js` | Create (Task 11) | `mount(container, { room, crop })` |
 | `web/app.js` | Modify (Task 11, marked) | Mount the page under the strip |
 | `web/styles.css` | Modify (Task 11, own block at the end) | `.ec-` styles, tokens only |
-| `README.md`, `DESIGN.md`, `PRODUCT.md`, the spec | Modify (Task 12) | The Business paragraph, an Economics section, a capability row, "What shipped" |
-| `tests/…` | Create, modify | One or more per task; `tests/api-login.test.js` gains the Economics routes (Task 7); the version-25 asserts become 26 (Task 3) |
+| `README.md`, `DESIGN.md`, `PRODUCT.md`, the spec | Modify (Task 12) | The Business paragraph and an Economics paragraph, the strip row and an Economics section, a capability row, "What shipped" (section 13) |
+| `tests/…` | Create, modify | One or more per task; `tests/api-login.test.js` gains the Economics routes (Task 7); `tests/web-roles.test.js` names the page as the owner's (Task 11); `tests/web-route.test.js` seven tabs (Task 8); the version-25 asserts become 26 (Task 3) |
 
 ## Decisions this plan takes (the spec left them open)
 
@@ -55,6 +55,9 @@
 | `settleEconomicsSim` finds the row by room and crop, not by `simId` | A Work it out the simulation's checks refuse has no run (no `simId`) and still fails its row; there is one simulator row per room and crop |
 | The view's `sim.status` is `'waiting'` while the run is queued (the row says `'working'`) | Spec 6.3's "Waiting for another simulation…" needs it; the row keeps the spec's three states |
 | The view carries `machinesNote` (`roomMachines`' note: which machines are at Simulate's defaults) | Spec 9.3 says the note names them before the run |
+| The phone's comparison is one small table a way (its name and profit as its head), not ARIA-roled blocks of one table | A real table a way reads right to a screen reader with no role overrides; the desk table is hidden on a phone (and the blocks on a desk) |
+| Dates in the notes are farm time (`farmDate`, `farmTime`), not `formatDateTime` (the browser's zone) | As every other Business page; the same date on every device |
+| `blockLife` is one export of the model, used by the model, the service and the page | One rule for a block's days |
 | A pending energy day leaves the electricity per block from the next source with a `'pending'` note; the Harvest service's own usage warm (started by `roomView`) publishes `harvest` when done, which the page listens to | Harvest's `roomView` already warms the room's days back to its oldest run; a second warm in Economics would do the same work |
 | `research` in a figure carries its `sources` and `note` too | The page's research note needs them (spec 8.6) |
 | A block life over 90 days: the run takes 90 days and the kWh is scaled by the life the run was started for (kept in memory per run; after a restart, the run's own days) | No column holds the life; a run done across a restart is rare and then reads unscaled |
@@ -82,7 +85,7 @@ Create `tests/economics-model.test.js`:
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DAYS_A_MONTH, grow, trade, housesOf, inputsOf, compare } from '../web/economics-model.js';
+import { DAYS_A_MONTH, blockLife, grow, trade, housesOf, inputsOf, compare } from '../web/economics-model.js';
 
 const r2 = (v) => Math.round(v * 100) / 100;
 // Every figure of `want` to 2 places (a nested object too); Infinity and null as they are.
@@ -148,6 +151,7 @@ test('grow: nothing sold has no break-even; a loss or a payback past the write-o
   assert.equal(free.payback, 0);
   assert.equal(r2(free.paybackAll), 3.38, 'the first fill and the wait still counted');
   assert.equal(grow({ ...COLD, flushes: 1 }).life, 28, 'one flush: no interval');
+  assert.equal(blockLife({ first: 12, interval: 14, flushes: 2, turn: 16 }), 42);
 });
 
 test('housesOf: a house holds up to 2,000 blocks, at least one', () => {
@@ -198,18 +202,21 @@ Create `web/economics-model.js`:
 // The Economics model (spec 2026-11-06-economics-design.md 5): the port of research/lions-mane-economics.html's model(), a
 // month of one way to grow (Your container, Lowland shed, Highland grower, Warm strain) or to buy in and resell. Pure: no
 // DOM, no fetch, no clock. The page works the money out with it on every change; stage 2 reuses it.
-//   grow(x) · trade(x, kgSold) · housesOf(blocks) · inputsOf(values, way) · compare(values, ways)
+//   blockLife(x) · grow(x) · trade(x, kgSold) · housesOf(blocks) · inputsOf(values, way) · compare(values, ways)
 
 export const DAYS_A_MONTH = 30.4;
 export const HOUSE_BLOCKS = 2000; // a shed, a highland house or a warm-strain shed holds up to this many blocks
 
 const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
 
+// The days a block holds its place: to its first harvest, between its flushes, then its rest and turnaround.
+export const blockLife = (x) => x.first + x.interval * Math.max(0, x.flushes - 1) + x.turn;
+
 // A growing way's month. x: { blocks, yieldG, flushes, loss, first, interval, turn, shrink, price, blockPrice, uphill,
 // kwhMonth, tariff, fixedTnb, labourMin, wage, pack, transport, rent, equipment, lifeMonths }. be: RM a kg (null with no kg
 // sold); a payback that never comes is Infinity.
 export function grow(x) {
-  const life = x.first + x.interval * Math.max(0, x.flushes - 1) + x.turn;
+  const life = blockLife(x);
   const blocksM = (x.blocks * DAYS_A_MONTH) / life;
   const kgSold = ((blocksM * (1 - x.loss / 100) * x.yieldG) / 1000) * (1 - x.shrink / 100);
   const income = kgSold * x.price;
@@ -274,8 +281,7 @@ export function inputsOf(values, way) {
     ...Object.fromEntries(GROWING.map((k) => [k, own(k)])), uphill: way === 'highland' ? own('uphill') : 0,
   };
   if (way === 'yours') {
-    const life = x.first + x.interval * Math.max(0, x.flushes - 1) + x.turn;
-    x.kwhMonth = (own('kwhBlock') * x.blocks * DAYS_A_MONTH) / life;
+    x.kwhMonth = (own('kwhBlock') * x.blocks * DAYS_A_MONTH) / blockLife(x);
     x.equipment = YOUR_EQUIPMENT.reduce((s, k) => s + own(k), 0);
   } else {
     const houses = housesOf(x.blocks);
@@ -1994,6 +2000,7 @@ import {
   ECONOMICS_CROPS, WAYS, LEFT, figureOf, figuresFor, placeOf, checkFigure, researchOf, sizeOf,
 } from '../web/economics-defaults.js';
 import { cropShortName } from '../web/crops.js';
+import { blockLife, inputsOf } from '../web/economics-model.js';
 
 // A refused request: status 400, 404 or 409, field the input it is about (the routes reply { error, field }).
 export class EconomicsError extends Error {
@@ -2020,8 +2027,6 @@ function cropOf(db, roomId) {
   const main = crops.reduce((best, c) => (!best || c.blocks > best.blocks ? c : best), null)?.crop;
   return ECONOMICS_CROPS.includes(main) ? main : DEFAULT_CROP;
 }
-
-const lifeOf = (v) => v['yours.first'] + v['yours.interval'] * Math.max(0, v['yours.flushes'] - 1) + v['yours.turn'];
 
 export function createEconomics({
   db, harvests, batches, simulations = null, events = null, now = Date.now, zone = localZone, log = console.error,
@@ -2192,7 +2197,7 @@ export function createEconomics({
         throw new EconomicsError(409, `Already working it out for ${r.name} and ${cropShortName(c)}`);
       }
       const { values } = figuresOf(r, c);
-      const life = lifeOf(values);
+      const life = blockLife(inputsOf(values, 'yours'));
       const { body: input } = simBody({ room: r, lastRun: db.listRuns(r.id)[0] ?? null, crop: c, blocks: values['yours.blocks'], life });
       const result = simulations.start(r.id, input);
       if (result.error && result.conflict) throw new EconomicsError(409, result.error);
@@ -2595,3 +2600,1965 @@ git commit -m "Economics: the routes (GET /api/economics, PUT and DELETE /api/ec
 ```
 
 ---
+## Part 3: the page
+
+### Task 8: The seventh tab, its address and the `economics` event (spec 2, 7.3)
+
+**Files:**
+- Modify: `web/route.js` (the Economics block, the tab, the page, the parse, the canonical address; marked)
+- Modify: `web/business-tabs.js` (its comment: seven tabs)
+- Modify: `web/live.js` (`'economics'` in `EVENT_TYPES`)
+- Modify: `tests/web-route.test.js` (the tabs test: seven)
+- Test: `tests/web-economics-route.test.js`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/web-economics-route.test.js`:
+
+```js
+// The Economics tab's address (spec 2026-11-06-economics-design.md 2): #/business/economics with its room and crop, the
+// seventh Business tab and its strip; the owner's only (a worker's address is Today); the 'economics' event on the stream.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { parseRoute, canonicalHash, isCanonical, ECONOMICS_HASH, economicsHash, BUSINESS_TABS, businessTabOf, businessStrip, workerHash } from '../web/route.js';
+import { EVENT_TYPES } from '../web/live.js';
+
+test('#/business/economics: its room (a whole number) and crop (one of the four), each or neither', () => {
+  assert.equal(ECONOMICS_HASH, '#/business/economics');
+  assert.deepEqual(parseRoute('#/business/economics'), { name: 'economics', room: null, crop: null });
+  assert.deepEqual(parseRoute('#/business/economics/'), { name: 'economics', room: null, crop: null });
+  assert.deepEqual(parseRoute('#/business/economics?room=3&crop=pink'), { name: 'economics', room: 3, crop: 'pink' });
+  assert.deepEqual(parseRoute('#/business/economics?crop=lionsmane'), { name: 'economics', room: null, crop: 'lionsmane' });
+  assert.deepEqual(parseRoute('#/business/economics?room=0&crop=reishi'), { name: 'economics', room: null, crop: null }, 'not a room, not one of the four');
+  assert.deepEqual(parseRoute('#/business/economics/2'), { name: 'overview' });
+});
+
+test('its one address: room then crop, a null left out; others tidied to it', () => {
+  assert.equal(economicsHash({ room: 3, crop: 'pink' }), '#/business/economics?room=3&crop=pink');
+  assert.equal(economicsHash({ crop: 'oyster' }), '#/business/economics?crop=oyster');
+  assert.equal(economicsHash(), '#/business/economics');
+  assert.equal(canonicalHash(parseRoute('#/business/economics?crop=pink&room=3')), '#/business/economics?room=3&crop=pink');
+  assert.equal(isCanonical('#/business/economics?room=3&crop=pink'), true);
+  assert.equal(isCanonical('#/business/economics/'), false);
+  assert.equal(isCanonical('#/business/economics?room=x'), false);
+});
+
+test('the seventh Business tab, last, its strip shown; the other tabs unchanged', () => {
+  assert.deepEqual(BUSINESS_TABS.at(-1), { key: 'economics', label: 'Economics', hash: '#/business/economics' });
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['summary', 'batches', 'inventory', 'sales', 'costs', 'runs', 'economics']);
+  assert.equal(businessTabOf(parseRoute('#/business/economics?room=3')), 'economics');
+  assert.equal(businessStrip(parseRoute('#/business/economics?room=3&crop=pink')), 'economics');
+  assert.equal(businessStrip(parseRoute('#/business/runs')), 'runs');
+});
+
+test('the owner\'s only: a worker opening it is sent to Today; the economics event is one the page can hear', () => {
+  assert.equal(workerHash(parseRoute('#/business/economics')), '#/today');
+  assert.ok(EVENT_TYPES.includes('economics'));
+});
+```
+
+In `tests/web-route.test.js` replace:
+
+```js
+test('the Business tabs: Summary, Batches, Inventory, Sales, Costs, Runs, each its page', async () => {
+  const { BUSINESS_TABS, BUSINESS_HASH, INVENTORY_HASH, COSTS_HASH, RUNS_HASH } = await import('../web/route.js');
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['summary', 'batches', 'inventory', 'sales', 'costs', 'runs']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.label), ['Summary', 'Batches', 'Inventory', 'Sales', 'Costs', 'Runs']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.hash), [BUSINESS_HASH, BATCHES_HASH, INVENTORY_HASH, SALES_HASH, COSTS_HASH, RUNS_HASH]);
+```
+
+with:
+
+```js
+test('the Business tabs: Summary, Batches, Inventory, Sales, Costs, Runs, Economics, each its page', async () => {
+  const { BUSINESS_TABS, BUSINESS_HASH, INVENTORY_HASH, COSTS_HASH, RUNS_HASH, ECONOMICS_HASH } = await import('../web/route.js');
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.key), ['summary', 'batches', 'inventory', 'sales', 'costs', 'runs', 'economics']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.label), ['Summary', 'Batches', 'Inventory', 'Sales', 'Costs', 'Runs', 'Economics']);
+  assert.deepEqual(BUSINESS_TABS.map((t) => t.hash), [BUSINESS_HASH, BATCHES_HASH, INVENTORY_HASH, SALES_HASH, COSTS_HASH, RUNS_HASH, ECONOMICS_HASH]);
+```
+
+- [ ] **Step 2: Run them to see them fail**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-route.test.js tests/web-route.test.js`
+Expected: FAIL: `web-economics-route` with `SyntaxError: The requested module '../web/route.js' does not provide an export named 'ECONOMICS_HASH'`; `web-route` with `ECONOMICS_HASH` undefined in the tabs test.
+
+- [ ] **Step 3: The route (`web/route.js`)**
+
+Replace:
+
+```js
+import { CROP_KEYS } from './crops.js'; // ---- Runs ----
+```
+
+with:
+
+```js
+import { CROP_KEYS } from './crops.js'; // ---- Runs ----
+import { ECONOMICS_CROPS } from './economics-defaults.js'; // ---- Economics ----
+```
+
+After the Runs block, replace:
+
+```js
+// ---- end Runs ----
+
+// ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ----
+```
+
+with:
+
+```js
+// ---- end Runs ----
+// ---- Economics ---- (spec 2026-11-06-economics-design.md 2): the Economics tab, its room and crop in the query (none: the
+// page picks them and writes them in place).
+export const ECONOMICS_HASH = '#/business/economics';
+export function economicsHash({ room = null, crop = null } = {}) {
+  const q = [room ? `room=${room}` : '', crop ? `crop=${crop}` : ''].filter(Boolean).join('&');
+  return q ? `${ECONOMICS_HASH}?${q}` : ECONOMICS_HASH;
+}
+function parseEconomics(hash) {
+  const m = /^#\/business\/economics\/?(?:\?(.*))?$/.exec(hash);
+  if (!m) return null;
+  const p = new URLSearchParams(m[1] ?? '');
+  const room = /^[1-9][0-9]{0,14}$/.test(p.get('room') ?? '') ? Number(p.get('room')) : null;
+  return { name: 'economics', room, crop: ECONOMICS_CROPS.includes(p.get('crop')) ? p.get('crop') : null };
+}
+// ---- end Economics ----
+
+// ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ----
+```
+
+Replace:
+
+```js
+  { key: 'runs', label: 'Runs', hash: RUNS_HASH }, // ---- Runs ----
+];
+```
+
+with:
+
+```js
+  { key: 'runs', label: 'Runs', hash: RUNS_HASH }, // ---- Runs ----
+  { key: 'economics', label: 'Economics', hash: ECONOMICS_HASH }, // ---- Economics ----
+];
+```
+
+Replace:
+
+```js
+  ['runs', 'runs'], ['run', 'runs'], // ---- Runs ----
+]);
+```
+
+with:
+
+```js
+  ['runs', 'runs'], ['run', 'runs'], // ---- Runs ----
+  ['economics', 'economics'], // ---- Economics ----
+]);
+```
+
+In `parseRoute` replace:
+
+```js
+  const runs = parseRuns(hash ?? ''); // ---- Runs ----
+  if (runs) return runs;
+```
+
+with:
+
+```js
+  const runs = parseRuns(hash ?? ''); // ---- Runs ----
+  if (runs) return runs;
+  const economics = parseEconomics(hash ?? ''); // ---- Economics ----
+  if (economics) return economics;
+```
+
+In `canonicalHash` replace:
+
+```js
+  if (route.name === 'run') return runHash(route.id);
+```
+
+with:
+
+```js
+  if (route.name === 'run') return runHash(route.id);
+  if (route.name === 'economics') return economicsHash(route); // ---- Economics ----
+```
+
+- [ ] **Step 4: The strip's comment and the event**
+
+In `web/business-tabs.js` replace:
+
+```js
+// The Business strip (the integration, 2026-11-05; DESIGN.md "Business"): Summary · Batches · Inventory · Sales · Costs · Runs
+// over each of the six pages (Runs: spec 2026-11-05-runs-design.md 6; Summary, #/business: spec
+// 2026-11-06-business-summary-design.md 2), styled as the room page's tabs (their `.room-tabs` rules:
+// underline tabs, the current one in ink on the accent line). On a phone the six scroll sideways: the edge that has more
+// fades while a tab is hidden there (the room page's data-more). app.js puts it above the page's own mount; the page itself
+```
+
+with:
+
+```js
+// The Business strip (the integration, 2026-11-05; DESIGN.md "Business"): Summary · Batches · Inventory · Sales · Costs · Runs
+// · Economics over each of the seven pages (Runs: spec 2026-11-05-runs-design.md 6; Summary, #/business: spec
+// 2026-11-06-business-summary-design.md 2; Economics: spec 2026-11-06-economics-design.md 2), styled as the room page's tabs
+// (their `.room-tabs` rules: underline tabs, the current one in ink on the accent line). On a phone the seven scroll
+// sideways: the edge that has more fades while a tab is hidden there (the room page's data-more). app.js puts it above the
+// page's own mount; the page itself
+```
+
+In `web/live.js` replace:
+
+```js
+export const EVENT_TYPES = ['room', 'alarms', 'outdoor', 'simulation', 'sizing', 'tasks', 'harvest', 'batches', 'inventory', 'sales', 'costs'];
+```
+
+with:
+
+```js
+export const EVENT_TYPES = ['room', 'alarms', 'outdoor', 'simulation', 'sizing', 'tasks', 'harvest', 'batches', 'inventory', 'sales', 'costs', 'economics'];
+```
+
+- [ ] **Step 5: Run them to see them pass**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-route.test.js tests/web-route.test.js tests/web-business-route.test.js tests/web-shell.test.js`
+Expected: PASS. Then `npm test`: 2973 tests, 0 fail.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add web/route.js web/business-tabs.js web/live.js tests/web-economics-route.test.js tests/web-route.test.js
+git commit -m "Economics: the seventh Business tab at #/business/economics with its room and crop in the address (a worker's address is Today), and the economics event on the page's stream"
+```
+
+---
+
+### Task 9: The comparison's words `web/economics-math.js` (spec 8.2–8.4, 8.7)
+
+**Files:**
+- Create: `web/economics-math.js`
+- Test: `tests/web-economics-math.test.js`
+
+The headline at the golden inputs ("Lion's mane in Container 1: RM 3,003.16 a month, break-even RM 38.23 a kg, pays back in 13 months. A highland grower makes RM 3,152.92 on a quarter of the equipment.") and at every crop's research defaults (11.2's four headlines); every case of 8.2; every row of 8.3. RM through Costs' `moneyText` and `perKgText`, kg through Harvest's `kgText`; a number keeps its unit with a no-break space (the tests read it as a space).
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/web-economics-math.test.js`:
+
+```js
+// The Economics page's words for the comparison (web/economics-math.js, spec 2026-11-06-economics-design.md 8.2–8.4, 8.7):
+// the headline at the golden inputs and at every crop's defaults, every headline case and equipment word, the rows (a loss,
+// never, no equipment), the months, a figure with its unit, the lines under the table.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { monthsText, figureText, rangeText, wayName, headline, rows, fillLine, sizedLine, neverLine, leftLine } from '../web/economics-math.js';
+import { compare, grow, trade } from '../web/economics-model.js';
+import { ECONOMICS_CROPS, WAYS, figuresFor, researchOf } from '../web/economics-defaults.js';
+
+const NB = '\u00a0';
+// The words as the spec writes them: a number keeps its unit with a no-break space (the Units Rule), read here as a space.
+const plain = (v) => (typeof v === 'string' ? v.replaceAll(NB, ' ') : Array.isArray(v) ? v.map(plain) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)])) : v);
+const text = (h) => plain([h.first.map((p) => (typeof p === 'string' ? p : p.text)).join(''), h.second].filter(Boolean).join(' '));
+
+// The model page's inputs (section 11.1) as figures.
+const GOLDEN = {
+  price: 50, shrink: 10, pack: 3, blockPrice: 6, tariff: 0.551, fixedTnb: 20, wage: 10, life: 60,
+  'yours.blocks': 1740, 'yours.yieldG': 250.015, 'yours.flushes': 2, 'yours.loss': 10, 'yours.first': 12, 'yours.interval': 14,
+  'yours.turn': 16, 'yours.kwhBlock': 506 / (1740 * 30.4 / 42), 'yours.labourMin': 2.52, 'yours.transport': 0, 'yours.rent': 0,
+  'yours.container': 18500, 'yours.cooling': 8580, 'yours.humidifier': 3000, 'yours.fans': 3300, 'yours.racks': 2610,
+  ...Object.fromEntries(['highland', 'warm'].flatMap((w) => [
+    [`${w}.yieldG`, w === 'warm' ? 124 : 250.015], [`${w}.flushes`, 2], [`${w}.loss`, 10], [`${w}.first`, 12], [`${w}.interval`, 14],
+    [`${w}.turn`, 16], [`${w}.labourMin`, 2.52], [`${w}.transport`, w === 'highland' ? 2 : 0], [`${w}.rent`, 0], [`${w}.kwhHouse`, 146],
+    [`${w}.house`, 5000], [`${w}.humidifier`, 1500], [`${w}.fans`, w === 'highland' ? 1800 : 3300],
+  ])),
+  'highland.uphill': 0, 'import.landed': 41.1047, 'import.buyHours': 2, 'import.rent': 0,
+};
+
+test('golden: the headline at the model page\'s inputs in Container 1', () => {
+  const h = headline(compare(GOLDEN, WAYS.lionsmane), { room: 'Container 1', crop: 'lionsmane', life: 60 });
+  assert.equal(text(h), "Lion's mane in Container 1: RM 3,003.16 a month, break-even RM 38.23 a kg, pays back in 13 months. A highland grower makes RM 3,152.92 on a quarter of the equipment.");
+});
+
+test('11.2: the headline of every crop at the research defaults in a 40 ft container', () => {
+  const room = { volume: 67.4, humidifierLH: 2 };
+  const want = {
+    oyster: 'Grey oyster in Container 1: −RM 1,400.38 a month loss, break-even RM 18.68 a kg, never pays back. A lowland shed loses less, −RM 814.18, on a tenth of the equipment.',
+    pink: 'Pink oyster in Container 1: −RM 234.97 a month loss, break-even RM 20.76 a kg, never pays back. Every other way loses more.',
+    woodear: 'Black jelly (wood ear) in Container 1: RM 159.56 a month, break-even RM 23.68 a kg, pays back in 55 months. Importing and reselling makes RM 641.32 with no equipment.',
+    lionsmane: "Lion's mane in Container 1: RM 2,183.70 a month, break-even RM 39.95 a kg, pays back in 21 months. A highland grower makes RM 2,649.57 on a fifth of the equipment.",
+  };
+  for (const crop of ECONOMICS_CROPS) {
+    const values = Object.fromEntries(figuresFor(crop).map((f) => [f.key, f.key === 'tariff' ? 0.55 : researchOf(f.key, crop, room, 1482).value]));
+    values['yours.blocks'] = 1482;
+    assert.equal(text(headline(compare(values, WAYS[crop]), { room: 'Container 1', crop, life: 60 })), want[crop], crop);
+  }
+});
+
+// A result as the model gives it, with only what the words read.
+const r = (way, profit, { equipment = 10_000, kg = 100, be = 30, paybackAll = 12, kind = 'grow' } = {}) => ({ way, kind, profit, equipment, kgSold: kg, be, paybackAll, payback: paybackAll });
+
+test('the headline\'s first sentence: a profit that pays back, one that doesn\'t within the write-off, a loss (its figure in the loss tone), nothing sold', () => {
+  const at = (yours) => headline([yours], { room: 'Container 1', crop: 'lionsmane', life: 60 });
+  assert.equal(text(at(r('yours', 120, { be: 49.1, paybackAll: Infinity }))), "Lion's mane in Container 1: RM 120.00 a month, break-even RM 49.10 a kg, but it doesn't pay back within the 60 months the equipment is written off over.");
+  assert.equal(at(r('yours', 120)).second, null, 'one way shown: no second sentence');
+  const loss = headline([r('yours', -1400.38, { be: 18.68, paybackAll: Infinity })], { room: 'Container 1', crop: 'oyster', life: 60 });
+  assert.deepEqual(plain(loss.first), ['Grey oyster in Container 1: ', { text: '−RM 1,400.38', tone: 'loss' }, ' a month loss, break-even RM 18.68 a kg, never pays back.']);
+  assert.equal(loss.first[1].text, `−RM${NB}1,400.38`, 'RM keeps its figure at a wrap');
+  const none = headline([r('yours', -2083, { kg: 0, be: null, paybackAll: Infinity })], { room: 'Container 1', crop: 'oyster', life: 60 });
+  assert.equal(text(none), 'Grey oyster in Container 1 sells nothing at these figures: −RM 2,083.00 a month loss.');
+  assert.deepEqual(plain(none.first[1]), { text: '−RM 2,083.00', tone: 'loss' });
+});
+
+test('the headline\'s second sentence: the best other way (ties in column order) makes more, loses less, yours the most, all lose more', () => {
+  const second = (results) => plain(headline(results, { room: 'Container 1', crop: 'lionsmane', life: 60 }).second);
+  assert.equal(second([r('yours', 100), r('highland', 300, { equipment: 2306 }), r('warm', 300, { equipment: 9999 })]), 'A highland grower makes RM 300.00 on a quarter of the equipment.');
+  assert.equal(second([r('yours', -1400), r('shed', -814.18, { equipment: 1280 })]), 'A lowland shed loses less, −RM 814.18, on a tenth of the equipment.');
+  assert.equal(second([r('yours', 3000), r('highland', 2000), r('import', -5, { kind: 'trade', equipment: 0 }), r('warm', -9)]), 'That is the most of the 4 ways; next, a highland grower makes RM 2,000.00.');
+  assert.equal(second([r('yours', 3000), r('highland', -1), r('warm', -9)]), 'Every other way loses money at these figures.');
+  assert.equal(second([r('yours', -100), r('shed', -900)]), 'Every other way loses more.');
+});
+
+test('the equipment words: none, yours none, the nearest fraction, about the same, twice, times', () => {
+  const words = (other, yours = 10_000, kind = 'grow') => headline([r('yours', 1, { equipment: yours }), r('highland', 9, { equipment: other, kind })],
+    { room: 'R', crop: 'lionsmane', life: 60 }).second.replace(/^A highland grower makes RM.\S+ /, '').replaceAll(NB, ' ');
+  assert.equal(words(0, 10_000, 'trade'), 'with no equipment.');
+  assert.equal(words(6800, 0), 'on RM 6,800.00 of equipment.');
+  assert.equal(words(1280), 'on a tenth of the equipment.');
+  assert.equal(words(2306), 'on a quarter of the equipment.');
+  assert.equal(words(3400), 'on a third of the equipment.');
+  assert.equal(words(5200), 'on half of the equipment.');
+  assert.equal(words(7000), 'on two thirds of the equipment.');
+  assert.equal(words(8000), 'on three quarters of the equipment.');
+  assert.equal(words(9000), 'on about the same equipment.');
+  assert.equal(words(11_500), 'on about the same equipment.');
+  assert.equal(words(15_000), 'on 1.5 times the equipment.');
+  assert.equal(words(20_400), 'on twice the equipment.');
+});
+
+test('the rows at the golden inputs: the cold room and import, a loss with "Loss" under it, never, no equipment', () => {
+  const [cold, , imp, warm] = compare(GOLDEN, WAYS.lionsmane);
+  const table = rows([cold, imp, warm]);
+  const at = (key) => table.find((x) => x.key === key);
+  assert.deepEqual(table.map((x) => x.label), ['Blocks started a month', 'kg sold a month', 'Income', 'Blocks, or mushrooms bought', 'Electricity', 'Labour',
+    'Packing and delivery', 'Transport', 'Rent', 'Equipment written off', 'Costs', 'Profit a month', 'Break-even', 'Equipment',
+    'Pays back, equipment only', 'Pays back, with the first fill']);
+  const cells = (key) => plain(at(key).cells.map((c) => c.text));
+  assert.deepEqual(cells('blocks'), ['1,259', '283.4 kg bought', '1,259']);
+  assert.deepEqual(cells('kg'), ['255.0 kg', '255.0 kg', '126.5 kg']);
+  assert.deepEqual(cells('income'), ['RM 12,752.48', 'RM 12,752.48', 'RM 6,324.85']);
+  assert.deepEqual(cells('bought'), ['RM 7,556.57', 'RM 11,648.60', 'RM 7,556.57']);
+  assert.deepEqual(cells('electricity'), ['RM 298.81', 'RM 0.00', 'RM 100.45']);
+  assert.deepEqual(cells('labour'), ['RM 528.96', 'RM 608.00', 'RM 528.96']);
+  assert.deepEqual(cells('writeOff'), ['RM 599.83', 'RM 0.00', 'RM 163.33']);
+  assert.deepEqual(cells('costs'), ['RM 9,749.32', 'RM 13,021.75', 'RM 8,728.80']);
+  assert.deepEqual(plain(at('profit').cells), [{ text: 'RM 3,003.16' }, { text: '−RM 269.27', tone: 'loss', sub: 'Loss' }, { text: '−RM 2,403.95', tone: 'loss', sub: 'Loss' }]);
+  assert.deepEqual(cells('be'), ['RM 38.23 a kg', 'RM 51.06 a kg', 'RM 69.00 a kg']);
+  assert.deepEqual(cells('equipment'), ['RM 35,990.00', 'None', 'RM 9,800.00']);
+  assert.deepEqual(cells('payback'), ['10 months', 'No equipment', 'never']);
+  assert.deepEqual(cells('paybackAll'), ['13 months', 'No equipment', 'never']);
+  assert.equal(rows([grow({ ...inputs, yieldG: 0 })])[12].cells[0].text, '—', 'nothing sold: no break-even');
+});
+const inputs = { blocks: 1740, yieldG: 250, flushes: 2, loss: 10, first: 12, interval: 14, turn: 16, shrink: 10, price: 50, blockPrice: 6, uphill: 0,
+  kwhMonth: 506, tariff: 0.551, fixedTnb: 20, labourMin: 2.52, wage: 10, pack: 3, transport: 0, rent: 0, equipment: 35990, lifeMonths: 60 };
+
+test('the months: under 1, 1, one decimal under 9.95, whole above, never', () => {
+  assert.deepEqual(plain([0.5, 1, 6.16, 9.94, 9.99, 13.37, 61.2, Infinity, NaN].map(monthsText)),
+    ['under 1 month', '1 month', '6.2 months', '9.9 months', '10 months', '13 months', '61 months', 'never', '—']);
+  assert.equal(trade({ price: 1, shrink: 0, pack: 0, wage: 0, landed: 0, buyHours: 0, rent: 0 }, 1).payback, null);
+});
+
+test('a figure with its unit, and a research range', () => {
+  assert.deepEqual(plain([
+    figureText('yours.yieldG', 250.015), figureText('yours.kwhBlock', 0.4), figureText('shrink', 10), figureText('yours.first', 42),
+    figureText('yours.first', 1), figureText('yours.labourMin', 2.52), figureText('import.buyHours', 2), figureText('import.buyHours', 1),
+    figureText('price', 55), figureText('blockPrice', 6), figureText('yours.rent', 300), figureText('wage', 10), figureText('yours.container', 38100),
+    figureText('tariff', 0.5515), figureText('yours.blocks', 1740), figureText('life', 60), figureText('yours.flushes', 2), figureText('yours.flushes', 1),
+    figureText('shed.kwhHouse', 60), figureText('price', null),
+  ]), [
+    '250 g', '0.40 kWh', '10 %', '42 days', '1 day', '2.52 min', '2 hours a day', '1 hour a day', 'RM 55.00 a kg', 'RM 6.00 a block',
+    'RM 300.00 a month', 'RM 10.00 an hour', 'RM 38,100.00', 'RM 0.5515 a kWh', '1,740 blocks', '60 months', '2 flushes', '1 flush',
+    '60 kWh a month', '—',
+  ]);
+  assert.equal(plain(rangeText('yours.yieldG', 150, 400)), '150–400 g');
+  assert.equal(plain(rangeText('price', 8, 13)), 'RM 8.00–13.00 a kg');
+});
+
+test('the way names, and the lines under the table', () => {
+  assert.deepEqual(['yours', 'shed', 'highland', 'import', 'warm'].map((w) => wayName(w)), ['Your container', 'Lowland shed', 'Highland grower', 'Import and resell', 'Warm strain']);
+  assert.equal(wayName('warm', { sentence: true }), 'A warm strain in a lowland shed');
+  assert.equal(wayName('import', { sentence: true, lower: true }), 'importing and reselling');
+  const [cold, , , warm] = compare(GOLDEN, WAYS.lionsmane);
+  assert.equal(plain(fillLine(cold, { room: 'Container 1', blocks: 1740, first: 12 })), "With the first fill: Container 1's equipment, its first 1,740 blocks (RM 10,440.00) and the costs until the first harvest, 12 days in (RM 326.75).");
+  assert.equal(plain(sizedLine('Container 1', 1740)), "Every way is sized to Container 1's 1,740 blocks; a shed or a highland house holds up to 2,000.");
+  assert.equal(neverLine([cold, warm], 60), 'Never: not within the 60 months the equipment is written off over.');
+  assert.equal(neverLine([cold], 60), null);
+  assert.match(leftLine('oyster'), /^Not compared: a highland grower \(grey oyster isn't grown commercially there/);
+  assert.equal(leftLine('woodear'), 'Not compared: a highland grower (growth slows sharply below 18 °C).');
+  assert.equal(leftLine('lionsmane'), "Not compared: a lowland shed with the usual strain (it fruits at 18–24 °C); the warm strain is the lowland shed for lion's mane.");
+});
+```
+
+- [ ] **Step 2: Run it to see it fail**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-math.test.js`
+Expected: FAIL, `ERR_MODULE_NOT_FOUND` for `web/economics-math.js`.
+
+- [ ] **Step 3: Write the words**
+
+Create `web/economics-math.js`:
+
+```js
+// The Economics page's words for the comparison (spec 2026-11-06-economics-design.md 8.2–8.4, 8.7): the headline, the rows
+// of "A month, each way", the lines under it, the months and a figure with its unit. Pure: the results are the model's
+// (web/economics-model.js compare), every RM through Costs' formatter and every kg through Harvest's (the One Format Rule).
+//   monthsText · figureText · rangeText · wayName · headline · ROWS · rows · fillLine · sizedLine · neverLine · leftLine
+
+import { moneyText, perKgText } from './costs-math.js';
+import { kgText } from './harvest-math.js';
+import { grouped } from './overview-math.js';
+import { cropShortName } from './crops.js';
+import { figureOf, WAY_NAMES } from './economics-defaults.js';
+import { HOUSE_BLOCKS } from './economics-model.js';
+
+const NB = '\u00a0'; // a number keeps its unit at a wrap (the Units Rule)
+const DASH = '—';
+const finite = (x) => typeof x === 'number' && Number.isFinite(x);
+const cents = (v) => Math.round(v * 100); // a figure as it shows: a loss under half a sen is none
+const upTo = (v, places) => v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: places });
+
+// A payback: "under 1 month", "1 month", one decimal under 9.95 ("6.2 months"), else whole ("13 months"), "never".
+export function monthsText(v) {
+  if (v === Infinity) return 'never';
+  if (!finite(v)) return DASH;
+  if (v < 1) return `under${NB}1${NB}month`;
+  const text = v < 9.95 ? v.toFixed(1) : grouped(Math.round(v), 0);
+  return text === '1.0' ? `1${NB}month` : `${text}${NB}months`;
+}
+
+// A figure's number and unit: [before, number, after] ("RM ", "55.00", " a kg"; "", "250", " g").
+function parts(key, v) {
+  const { unit } = figureOf(key);
+  const money = (after) => [`RM${NB}`, grouped(v, 2), after];
+  const plural = (one, many) => (v === 1 ? one : many);
+  switch (unit) {
+    case 'RM/kg': return money(`${NB}a${NB}kg`);
+    case 'RM a block': return money(`${NB}a${NB}block`);
+    case 'RM a month': return money(`${NB}a${NB}month`);
+    case 'RM an hour': return money(`${NB}an${NB}hour`);
+    case 'RM': return money('');
+    case 'RM/kWh': return [`RM${NB}`, v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }), `${NB}a${NB}kWh`];
+    case 'g': return ['', grouped(Math.round(v), 0), `${NB}g`];
+    case 'kWh': return ['', grouped(v, 2), `${NB}kWh`];
+    case 'kWh a month': return ['', upTo(v, 1), `${NB}kWh a${NB}month`];
+    case '%': return ['', upTo(v, 1), `${NB}%`];
+    case 'days': return ['', grouped(v, 0), `${NB}${plural('day', 'days')}`];
+    case 'min': return ['', grouped(v, 2), `${NB}min`];
+    case 'hours a day': return ['', upTo(v, 1), `${NB}${plural('hour', 'hours')} a${NB}day`];
+    case 'months': return ['', grouped(v, 0), `${NB}${plural('month', 'months')}`];
+    case 'blocks': return ['', grouped(v, 0), `${NB}${plural('block', 'blocks')}`];
+    default: return ['', grouped(v, 0), `${NB}${plural('flush', 'flushes')}`]; // flushes per block
+  }
+}
+// "250 g", "RM 55.00 a kg", "42 days", "2 flushes"; a dash without a number.
+export function figureText(key, v) {
+  if (!finite(v)) return DASH;
+  return parts(key, v).join('');
+}
+// A research range: "150–400 g", "RM 8.00–13.00 a kg".
+export function rangeText(key, low, high) {
+  const [before, a, after] = parts(key, low);
+  return `${before}${a}–${parts(key, high)[1]}${after}`;
+}
+
+// A way's name: as a column head, or in a sentence ("A highland grower", lower-cased after a comma).
+const IN_A_SENTENCE = { shed: 'A lowland shed', highland: 'A highland grower', import: 'Importing and reselling', warm: 'A warm strain in a lowland shed' };
+export const wayName = (way, { sentence = false, lower = false } = {}) => {
+  const name = sentence ? IN_A_SENTENCE[way] : WAY_NAMES[way];
+  return lower ? name[0].toLowerCase() + name.slice(1) : name;
+};
+
+const FRACTIONS = [[0.1, 'a tenth'], [0.2, 'a fifth'], [0.25, 'a quarter'], [1 / 3, 'a third'], [0.5, 'half'], [2 / 3, 'two thirds'], [0.75, 'three quarters']];
+// The other way's equipment against yours: "on a quarter of the equipment", "with no equipment", "on twice the equipment".
+function equipmentWords(other, yours) {
+  if (other.kind === 'trade' || other.equipment === 0) return 'with no equipment';
+  if (yours.equipment === 0) return `on ${moneyText(other.equipment)} of equipment`;
+  const ratio = other.equipment / yours.equipment;
+  if (ratio < 0.875) return `on ${FRACTIONS.reduce((a, b) => (Math.abs(b[0] - ratio) < Math.abs(a[0] - ratio) ? b : a))[1]} of the equipment`;
+  if (ratio <= 1.15) return 'on about the same equipment';
+  if (ratio >= 1.95 && ratio <= 2.05) return 'on twice the equipment';
+  return `on ${upTo(ratio, 1)} times the equipment`;
+}
+
+// The headline (spec 8.2): { first: [text or { text, tone: 'loss' }], second: text or null }. results: compare's, Your
+// container first; room: its name; crop: its key; life: the months the equipment is written off over.
+export function headline(results, { room, crop, life }) {
+  const [yours, ...others] = results;
+  const name = `${cropShortName(crop)} in ${room}`;
+  const loss = (v) => ({ text: moneyText(v), tone: 'loss' });
+  let first;
+  if (!(yours.kgSold >= 0.05)) { // shows as 0.0 kg
+    first = [`${name} sells nothing at these figures: `, loss(yours.profit), ` a${NB}month loss.`];
+  } else if (cents(yours.profit) < 0) {
+    first = [`${name}: `, loss(yours.profit), ` a${NB}month loss, break-even ${perKgText(yours.be)} a${NB}kg, never pays back.`];
+  } else {
+    const pays = yours.paybackAll === Infinity
+      ? `but it doesn't pay back within the ${life} months the equipment is written off over.`
+      : `pays back in ${monthsText(yours.paybackAll)}.`;
+    first = [`${name}: ${moneyText(yours.profit)} a${NB}month, break-even ${perKgText(yours.be)} a${NB}kg, ${pays}`];
+  }
+  if (!others.length) return { first, second: null };
+  const best = others.reduce((a, b) => (cents(b.profit) > cents(a.profit) ? b : a));
+  let second;
+  if (cents(best.profit) > cents(yours.profit)) {
+    second = cents(best.profit) > 0
+      ? `${wayName(best.way, { sentence: true })} makes ${moneyText(best.profit)} ${equipmentWords(best, yours)}.`
+      : `${wayName(best.way, { sentence: true })} loses less, ${moneyText(best.profit)}, ${equipmentWords(best, yours)}.`;
+  } else if (cents(yours.profit) > 0) {
+    second = cents(best.profit) > 0
+      ? `That is the most of the ${results.length} ways; next, ${wayName(best.way, { sentence: true, lower: true })} makes ${moneyText(best.profit)}.`
+      : 'Every other way loses money at these figures.';
+  } else {
+    second = 'Every other way loses more.';
+  }
+  return { first, second };
+}
+
+// The rows of "A month, each way" (spec 8.3): [{ key, label, cell(result) → { text, tone?, sub? } }].
+const money = (v) => ({ text: moneyText(v) });
+const growOr = (grow, trade) => (r) => (r.kind === 'trade' ? trade(r) : grow(r));
+export const ROWS = [
+  { key: 'blocks', label: 'Blocks started a month', cell: growOr((r) => ({ text: grouped(Math.round(r.blocksM), 0) }), (r) => ({ text: `${kgText(r.kgBought)} bought` })) },
+  { key: 'kg', label: 'kg sold a month', cell: (r) => ({ text: kgText(r.kgSold) }) },
+  { key: 'income', label: 'Income', cell: (r) => money(r.income) },
+  { key: 'bought', label: 'Blocks, or mushrooms bought', cell: (r) => money(r.cost.blocks) },
+  { key: 'electricity', label: 'Electricity', cell: (r) => money(r.cost.electricity) },
+  { key: 'labour', label: 'Labour', cell: (r) => money(r.cost.labour) },
+  { key: 'packing', label: 'Packing and delivery', cell: (r) => money(r.cost.packing) },
+  { key: 'transport', label: 'Transport', cell: (r) => money(r.cost.transport) },
+  { key: 'rent', label: 'Rent', cell: (r) => money(r.cost.rent) },
+  { key: 'writeOff', label: 'Equipment written off', cell: (r) => money(r.cost.writeOff) },
+  { key: 'costs', label: 'Costs', cell: (r) => money(r.costs) },
+  { key: 'profit', label: 'Profit a month', cell: (r) => (cents(r.profit) < 0 ? { text: moneyText(r.profit), tone: 'loss', sub: 'Loss' } : money(r.profit)) },
+  { key: 'be', label: 'Break-even', cell: (r) => ({ text: r.be === null ? DASH : `${perKgText(r.be)} a${NB}kg` }) },
+  { key: 'equipment', label: 'Equipment', cell: growOr((r) => money(r.equipment), () => ({ text: 'None' })) },
+  { key: 'payback', label: 'Pays back, equipment only', cell: growOr((r) => ({ text: monthsText(r.payback) }), () => ({ text: 'No equipment' })) },
+  { key: 'paybackAll', label: 'Pays back, with the first fill', cell: growOr((r) => ({ text: monthsText(r.paybackAll) }), () => ({ text: 'No equipment' })) },
+];
+// Every row with its cells, a column per result: [{ key, label, cells }].
+export const rows = (results) => ROWS.map(({ key, label, cell }) => ({ key, label, cells: results.map(cell) }));
+
+// The lines under the table.
+export const fillLine = (yours, { room, blocks, first }) => `With the first fill: ${room}'s equipment, its first ${grouped(blocks, 0)}${NB}blocks `
+  + `(${moneyText(yours.fill)}) and the costs until the first harvest, ${first}${NB}${first === 1 ? 'day' : 'days'} in (${moneyText(yours.rampCost)}).`;
+export const sizedLine = (room, blocks) => `Every way is sized to ${room}'s ${grouped(blocks, 0)}${NB}blocks; a shed or a highland house holds up to ${grouped(HOUSE_BLOCKS, 0)}.`;
+// When any growing way never pays back.
+export const neverLine = (results, life) => (results.some((r) => r.kind === 'grow' && (r.payback === Infinity || r.paybackAll === Infinity))
+  ? `Never: not within the ${life} months the equipment is written off over.` : null);
+// The ways not compared for the crop (spec 8.4).
+const LEFT_WORDS = {
+  oyster: 'Not compared: a highland grower (grey oyster isn\'t grown commercially there; it fruits best at 25 °C and Cameron Highlands averages 17.9 °C) and importing (fresh grey oyster keeps 3–4 days and Malaysia grows its own).',
+  pink: 'Not compared: a highland grower (too cool to pin: it needs 18–20 °C) and importing (it keeps 1–4 days; none is imported).',
+  woodear: 'Not compared: a highland grower (growth slows sharply below 18 °C).',
+  lionsmane: 'Not compared: a lowland shed with the usual strain (it fruits at 18–24 °C); the warm strain is the lowland shed for lion\'s mane.',
+};
+export const leftLine = (crop) => LEFT_WORDS[crop] ?? null;
+```
+
+- [ ] **Step 4: Run it to see it pass**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-math.test.js`
+Expected: PASS, 9 tests. Then `npm test`: 2982 tests, 0 fail.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add web/economics-math.js tests/web-economics-math.test.js
+git commit -m "Economics: the comparison's words (the headline and the best other way with its equipment as a fraction, the rows of a month each way, the months, a figure with its unit, the lines under the table); the golden and the four default headlines"
+```
+
+---
+
+### Task 10: The Figures card's words and the typed figures `web/economics-figures.js` (spec 8.5, 8.6, 6.3, 9.2)
+
+**Files:**
+- Create: `web/economics-figures.js`
+- Test: `tests/web-economics-figures.test.js`
+
+`createDraft()` holds what the owner types: each box's last valid figure over the reply's until it is saved, put back or refused; a box whose text is not a figure keeps its last valid one in the sums and its refusal; a new reply keeps what is typed. It is the page's "typing recalculates at once; an invalid figure keeps the last valid one" (spec 11.3), run here for real.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/web-economics-figures.test.js`:
+
+```js
+// The Economics page's Figures card (web/economics-figures.js, spec 2026-11-06-economics-design.md 8.1, 8.5, 8.6, 6.3, 9.2):
+// the folds and their heads, the tags, where a figure applies, every note, the simulator's line in each state, the sources
+// line, a typed figure checked as the server would, the saved line and the line of a part not read.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, valuesOf, typed, boxText, savedText, partsLine, createDraft,
+} from '../web/economics-figures.js';
+import { figuresFor, researchOf } from '../web/economics-defaults.js';
+
+const NB = ' ';
+const plain = (v) => JSON.parse(JSON.stringify(v).replaceAll(NB, ' '));
+const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)), h - 8);
+const ctx = { room: 'Container 1', crop: 'lionsmane' };
+
+// The figures of lion's mane in a 40 ft container, every one research (as the server gives them on a new farm).
+function figures() {
+  const room = { volume: 67.4, humidifierLH: 2 };
+  return figuresFor('lionsmane').map((f) => {
+    const research = researchOf(f.key, 'lionsmane', room, 1482);
+    const value = f.key === 'tariff' ? 0.55 : research.value; // the electricity price: Settings' default
+    return { key: f.key, way: f.way, scope: f.scope, value, source: 'research', at: null, real: null, research, runs: null, notes: [] };
+  });
+}
+const one = (key, more = {}) => ({ ...figures().find((f) => f.key === key), ...more });
+
+test('the folds: Shared by every way and Your container open, then each other shown way closed; their heads', () => {
+  const view = { ways: ['yours', 'highland', 'import', 'warm'], figures: figures() };
+  const folds = foldsOf(view);
+  assert.deepEqual(folds.map((f) => [f.title, f.open, f.figures.length]), [
+    ['Shared by every way', true, 8], ['Your container', true, 16], ['Highland grower', false, 14], ['Import and resell', false, 3], ['Warm strain', false, 13],
+  ]);
+  assert.equal(plain(foldHead(folds[4])), 'Warm strain · 13 figures · all research');
+  folds[4].figures[0].source = 'owner';
+  folds[4].figures[1].source = 'owner';
+  assert.equal(plain(foldHead(folds[4])), 'Warm strain · 13 figures · 2 you set');
+  folds[0].figures[4].source = 'settings';
+  assert.equal(plain(foldHead(folds[0])), 'Shared by every way · 8 figures', 'neither set nor all research');
+});
+
+test('the tags, and where a figure applies', () => {
+  assert.deepEqual(plain([
+    tagText({ source: 'owner' }), tagText({ source: 'runs', runs: { count: 4 } }), tagText({ source: 'runs', runs: { count: 1 } }),
+    tagText({ source: 'runs', runs: { from: 'crop' } }), tagText({ source: 'simulator' }), tagText({ source: 'settings' }), tagText({ source: 'research' }),
+  ]), ['You set', 'Your runs · 4 runs', 'Your runs · 1 run', 'Your runs', 'Simulator', 'Settings', 'Research']);
+  assert.deepEqual(['wage', 'price', 'yours.rent', 'yours.yieldG'].map((k) => appliesText(one(k), 'Container 1', 'lionsmane')),
+    ['Every room and crop', "Every room, Lion's mane", 'Container 1, every crop', "Container 1, Lion's mane"]);
+});
+
+test('the research note: confidence, range, its note and its sources (each a link)', () => {
+  const [note] = noteParts(one('yours.yieldG'), ctx);
+  assert.equal(plain(note.text), "Research, low confidence: 150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g.");
+  assert.deepEqual(note.sources.map((s) => `${s.title} ${s.year}`), ['October defaults 2026', 'Malaysiaaktif 2025', 'Nongji 2023', 'Europe PMC 2023', 'Stamets (archive.org) 1993']);
+  assert.equal(note.sources[1].url, 'https://malaysiaaktif.my/2025/04/cendawan-kobis-bunga-tarik-perhatian-penduduk-seberang-perak');
+  assert.equal(noteParts(one('import.buyHours'), ctx)[0].sources, undefined, 'a placeholder with no source');
+});
+
+test('Your runs\' notes: yield, price tied and farm-wide, block price with batches left out, electricity, blocks, the loss in the yield', () => {
+  const runs = { count: 4, from: at('2026-08-12'), to: at('2026-10-30') };
+  const note = (key, f) => plain(noteParts(one(key, { source: 'runs', ...f }), ctx).map((n) => n.text));
+  assert.deepEqual(note('yours.yieldG', { value: 227.4, runs: { ...runs, kg: 1592, blocks: 7000 } }),
+    ["Your runs: 4 finished runs of Lion's mane in Container 1, 12 Aug – 30 Oct: 1,592.0 kg from 7,000 blocks put in (227 g a block, lost blocks counted)."]);
+  assert.deepEqual(note('price', { runs: { ...runs, kg: 1480, total: 81400, farmWide: false } }), ['Your runs: 1,480.0 kg sold for RM 81,400.00.']);
+  assert.deepEqual(note('price', { runs: { ...runs, kg: 1480, total: 81400, farmWide: true, until: at('2026-11-13') } }),
+    ["Your sales: Lion's mane sold farm-wide 12 Aug – 13 Nov, 1,480.0 kg for RM 81,400.00 (no sale was tied to these runs)."]);
+  assert.deepEqual(note('blockPrice', { runs: { count: 4, blocks: 7000, batches: 5, batchesLeftOut: 2 } }), ['Your runs: 7,000 blocks in 5 batches. · 2 batches without a price left out.']);
+  assert.deepEqual(note('blockPrice', { runs: { count: 4, blocks: 1000, batches: 1, batchesLeftOut: 0 } }), ['Your runs: 1,000 blocks in 1 batch.']);
+  assert.deepEqual(note('yours.kwhBlock', { runs: { count: 4, kWh: 3412.6, days: 140, blocks: 7000 } }), ['Your runs: 3,412.6 kWh measured over 140 days for 7,000 blocks.']);
+  assert.deepEqual(note('yours.blocks', { runs: { from: 'crop' } }), ["Container 1's blocks now (its Crop tab)."]);
+  assert.deepEqual(note('yours.blocks', { runs: { from: 'run', at: at('2026-08-12') } }), ["Container 1's last run, 12 Aug."]);
+  assert.deepEqual(note('yours.loss', { value: 0, runs, notes: ['loss-in-yield'] }), ["Counted in your yield: your runs' kg a block is over every block put in."]);
+});
+
+test('the owner\'s, Settings\', a pending day, a part not read and a loss counted twice', () => {
+  const notes = (f) => plain(noteParts(f, ctx));
+  assert.deepEqual(notes(one('yours.yieldG', { source: 'owner', value: 250, at: at('2026-11-06'), real: { value: 227.4, source: 'runs' } })),
+    [{ text: 'You set this on 6 Nov · Your runs: 227 g.' }]);
+  assert.deepEqual(notes(one('wage', { source: 'owner', value: 12, at: at('2026-11-06') })), [{ text: 'You set this on 6 Nov.' }]);
+  assert.deepEqual(notes(one('price', { source: 'settings', value: 55 })), [{ text: 'Your expected price in Settings → Yield.', link: { text: 'Settings', href: '#/settings' } }]);
+  assert.deepEqual(notes(one('tariff', { source: 'settings', value: 0.55 })), [{ text: 'Settings → Electricity price; Costs uses it too.' }]);
+  const pending = notes(one('yours.kwhBlock', { notes: ['pending'] }));
+  assert.deepEqual(pending[0], { text: 'Your runs: working out the energy…' });
+  assert.match(pending[1].text, /^Research, medium confidence/);
+  assert.deepEqual(notes(one('price', { notes: ['not-read:harvest', 'not-read:sales'] })).slice(0, 2), [
+    { text: "Couldn't read Harvest just now; using research.", tone: 'warn' }, { text: "Couldn't read Sales just now; using research.", tone: 'warn' },
+  ]);
+  assert.deepEqual(notes(one('yours.loss', { source: 'owner', value: 5, at: at('2026-11-06'), real: { value: 0, source: 'runs' }, notes: ['loss-twice'] })), [
+    { text: 'You set this on 6 Nov · Your runs: 0 %.' },
+    { text: "Your runs' yield already counts lost blocks; a loss here counts them twice.", tone: 'warn' },
+  ]);
+});
+
+test('the simulator\'s line: never, waiting, working, done (scaled past 90 days), failed, beside your runs', () => {
+  const kwh = one('yours.kwhBlock');
+  const line = (sim, f = kwh, more = {}) => plain(simText(sim, f, { ...ctx, life: 42, machinesNote: null, ...more }));
+  assert.deepEqual(line(null), { text: "Work it out runs Container 1's simulation with Lion's mane for one block life (42 days), with its machines from Setup. Nothing is switched.", action: 'Work it out' });
+  assert.equal(line(null, kwh, { machinesNote: "Fan flow at Simulate's default (not on Setup)", life: 120 }).text,
+    "Work it out runs Container 1's simulation with Lion's mane for one block life (90 days), with its machines from Setup. Fan flow at Simulate's default (not on Setup). Nothing is switched.");
+  assert.deepEqual(line({ status: 'waiting' }), { text: 'Waiting for another simulation…', action: null });
+  assert.deepEqual(line({ status: 'working', progress: 0.4 }), { text: 'Working it out · 40 %', action: null });
+  const done = { status: 'done', at: at('2026-11-06', 14) + 2 * 60_000, value: 0.478, kwh: 708.7, blocks: 1482, days: 42 };
+  assert.deepEqual(line(done, { ...kwh, source: 'simulator' }), { text: 'Simulator, 6 Nov 14:02: 708.7 kWh over 42 days for 1,482 blocks.', action: 'Work it out again' });
+  assert.equal(line({ ...done, days: 120, kwh: 800 }, { ...kwh, source: 'simulator' }).text, 'Simulator, 6 Nov 14:02: 800.0 kWh over 120 days (scaled from 90 days) for 1,482 blocks.');
+  assert.deepEqual(line({ status: 'failed', error: 'Stopped by a restart of the farm app' }),
+    { text: "Couldn't work it out: Stopped by a restart of the farm app. The figure before it stays.", tone: 'warn', action: 'Try again' });
+  assert.deepEqual(line(done, { ...kwh, source: 'runs' }), { text: 'Simulator, 6 Nov: 0.48 kWh.', action: 'Work it out again' });
+});
+
+test('the sources line: what is real named, the owner\'s counted; all research', () => {
+  const list = figures();
+  assert.equal(sourcesLine(list.map((f) => (f.key === 'tariff' ? { ...f, source: 'settings' } : f))), 'All research: set your own figures below.');
+  const mixed = list.map((f) => ({
+    ...f,
+    source: { 'yours.yieldG': 'runs', price: 'runs', 'yours.kwhBlock': 'simulator', wage: 'owner', 'yours.rent': 'owner', tariff: 'settings' }[f.key] ?? 'research',
+  }));
+  assert.equal(plain(sourcesLine(mixed)), 'From your runs: selling price, yield · Simulator: electricity · You set: 2 · The rest is research.');
+});
+
+test('a typed figure: checked as the server checks it; the values with the typed ones over the saved', () => {
+  assert.deepEqual(typed('price', ' 55 '), { value: 55 });
+  assert.deepEqual(typed('price', ''), { error: 'Selling price must be a number from 0 to 1000 RM/kg' });
+  assert.deepEqual(typed('price', 'abc'), { error: 'Selling price must be a number from 0 to 1000 RM/kg' });
+  assert.deepEqual(typed('yours.blocks', '1740.5'), { error: 'Blocks in the room must be a whole number from 1 to 100000 blocks' });
+  const values = valuesOf(figures(), { price: 60 });
+  assert.deepEqual([values.price, values.wage, values['yours.blocks']], [60, 10, 1482]);
+  assert.deepEqual([boxText(1740), boxText(38.23), boxText(0.40177), boxText(null)], ['1740', '38.23', '0.4018', '']);
+});
+
+test('the saved line, and the line of a part not read', () => {
+  assert.equal(plain(savedText('price', 55, 'Container 1', 'lionsmane')), 'Saved: Selling price, RM 55.00 a kg, every room.');
+  assert.equal(plain(savedText('wage', 12, 'Container 1', 'lionsmane')), 'Saved: Labour cost, RM 12.00 an hour, every room and crop.');
+  assert.equal(plain(savedText('yours.rent', 300, 'Container 1', 'lionsmane')), 'Saved: Rent, RM 300.00 a month, Container 1, every crop.');
+  assert.equal(plain(savedText('yours.yieldG', 230, 'Container 1', 'lionsmane')), "Saved: Yield per good block, all flushes, 230 g, Container 1 and Lion's mane.");
+  assert.equal(plain(partsLine({ sales: 'Something went wrong', energy: 'Something went wrong' })), "Couldn't read Sales and the energy just now · trying again every minute");
+  assert.equal(partsLine({}), null);
+});
+
+test('the draft: typing a figure recalculates at once; one that is not a figure keeps the last valid one and its refusal; a reply keeps what is typed', () => {
+  const draft = createDraft();
+  assert.deepEqual(draft.results(), [], 'nothing read yet');
+  const reply = { ways: ['yours', 'highland', 'import', 'warm'], figures: figures() };
+  draft.use(reply);
+  const profit = () => Math.round(draft.results()[0].profit * 100) / 100;
+  assert.equal(profit(), 2183.70, 'the research defaults (section 11.2, lion\'s mane)');
+  assert.deepEqual(draft.type('price', '55'), { value: 55 });
+  assert.ok(profit() > 2183.70 + 1000, 'RM 5 more a kg over 217 kg');
+  const at55 = profit();
+  assert.deepEqual(draft.type('price', '55x'), { error: 'Selling price must be a number from 0 to 1000 RM/kg' });
+  assert.equal(profit(), at55, 'the last valid figure stays in the sums');
+  assert.equal(draft.error('price'), 'Selling price must be a number from 0 to 1000 RM/kg');
+  assert.equal(draft.unsaved('price'), true);
+  draft.use({ ...reply, figures: figures().map((f) => (f.key === 'wage' ? { ...f, value: 12, source: 'owner' } : f)) });
+  assert.equal(draft.values().price, 55, 'a new reply keeps the typed figure');
+  assert.equal(draft.values().wage, 12);
+  draft.drop('price');
+  assert.deepEqual([draft.values().price, draft.error('price'), draft.unsaved('price')], [50, null, false]);
+});
+```
+
+- [ ] **Step 2: Run it to see it fail**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-figures.test.js`
+Expected: FAIL, `ERR_MODULE_NOT_FOUND` for `web/economics-figures.js`.
+
+- [ ] **Step 3: Write the Figures card's words**
+
+Create `web/economics-figures.js`:
+
+```js
+// The Economics page's Figures card (spec 2026-11-06-economics-design.md 8.1, 8.5, 8.6, 6.3 and 9.2): its folds, each
+// figure's tag, where it applies, its note, the simulator's line, the headline's sources line, and a typed figure checked
+// before it is sent. Pure: the figures are the server's view (server/economics.js), the words follow the One Format Rule.
+//   foldsOf · foldHead · tagText · appliesText · noteParts · simText · sourcesLine · valuesOf · typed · boxText · savedText
+//   · partsLine · createDraft
+
+import { checkFigure, figureOf, SOURCES, WAY_NAMES } from './economics-defaults.js';
+import { compare } from './economics-model.js';
+import { figureText, rangeText } from './economics-math.js';
+import { moneyText } from './costs-math.js';
+import { kgText } from './harvest-math.js';
+import { grouped } from './overview-math.js';
+import { farmDate, farmTime, dayMonth } from './tasks-math.js';
+import { cropShortName } from './crops.js';
+import { DOT } from './text-math.js';
+
+const NB = '\u00a0';
+const SETTINGS_HASH = '#/settings';
+const dateText = (ms) => dayMonth(farmDate(ms));
+const plural = (n, one, many) => `${grouped(n, 0)}${NB}${n === 1 ? one : many}`;
+
+// The folds (spec 8.1): Shared by every way and Your container open, then one per other shown way, closed.
+export function foldsOf(view) {
+  const ways = ['shared', ...view.ways];
+  return ways.map((way) => ({
+    way, title: way === 'shared' ? 'Shared by every way' : WAY_NAMES[way], open: way === 'shared' || way === 'yours',
+    figures: view.figures.filter((f) => f.way === way),
+  })).filter((f) => f.figures.length);
+}
+// A fold's head: "Lowland shed · 13 figures · all research" ("· 2 you set").
+export function foldHead(fold) {
+  const set = fold.figures.filter((f) => f.source === 'owner').length;
+  const tail = set ? `${set} you set` : fold.figures.every((f) => f.source === 'research') ? 'all research' : null;
+  return [fold.title, plural(fold.figures.length, 'figure', 'figures'), tail].filter(Boolean).join(DOT);
+}
+
+// The source tag: never colour alone (a neutral chip with its words).
+export function tagText(f) {
+  if (f.source === 'owner') return 'You set';
+  if (f.source === 'runs') return f.runs?.count ? `Your runs${DOT}${plural(f.runs.count, 'run', 'runs')}` : 'Your runs';
+  return { simulator: 'Simulator', settings: 'Settings', research: 'Research' }[f.source];
+}
+
+// Where a figure applies (its scope): "Every room and crop", "Every room, Lion's mane", "Container 1, every crop",
+// "Container 1, Lion's mane".
+export function appliesText(f, room, crop) {
+  const name = cropShortName(crop);
+  return { farm: 'Every room and crop', crop: `Every room, ${name}`, room: `${room}, every crop`, roomCrop: `${room}, ${name}` }[f.scope];
+}
+
+const SOURCE_WORDS = { runs: 'Your runs', simulator: 'Simulator', settings: 'Settings' };
+const PART_NAMES = { harvest: 'Harvest', sales: 'Sales', batches: 'Batches', energy: 'the energy' };
+const USING = { research: 'research', simulator: 'the simulator', settings: 'Settings', runs: 'your runs', owner: 'your figure' };
+const span = (runs) => `${dateText(runs.from)} – ${dateText(runs.to)}`;
+
+// What Your runs say of a figure (spec 8.6).
+function runsNote(f, { room, crop }) {
+  const r = f.runs;
+  switch (f.key) {
+    case 'yours.yieldG':
+      return `Your runs: ${plural(r.count, 'finished run', 'finished runs')} of ${cropShortName(crop)} in ${room}, ${span(r)}: ${kgText(r.kg)} from `
+        + `${plural(r.blocks, 'block', 'blocks')} put in (${figureText('yours.yieldG', f.value)} a${NB}block, lost blocks counted).`;
+    case 'price':
+      return r.farmWide
+        ? `Your sales: ${cropShortName(crop)} sold farm-wide ${dateText(r.from)} – ${dateText(r.until)}, ${kgText(r.kg)} for ${moneyText(r.total)} (no sale was tied to these runs).`
+        : `Your runs: ${kgText(r.kg)} sold for ${moneyText(r.total)}.`;
+    case 'blockPrice':
+      return `Your runs: ${plural(r.blocks, 'block', 'blocks')} in ${plural(r.batches, 'batch', 'batches')}.`
+        + (r.batchesLeftOut ? `${DOT}${plural(r.batchesLeftOut, 'batch', 'batches')} without a price left out.` : '');
+    case 'yours.kwhBlock':
+      return `Your runs: ${grouped(r.kWh, 1)}${NB}kWh measured over ${plural(r.days, 'day', 'days')} for ${plural(r.blocks, 'block', 'blocks')}.`;
+    case 'yours.blocks':
+      return r.from === 'crop' ? `${room}'s blocks now (its Crop tab).` : `${room}'s last run, ${dateText(r.at)}.`;
+    default:
+      return null;
+  }
+}
+
+// The note under a figure's row (spec 8.6): [{ text, tone?, link?: { text, href }, sources?: [{ title, url, year }] }].
+// ctx: { room, crop }.
+export function noteParts(f, ctx) {
+  const out = [];
+  for (const n of f.notes) {
+    if (n.startsWith('not-read:')) {
+      out.push({ text: `Couldn't read ${PART_NAMES[n.slice(9)]} just now; using ${USING[f.source]}.`, tone: 'warn' });
+    }
+  }
+  if (f.notes.includes('pending')) out.push({ text: 'Your runs: working out the energy…' });
+  if (f.source === 'owner') {
+    const real = f.real ? `${DOT}${SOURCE_WORDS[f.real.source]}: ${figureText(f.key, f.real.value)}` : '';
+    out.push({ text: `You set this on ${dateText(f.at)}${real}.` });
+  } else if (f.source === 'runs' && f.key === 'yours.loss') {
+    out.push({ text: 'Counted in your yield: your runs\' kg a block is over every block put in.' });
+  } else if (f.source === 'runs') {
+    out.push({ text: runsNote(f, ctx) });
+  } else if (f.source === 'settings' && f.key === 'price') {
+    out.push({ text: 'Your expected price in Settings → Yield.', link: { text: 'Settings', href: SETTINGS_HASH } });
+  } else if (f.source === 'settings') {
+    out.push({ text: 'Settings → Electricity price; Costs uses it too.' });
+  } else if (f.source === 'research') {
+    const r = f.research;
+    const sources = r.sources.map((id) => SOURCES[id]).filter(Boolean);
+    out.push({
+      text: `Research, ${r.confidence} confidence: ${rangeText(f.key, r.low, r.high)}.${r.note ? ` ${r.note}.` : ''}`,
+      ...(sources.length ? { sources } : {}),
+    });
+  }
+  if (f.notes.includes('loss-twice')) out.push({ text: 'Your runs\' yield already counts lost blocks; a loss here counts them twice.', tone: 'warn' });
+  return out;
+}
+
+// The Electricity per block row's simulator line (spec 6.3): { text, tone?, action (the button's words) or null }. sim: the
+// view's; f: the kwhBlock figure; ctx: { room, crop, life (days), machinesNote }.
+export function simText(sim, f, { room, crop, life, machinesNote }) {
+  const days = Math.min(90, Math.max(1, Math.round(life)));
+  const intro = `Work it out runs ${room}'s simulation with ${cropShortName(crop)} for one block life (${plural(days, 'day', 'days')}), `
+    + `with its machines from Setup.${machinesNote ? ` ${machinesNote}.` : ''} Nothing is switched.`;
+  if (!sim) return { text: intro, action: 'Work it out' };
+  if (sim.status === 'waiting') return { text: 'Waiting for another simulation…', action: null };
+  if (sim.status === 'working') return { text: `Working it out${DOT}${Math.round((sim.progress ?? 0) * 100)}${NB}%`, action: null };
+  if (sim.status === 'failed') return { text: `Couldn't work it out: ${sim.error}. The figure before it stays.`, tone: 'warn', action: 'Try again' };
+  if (f.source !== 'simulator') {
+    return { text: `Simulator, ${dateText(sim.at)}: ${figureText('yours.kwhBlock', sim.value)}.`, action: 'Work it out again' };
+  }
+  const scaled = sim.days > 90 ? ' (scaled from 90 days)' : '';
+  return {
+    text: `Simulator, ${dateText(sim.at)} ${farmTime(sim.at)}: ${grouped(sim.kwh, 1)}${NB}kWh over ${plural(sim.days, 'day', 'days')}${scaled} for ${plural(sim.blocks, 'block', 'blocks')}.`,
+    action: 'Work it out again',
+  };
+}
+
+// The headline card's sources line (spec 8.1): "From your runs: yield, selling price · Simulator: electricity · You set: 2 ·
+// The rest is research." ("All research: set your own figures below." when none is real.)
+const SHORT = { 'yours.yieldG': 'yield', price: 'selling price', blockPrice: 'block price', 'yours.kwhBlock': 'electricity', 'yours.blocks': 'blocks' };
+export function sourcesLine(figures) {
+  const of = (source) => figures.filter((f) => f.source === source && SHORT[f.key]).map((f) => SHORT[f.key]);
+  const set = figures.filter((f) => f.source === 'owner').length;
+  const parts = [
+    of('runs').length ? `From your runs: ${of('runs').join(', ')}` : null,
+    of('simulator').length ? `Simulator: ${of('simulator').join(', ')}` : null,
+    of('settings').length ? `Settings: ${of('settings').join(', ')}` : null,
+    set ? `You set: ${set}` : null,
+  ].filter(Boolean);
+  return parts.length ? `${parts.join(DOT)}${DOT}The rest is research.` : 'All research: set your own figures below.';
+}
+
+// The figures' values by key (the model's input), with the typed ones over them.
+export const valuesOf = (figures, typedValues = {}) => ({ ...Object.fromEntries(figures.map((f) => [f.key, f.value])), ...typedValues });
+
+// A figure as typed: { value } or { error } (the server's words, spec 4.2).
+export function typed(key, text) {
+  const t = String(text).trim();
+  const value = t === '' ? NaN : Number(t);
+  const error = checkFigure(key, value);
+  return error ? { error } : { value };
+}
+// The box's text: the value without grouping ("1740", "38.23").
+export const boxText = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Math.round(v * 10_000) / 10_000) : '');
+
+// The polite line after a save: "Saved: Selling price, RM 55.00 a kg, every room."
+export function savedText(key, value, room, crop) {
+  const f = figureOf(key);
+  const where = { farm: 'every room and crop', crop: 'every room', room: `${room}, every crop`, roomCrop: `${room} and ${cropShortName(crop)}` }[f.scope];
+  return `Saved: ${f.label}, ${figureText(key, value)}, ${where}.`;
+}
+
+// The warning at the top of Figures when a part was not read (spec 9.2), or null.
+export function partsLine(errors) {
+  const parts = Object.keys(errors ?? {}).filter((p) => PART_NAMES[p]).map((p) => PART_NAMES[p]);
+  return parts.length ? `Couldn't read ${parts.join(' and ')} just now${DOT}trying again every minute` : null;
+}
+
+// The figures as the page holds them while the owner types (spec 8.5, 9.1): the last reply's, with each box's last valid
+// figure over it until it is saved, put back or refused; a box whose text is not a figure keeps its last valid one in the
+// sums and its refusal. A new reply keeps what is typed. → { use(reply), type(key, text), drop(key), error(key),
+// unsaved(key), values(), results() }.
+export function createDraft() {
+  let figures = [];
+  let ways = ['yours'];
+  const typedValues = {};
+  const errors = {};
+  return {
+    use(reply) {
+      figures = reply.figures;
+      ways = reply.ways;
+    },
+    type(key, text) {
+      const t = typed(key, text);
+      if ('value' in t) {
+        typedValues[key] = t.value;
+        delete errors[key];
+      } else {
+        errors[key] = t.error;
+      }
+      return t;
+    },
+    drop(key) {
+      delete typedValues[key];
+      delete errors[key];
+    },
+    error: (key) => errors[key] ?? null,
+    unsaved: (key) => key in typedValues,
+    values: () => valuesOf(figures, typedValues),
+    results() {
+      return figures.length ? compare(valuesOf(figures, typedValues), ways) : [];
+    },
+  };
+}
+```
+
+- [ ] **Step 4: Run it to see it pass**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-figures.test.js`
+Expected: PASS, 10 tests. Then `npm test`: 2992 tests, 0 fail.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add web/economics-figures.js tests/web-economics-figures.test.js
+git commit -m "Economics: the Figures card's words (folds, tags, where a figure applies, every note, the simulator's line, the sources line, the saved line) and the draft of typed figures checked as the server checks them"
+```
+
+---
+
+### Task 11: The page, its mount and its styles (spec 8, 9)
+
+**Files:**
+- Create: `web/economics-page.js`
+- Modify: `web/app.js` (two marked lines)
+- Modify: `web/styles.css` (the `.ec-` block at the end)
+- Modify: `tests/web-roles.test.js` (the page in `OWNER_ONLY`: a worker never reaches it)
+- Test: `tests/web-economics-page.test.js`
+
+The page reuses the Summary's reader (`createReader`: a stale answer dropped, an older app stops the reads) and `keepFocus` from `web/business-page.js`. Figure rows are built once per room, crop and set of figures and updated in place after, so a repaint never rewrites the box being typed in. On a phone the comparison is one small table a way (CSS shows `.ec-desk` or `.ec-phone`).
+
+- [ ] **Step 1: Write the failing test**
+
+Create `tests/web-economics-page.test.js`:
+
+```js
+// The Economics page (web/economics-page.js, spec 2026-11-06-economics-design.md 8 and 9): its mount under the strip, its
+// reads and live updates, the cards in order, the folds and rows, typing and saving, the phone's blocks and the .ec- styles.
+// The typing (the draft) and the reads (createReader, keepFocus) run for real in their own tests
+// (web-economics-figures, web-business-page); here the page's use of them is checked in its source.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const src = (name) => readFileSync(new URL(`../web/${name}`, import.meta.url), 'utf8');
+const page = src('economics-page.js');
+const app = src('app.js');
+const css = src('styles.css');
+const ecCss = css.slice(css.indexOf('/* ---- Economics (spec 2026-11-06-economics-design.md 8) ---- */'), css.indexOf('/* ---- end Economics ---- */'));
+
+test('the router mounts it under the strip with the address\'s room and crop; its title', () => {
+  assert.ok(app.includes("import * as economics from './economics-page.js'; // ---- Economics ----"));
+  assert.ok(app.includes(": route.name === 'economics' ? economics.mount(page, { room: route.room, crop: route.crop }) // ---- Economics ----"));
+  assert.ok(page.includes('<h1 class="page-title" tabindex="-1">Economics</h1>'));
+  assert.ok(page.includes('What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in.'));
+  assert.ok(page.includes("document.title = 'Economics · Mushroom farm';"));
+});
+
+test('it reads again on the events, a room\'s crops or name, the stream\'s return and a timer; stale answers dropped, an older app stops', () => {
+  assert.ok(page.includes("const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs'].filter((type) => EVENT_TYPES.includes(type));"));
+  assert.ok(page.includes("live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }),"));
+  assert.ok(page.includes('live.onStatus((up) => { if (up) reload.call(); }),'));
+  assert.ok(page.includes("live.on('simulation', (d) => {"), 'the progress of its own run');
+  assert.ok(page.includes('const reader = createReader({'), 'the Summary\'s reader: a sequence drops a stale answer, a missing route stops');
+  assert.ok(page.includes('delay: () => fallbackMs(REFRESH_MS, live.connected()),'));
+  assert.ok(page.includes('if (key === painted) return; // the same answer: nothing to paint'));
+  assert.ok(page.includes("if (err.status === 404 && err.message === 'Room not found' && want.room !== null) {"));
+  assert.ok(page.includes('That room is gone; showing ${reply.room.name}.'));
+});
+
+test('the cards in order: the headline, A month, each way, Figures; the selects; no rooms; the banner', () => {
+  const at = (s) => page.indexOf(s);
+  assert.ok(at('<label for="ec-room">Room</label>') < at('<label for="ec-crop">Crop</label>'));
+  assert.ok(at('class="card ec-headline"') < at('<h2 id="ec-compare-title">A month, each way</h2>'));
+  assert.ok(at('<h2 id="ec-compare-title">A month, each way</h2>') < at('<h2 id="ec-figures-title">Figures</h2>'));
+  assert.ok(page.includes('No rooms yet. Economics plans with one of your rooms.'));
+  assert.ok(page.includes('Rooms, to add one'));
+  assert.ok(page.includes('<div class="banner" role="alert" hidden>'));
+  assert.ok(page.includes("const keepAddress = () => history.replaceState(null, '', economicsHash({ room: reply.room?.id ?? null, crop: reply.crop }));"));
+});
+
+test('typing works the money out at once; a save on leaving the box; a refusal under it; no answer keeps it, not saved; Back to default', () => {
+  assert.ok(page.includes("box.addEventListener('input', () => onType(f.key, box));"));
+  assert.ok(page.includes("box.addEventListener('change', () => onSave(f.key, box));"));
+  assert.ok(page.includes('if (t.error) return; // the refusal is under the box; nothing is sent'));
+  assert.ok(page.includes("tag.textContent = 'Saving…';"));
+  assert.ok(page.includes("request('PUT', '/api/economics/figures', { room: reply.room.id, crop: reply.crop, key, value: t.value })"));
+  assert.ok(page.includes('notSaved.add(key); // the typed figure stays in the sums, marked not saved'));
+  assert.ok(page.includes("box.setAttribute('aria-invalid', 'true');"));
+  assert.ok(page.includes("box.setAttribute('aria-describedby', error.id);"));
+  assert.ok(page.includes("request('DELETE', `/api/economics/figures?room=${reply.room.id}&crop=${reply.crop}&key=${encodeURIComponent(key)}`)"));
+  assert.ok(page.includes("request('POST', '/api/economics/work-out', { room: reply.room.id, crop: reply.crop })"));
+  assert.ok(page.includes("box.inputMode = def.whole ? 'numeric' : 'decimal';"));
+});
+
+test('a repaint keeps the cursor and never rewrites a box the owner is typing in', () => {
+  assert.ok(page.includes('const typing = box && document.activeElement === box;'));
+  assert.ok(page.includes('if (box && !typing && !draft.unsaved(f.key) && !draft.error(f.key)) box.value = boxText(f.value);'));
+  assert.ok(page.includes('keepFocus(container, () => {'));
+  assert.ok(page.includes("box.dataset.focusKey = `box:${f.key}`;"));
+  assert.ok(page.includes('if (next !== shape) {'), 'the rows are rebuilt only for another room, crop or set of figures');
+});
+
+test('the styles: one .ec- block, tokens only (no colour of its own), the phone\'s blocks and 44 px taps', () => {
+  assert.ok(ecCss.length > 500);
+  assert.doesNotMatch(ecCss, /#[0-9a-f]{3,8}\b|rgba?\(/i, 'tokens only');
+  assert.ok([...ecCss.matchAll(/^\s*([^@/\s][^{]*)\{/gm)].every((m) => m[1].split(/,(?![^(]*\))/).every((s) => /\.ec-/.test(s))), 'every rule is .ec-');
+  assert.ok(ecCss.includes('@media (max-width: 600px)'));
+  assert.ok(ecCss.includes('.ec-desk { display: none; }'));
+  assert.ok(ecCss.includes('.ec-phone { display: grid; gap: 16px; }'));
+  assert.ok(ecCss.includes('.ec-box { min-height: 44px; }'));
+  assert.ok(ecCss.includes('.ec-fig .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; }'));
+});
+```
+
+In `tests/web-roles.test.js` (a worker's pages are swept for owner routes; an owner's page is named with the guard that keeps a worker out) replace:
+
+```js
+  ['runs-page.js', 'Runs and a run', OWNER_PAGE], ['business-page.js', 'the Business summary', OWNER_PAGE],
+```
+
+with:
+
+```js
+  ['runs-page.js', 'Runs and a run', OWNER_PAGE], ['business-page.js', 'the Business summary', OWNER_PAGE],
+  ['economics-page.js', 'Economics', OWNER_PAGE], // ---- Economics ----
+```
+
+- [ ] **Step 2: Run it to see it fail**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-page.test.js`
+Expected: FAIL, `ENOENT` for `web/economics-page.js`.
+
+- [ ] **Step 3: Write the page**
+
+Create `web/economics-page.js`:
+
+```js
+// The Economics tab, #/business/economics?room=&crop= (spec 2026-11-06-economics-design.md 8 and 9): what one of the farm's
+// rooms makes a month with a crop, against the other ways to grow it or buy it in. The server gives the figures and where
+// each comes from; the page works the money out with the model (web/economics-model.js) on every keystroke, saves a figure
+// when its box is left, and runs Work it out. It asks again on the economics, harvest, sales, batches and costs events, a
+// room's crops or name, when the stream comes back, and on a timer (as the Summary); an answer older than the last asked is
+// dropped; an older farm app stops the reads.
+
+import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
+import { economicsHash } from './route.js';
+import { live, EVENT_TYPES } from './live.js';
+import { fallbackMs, createThrottle } from './live-math.js';
+import { keepFocus, createReader } from './business-page.js';
+import { ECONOMICS_CROPS, figureOf } from './economics-defaults.js';
+import { blockLife, inputsOf } from './economics-model.js';
+import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText } from './economics-math.js';
+import {
+  foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
+} from './economics-figures.js';
+import { cropShortName } from './crops.js';
+
+const REFRESH_MS = 60_000;
+const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs'].filter((type) => EVENT_TYPES.includes(type));
+const ROOMS_HASH = '#/overview'; // the Overview holds the rooms
+const CROP_SELECT = { oyster: 'Grey oyster', pink: 'Pink oyster', woodear: 'Black jelly', lionsmane: "Lion's mane" };
+
+function el(tag, className, content) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (content !== undefined && content !== null) node.textContent = content;
+  return node;
+}
+// A link in the Business pages' link look (Costs' .co-link).
+const link = (text, href, newTab = false) => {
+  const a = el('a', 'co-link', text);
+  a.href = href;
+  if (newTab) {
+    a.target = '_blank';
+    a.rel = 'noopener';
+  }
+  return a;
+};
+const idOf = (key) => `ec-f-${key.replace('.', '-')}`;
+// The words of a failed read: an older farm app, no answer, or the server's own.
+const failText = (err) => (routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message);
+
+const PAGE = `
+  <div class="page-head">
+    <div class="page-titles">
+      <h1 class="page-title" tabindex="-1">Economics</h1>
+      <p class="page-sub">What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in.</p>
+    </div>
+  </div>
+  <div class="ec-picks" data-picks hidden>
+    <div class="field ec-pick"><label for="ec-room">Room</label><select id="ec-room" data-room></select></div>
+    <div class="field ec-pick"><label for="ec-crop">Crop</label><select id="ec-crop" data-crop></select></div>
+  </div>
+  <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>
+  <p class="sr-only" data-said aria-live="polite"></p>
+  <p class="muted ec-gone" data-gone hidden></p>
+  <div class="card ec-empty" data-empty hidden>
+    <p class="none">No rooms yet. Economics plans with one of your rooms.</p>
+    <p class="ec-foot"><a class="co-link" href="${ROOMS_HASH}">Rooms, to add one</a></p>
+  </div>
+  <div class="ec-page" data-body hidden>
+    <section class="card ec-headline" aria-label="The month">
+      <p class="ec-lead" data-lead></p>
+      <p class="ec-second" data-second></p>
+      <p class="muted ec-sources" data-sources></p>
+    </section>
+    <section class="card ec-compare" aria-labelledby="ec-compare-title">
+      <div class="card-head"><h2 id="ec-compare-title">A month, each way</h2></div>
+      <div data-table></div>
+      <div class="ec-lines" data-lines></div>
+    </section>
+    <section class="card ec-figures" aria-labelledby="ec-figures-title">
+      <div class="card-head"><h2 id="ec-figures-title">Figures</h2></div>
+      <p class="muted ec-intro">Change a figure and the page works it out again as you type; it is saved for every device when you leave the box.</p>
+      <p class="ec-parts" data-parts hidden></p>
+      <div data-folds></div>
+    </section>
+  </div>`;
+
+let mountSeq = 0; // every mount gets a token; an answer that finds the token changed is dropped
+
+export function mount(container, { room = null, crop = null } = {}) {
+  const me = ++mountSeq;
+  const alive = () => me === mountSeq;
+  container.innerHTML = PAGE;
+  const q = (sel) => container.querySelector(sel);
+  const els = {
+    picks: q('[data-picks]'), room: q('[data-room]'), crop: q('[data-crop]'), banner: q('.banner'), bannerText: q('[data-banner-text]'),
+    said: q('[data-said]'), gone: q('[data-gone]'), empty: q('[data-empty]'), body: q('[data-body]'), lead: q('[data-lead]'),
+    second: q('[data-second]'), sources: q('[data-sources]'), table: q('[data-table]'), lines: q('[data-lines]'), parts: q('[data-parts]'),
+    folds: q('[data-folds]'),
+  };
+  document.title = 'Economics · Mushroom farm';
+  let want = { room, crop }; // the room and crop asked for (null: the server's choice)
+  let reply = null;
+  let draft = createDraft();
+  let painted = '';
+  let shape = ''; // the figure rows' keys and room and crop: the rows are rebuilt only when it changes
+  const said = (text) => { els.said.textContent = text; };
+
+  // ---- The headline and the comparison: worked out in the browser from the figures (and what is typed) ----
+  function paintMoney() {
+    const results = draft.results();
+    if (!results.length) return;
+    const values = draft.values();
+    const life = values.life;
+    const h = headline(results, { room: reply.room.name, crop: reply.crop, life });
+    els.lead.replaceChildren(...h.first.map((p) => (typeof p === 'string' ? p : el('span', 'co-loss', p.text))));
+    els.second.textContent = h.second ?? '';
+    els.second.hidden = !h.second;
+    els.sources.textContent = sourcesLine(reply.figures);
+    paintTable(results);
+    const lines = [
+      fillLine(results[0], { room: reply.room.name, blocks: values['yours.blocks'], first: values['yours.first'] }),
+      neverLine(results, life),
+      results.length > 1 ? sizedLine(reply.room.name, values['yours.blocks']) : null,
+      leftLine(reply.crop),
+    ].filter(Boolean);
+    els.lines.replaceChildren(...lines.map((t) => el('p', 'muted ec-line', t)));
+  }
+
+  // A desk table (a column a way) and, on a phone, one small table a way, Your container first (CSS shows one of them).
+  function paintTable(results) {
+    const table = rows(results);
+    const wrap = el('div', 'us-table-wrap ec-desk');
+    wrap.setAttribute('role', 'region');
+    wrap.setAttribute('aria-label', 'A month, each way');
+    wrap.tabIndex = 0;
+    wrap.dataset.focusKey = 'region-compare';
+    const t = el('table', 'us-table ec-table');
+    t.append(el('caption', 'sr-only', 'A month, each way'));
+    const head = el('tr');
+    const corner = el('th', '');
+    corner.scope = 'col';
+    corner.append(el('span', 'sr-only', 'Figure'));
+    head.append(corner);
+    for (const r of results) {
+      const th = el('th', 'num');
+      th.scope = 'col';
+      th.append(el('span', 'ec-way', wayName(r.way)));
+      if (r.way === 'yours') th.append(el('span', 'ec-way-room', reply.room.name));
+      head.append(th);
+    }
+    const thead = el('thead');
+    thead.append(head);
+    const body = el('tbody');
+    for (const row of table) {
+      const tr = el('tr');
+      tr.dataset.row = row.key;
+      const th = el('th', '', row.label);
+      th.scope = 'row';
+      tr.append(th);
+      for (const c of row.cells) tr.append(cellNode('td', c));
+      body.append(tr);
+    }
+    t.append(thead, body);
+    wrap.append(t);
+    // the phone's: a block a way, its head the way's name with its profit
+    const phone = el('div', 'ec-phone');
+    results.forEach((r, i) => {
+      const block = el('section', 'ec-block');
+      const profit = table.find((x) => x.key === 'profit').cells[i];
+      const blockHead = el('div', 'ec-block-head');
+      const name = el('h3', 'ec-block-name', wayName(r.way));
+      if (r.way === 'yours') name.append(el('span', 'ec-way-room', reply.room.name));
+      blockHead.append(name, cellNode('p', profit, 'ec-block-profit'));
+      const bt = el('table', 'us-table ec-block-table');
+      bt.append(el('caption', 'sr-only', `${wayName(r.way)}: a month`));
+      const bb = el('tbody');
+      for (const row of table.filter((x) => x.key !== 'profit')) {
+        const tr = el('tr');
+        const th = el('th', '', row.label);
+        th.scope = 'row';
+        tr.append(th, cellNode('td', row.cells[i]));
+        bb.append(tr);
+      }
+      bt.append(bb);
+      block.append(blockHead, bt);
+      phone.append(block);
+    });
+    els.table.replaceChildren(wrap, phone);
+  }
+  // A cell: its figure, a loss in the critical text with "Loss" under it.
+  function cellNode(tag, c, extra = '') {
+    const node = el(tag, ['num', extra].filter(Boolean).join(' '));
+    node.append(c.tone === 'loss' ? el('span', 'co-loss', c.text) : c.text);
+    if (c.sub) node.append(el('span', 'ec-sub', c.sub));
+    return node;
+  }
+
+  // ---- The Figures card ----
+  // The rows are built when the room, crop or figures change; a repaint otherwise updates them in place and never rewrites
+  // a box the owner is typing in (its text and its unsaved figure stay).
+  function paintFigures() {
+    const line = partsLine(reply.errors);
+    els.parts.hidden = !line;
+    if (line) {
+      const retry = el('button', 'bz-quiet', 'Retry');
+      retry.type = 'button';
+      retry.dataset.focusKey = 'retry-parts';
+      retry.addEventListener('click', () => reader.load());
+      els.parts.replaceChildren(el('span', '', line), retry);
+    }
+    const next = JSON.stringify([reply.room.id, reply.crop, reply.figures.map((f) => f.key)]);
+    if (next !== shape) {
+      shape = next;
+      els.folds.replaceChildren(...foldsOf(reply).map(foldNode));
+    }
+    for (const fold of foldsOf(reply)) {
+      const summary = els.folds.querySelector(`[data-fold="${fold.way}"] > summary`);
+      if (summary) summary.textContent = foldHead(fold);
+      for (const f of fold.figures) updateRow(f);
+    }
+  }
+  function foldNode(fold) {
+    const d = el('details', 'ec-fold');
+    d.dataset.fold = fold.way;
+    d.open = fold.open;
+    const s = el('summary', 'part-title ec-fold-head', foldHead(fold));
+    d.append(s, ...fold.figures.map(rowNode));
+    return d;
+  }
+  function rowNode(f) {
+    const def = figureOf(f.key);
+    const row = el('div', 'ec-fig');
+    row.dataset.key = f.key;
+    const label = el(def.settings ? 'span' : 'label', 'ec-fig-label', def.label); // Settings' figure has no box to name
+    const field = el('div', 'ec-fig-field');
+    if (def.settings) {
+      field.append(el('span', 'ec-fig-value', ''), link('Change in Settings', '#/settings'));
+    } else {
+      const box = el('input', 'ec-box');
+      box.id = idOf(f.key);
+      label.htmlFor = box.id;
+      box.type = 'text';
+      box.inputMode = def.whole ? 'numeric' : 'decimal';
+      box.autocomplete = 'off';
+      box.dataset.focusKey = `box:${f.key}`;
+      box.addEventListener('input', () => onType(f.key, box));
+      box.addEventListener('change', () => onSave(f.key, box));
+      field.append(box);
+      field.append(el('span', 'ec-unit', def.unit)); // empty for flushes: the boxes stay in one column
+    }
+    const tag = el('span', 'ec-tag');
+    const error = el('p', 'ec-error');
+    error.id = `${idOf(f.key)}-error`;
+    error.hidden = true;
+    const note = el('div', 'ec-note');
+    const applies = el('p', 'muted ec-applies');
+    row.append(label, field, tag, error, note, applies);
+    if (f.key === 'yours.kwhBlock') row.append(el('div', 'ec-sim'));
+    return row;
+  }
+  // A row's tag, box, note, applies and (electricity per block) simulator line, from the figure as the reply has it.
+  function updateRow(f) {
+    const row = els.folds.querySelector(`[data-key="${f.key}"]`);
+    if (!row) return;
+    const box = row.querySelector('.ec-box');
+    const typing = box && document.activeElement === box;
+    if (box && !typing && !draft.unsaved(f.key) && !draft.error(f.key)) box.value = boxText(f.value);
+    const value = row.querySelector('.ec-fig-value');
+    if (value) value.textContent = figureText(f.key, f.value);
+    const tag = row.querySelector('.ec-tag');
+    if (!tag.dataset.saving) tag.textContent = draft.unsaved(f.key) && notSaved.has(f.key) ? 'Not saved' : tagText(f);
+    tag.dataset.source = f.source;
+    showError(f.key, row);
+    const note = row.querySelector('.ec-note');
+    const parts = noteParts(f, { room: reply.room.name, crop: reply.crop }).map(noteNode);
+    if (notSaved.has(f.key)) parts.unshift(retryNode(f.key));
+    if (f.source === 'owner') parts.push(backNode(f.key));
+    note.replaceChildren(...parts);
+    row.querySelector('.ec-applies').textContent = appliesText(f, reply.room.name, reply.crop);
+    const sim = row.querySelector('.ec-sim');
+    if (sim) paintSim(sim, f);
+  }
+  function noteNode(n) {
+    const p = el('p', `ec-note-line${n.tone === 'warn' ? ' ec-warn' : ' muted'}`, n.text);
+    if (n.link) p.append(' ', link(n.link.text, n.link.href));
+    if (n.sources) {
+      p.append(' Sources: ');
+      n.sources.forEach((s, i) => {
+        const words = [s.title, s.year].filter(Boolean).join(' ');
+        p.append(i ? ', ' : '', s.url ? link(words, s.url, true) : words);
+      });
+      p.append('.');
+    }
+    return p;
+  }
+  function backNode(key) {
+    const b = el('button', 'bz-quiet ec-back', 'Back to default');
+    b.type = 'button';
+    b.dataset.focusKey = `back:${key}`;
+    b.setAttribute('aria-label', `Back to default: ${figureOf(key).label}`);
+    b.addEventListener('click', () => onBack(key));
+    return b;
+  }
+  function retryNode(key) {
+    const p = el('p', 'ec-note-line ec-warn', "Couldn't save");
+    const b = el('button', 'bz-quiet', 'Retry');
+    b.type = 'button';
+    b.dataset.focusKey = `retry:${key}`;
+    b.addEventListener('click', () => {
+      const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
+      if (box) onSave(key, box);
+    });
+    p.append(' · ', b);
+    return p;
+  }
+  function showError(key, row = els.folds.querySelector(`[data-key="${key}"]`)) {
+    const box = row?.querySelector('.ec-box');
+    const error = row?.querySelector('.ec-error');
+    if (!box || !error) return;
+    const text = serverErrors.get(key) ?? draft.error(key);
+    error.textContent = text ?? '';
+    error.hidden = !text;
+    if (text) {
+      box.setAttribute('aria-invalid', 'true');
+      box.setAttribute('aria-describedby', error.id);
+    } else {
+      box.removeAttribute('aria-invalid');
+      box.removeAttribute('aria-describedby');
+    }
+  }
+
+  // The Electricity per block row's Work it out line (spec 6.3).
+  let simSaid = null; // the run "Working it out" was said for
+  function paintSim(node, f) {
+    const values = draft.values();
+    const s = simText(reply.sim, f, {
+      room: reply.room.name, crop: reply.crop, life: blockLife(inputsOf(values, 'yours')), machinesNote: reply.machinesNote,
+    });
+    const p = el('p', `ec-note-line${s.tone === 'warn' ? ' ec-warn' : ' muted'}`, s.text);
+    p.dataset.simLine = '';
+    const parts = [p];
+    if (s.action) {
+      const b = el('button', 'bz-quiet ec-work', s.action);
+      b.type = 'button';
+      b.dataset.focusKey = 'work-out';
+      b.addEventListener('click', onWorkOut);
+      parts.push(b);
+    }
+    node.replaceChildren(...parts);
+    const working = reply.sim && (reply.sim.status === 'working' || reply.sim.status === 'waiting');
+    if (working && simSaid !== reply.sim.simId) {
+      simSaid = reply.sim.simId;
+      said('Working it out');
+    }
+  }
+
+  // ---- Typing, saving, back to default, Work it out ----
+  const serverErrors = new Map(); // key → the server's refusal of the last save
+  const notSaved = new Set(); // keys whose save got no answer
+  function onType(key, box) {
+    serverErrors.delete(key);
+    draft.type(key, box.value);
+    showError(key);
+    paintMoney();
+  }
+  async function onSave(key, box) {
+    const t = draft.type(key, box.value);
+    if (t.error) return; // the refusal is under the box; nothing is sent
+    const row = els.folds.querySelector(`[data-key="${key}"]`);
+    const tag = row?.querySelector('.ec-tag');
+    if (tag) {
+      tag.dataset.saving = '1';
+      tag.textContent = 'Saving…';
+    }
+    try {
+      const next = await request('PUT', '/api/economics/figures', { room: reply.room.id, crop: reply.crop, key, value: t.value });
+      if (!alive()) return;
+      notSaved.delete(key);
+      draft.drop(key);
+      if (tag) delete tag.dataset.saving;
+      said(savedText(key, t.value, reply.room.name, reply.crop));
+      show(next);
+    } catch (err) {
+      if (!alive()) return;
+      if (tag) delete tag.dataset.saving;
+      if (err.status === 0) {
+        notSaved.add(key); // the typed figure stays in the sums, marked not saved
+      } else {
+        serverErrors.set(key, err.message);
+        draft.drop(key);
+      }
+      repaint();
+    }
+  }
+  async function onBack(key) {
+    try {
+      const next = await request('DELETE', `/api/economics/figures?room=${reply.room.id}&crop=${reply.crop}&key=${encodeURIComponent(key)}`);
+      if (!alive()) return;
+      draft.drop(key);
+      serverErrors.delete(key);
+      notSaved.delete(key);
+      show(next);
+      // the box shows the figure it fell to (a repaint leaves a focused box alone), and keeps the cursor
+      const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
+      if (box) {
+        box.value = boxText(reply.figures.find((f) => f.key === key)?.value);
+        box.focus({ preventScroll: true });
+      }
+      said(`${figureOf(key).label}: back to default.`);
+    } catch (err) {
+      if (alive()) fail(err);
+    }
+  }
+  async function onWorkOut() {
+    try {
+      const next = await request('POST', '/api/economics/work-out', { room: reply.room.id, crop: reply.crop });
+      if (alive()) show(next);
+    } catch (err) {
+      if (alive()) said(err.message);
+    }
+  }
+
+  // ---- Reads ----
+  const keepAddress = () => history.replaceState(null, '', economicsHash({ room: reply.room?.id ?? null, crop: reply.crop }));
+  function fillPicks() {
+    const rooms = reply.rooms.map((r) => {
+      const o = el('option', '', r.name);
+      o.value = String(r.id);
+      return o;
+    });
+    els.room.replaceChildren(...rooms);
+    els.room.value = String(reply.room.id);
+    if (!els.crop.options.length) {
+      els.crop.replaceChildren(...ECONOMICS_CROPS.map((c) => {
+        const o = el('option', '', CROP_SELECT[c]);
+        o.value = c;
+        return o;
+      }));
+    }
+    els.crop.value = reply.crop;
+  }
+  function repaint() {
+    keepFocus(container, () => {
+      paintMoney();
+      paintFigures();
+    });
+  }
+  // A reply: shown at once (a save's or a Work it out's) or from a read.
+  function show(next) {
+    els.banner.hidden = true;
+    if (next.room && reply && (next.room.id !== reply.room?.id || next.crop !== reply.crop)) {
+      draft = createDraft();
+      serverErrors.clear();
+      notSaved.clear();
+    }
+    reply = next;
+    if (!reply.room) {
+      els.picks.hidden = true;
+      els.body.hidden = true;
+      els.empty.hidden = false;
+      return;
+    }
+    const key = JSON.stringify(reply);
+    if (key === painted) return; // the same answer: nothing to paint
+    painted = key;
+    draft.use(reply);
+    els.empty.hidden = true;
+    els.picks.hidden = false;
+    els.body.hidden = false;
+    fillPicks();
+    keepAddress();
+    repaint();
+  }
+  // No answer: the banner says why; what was shown stays (a first read that fails shows the banner alone).
+  function fail(err) {
+    els.bannerText.textContent = failText(err);
+    els.banner.hidden = false;
+  }
+
+  const path = () => `/api/economics${want.room || want.crop ? `?${[want.room ? `room=${want.room}` : '', want.crop ? `crop=${want.crop}` : ''].filter(Boolean).join('&')}` : ''}`;
+  const reader = createReader({
+    read: () => request('GET', path()),
+    done: show,
+    failed(err) {
+      if (err.status === 404 && err.message === 'Room not found' && want.room !== null) {
+        want = { room: null, crop: want.crop }; // the address's room is gone: the first room instead
+        els.gone.hidden = false;
+        reader.load().then(() => { if (reply?.room) els.gone.textContent = `That room is gone; showing ${reply.room.name}.`; });
+        return;
+      }
+      fail(err);
+    },
+    delay: () => fallbackMs(REFRESH_MS, live.connected()),
+    alive,
+  });
+  const reload = createThrottle(() => { if (alive()) reader.load(); });
+  const offLive = [
+    ...LISTEN.map((type) => live.on(type, () => reload.call())),
+    live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }), // a run starts or ends; a room's name
+    live.on('simulation', (d) => {
+      // its progress words only; done or failed arrives as 'economics'
+      if (!reply?.sim || d.id !== reply.sim.simId || (d.status !== 'running' && d.status !== 'queued')) return;
+      reply.sim = { ...reply.sim, status: d.status === 'queued' ? 'waiting' : 'working', progress: d.progress };
+      const node = els.folds.querySelector('[data-key="yours.kwhBlock"] .ec-sim');
+      const f = reply.figures.find((x) => x.key === 'yours.kwhBlock');
+      if (node && f) keepFocus(container, () => paintSim(node, f));
+    }),
+    live.onStatus((up) => { if (up) reload.call(); }),
+  ];
+  const pick = () => {
+    want = { room: Number(els.room.value) || null, crop: els.crop.value || null };
+    els.gone.hidden = true;
+    reader.load();
+  };
+  els.room.addEventListener('change', pick); // the crop picked stays: the same crop in another room
+  els.crop.addEventListener('change', pick);
+  q('[data-retry]').addEventListener('click', () => reader.load());
+  reader.load();
+
+  return function unmount() {
+    mountSeq++;
+    reader.stop();
+    reload.cancel();
+    for (const off of offLive) off();
+  };
+}
+```
+
+- [ ] **Step 4: Mount it (`web/app.js`)**
+
+Replace:
+
+```js
+import * as summary from './business-page.js'; // ---- Summary ----
+```
+
+with:
+
+```js
+import * as summary from './business-page.js'; // ---- Summary ----
+import * as economics from './economics-page.js'; // ---- Economics ----
+```
+
+Replace:
+
+```js
+    : route.name === 'summary' ? summary.mount(page, {}) // ---- Summary ----
+```
+
+with:
+
+```js
+    : route.name === 'summary' ? summary.mount(page, {}) // ---- Summary ----
+    : route.name === 'economics' ? economics.mount(page, { room: route.room, crop: route.crop }) // ---- Economics ----
+```
+
+- [ ] **Step 5: The styles (`web/styles.css`, at the end)**
+
+Replace:
+
+```css
+/* ---- end Login ---- */
+```
+
+with:
+
+```css
+/* ---- end Login ---- */
+
+/* ---- Economics (spec 2026-11-06-economics-design.md 8) ---- */
+/* the room and crop: Calendar's labelled selects, side by side, stacked under 600 px */
+.ec-picks { display: flex; flex-wrap: wrap; gap: 0 16px; margin: 0 0 16px; }
+.ec-pick { margin: 0; min-width: 200px; }
+.ec-gone { margin: 0 0 12px; font-size: var(--fs-sm); }
+.ec-page { display: grid; gap: 16px; align-items: start; }
+/* the headline: the lead sentence, the best other way under it, then where the figures come from */
+.ec-lead { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.45; }
+.ec-second { margin: 6px 0 0; font-size: var(--fs-md); color: var(--ink-2); }
+.ec-sources { margin: 10px 0 0; font-size: var(--fs-sm); }
+/* the comparison: a column a way on a desk; the way's room muted under its name; a loss's word under its figure */
+.ec-table thead th { vertical-align: bottom; }
+.ec-way { display: block; }
+.ec-way-room { display: block; color: var(--muted); font-weight: 400; font-size: var(--fs-sm); }
+.ec-sub { display: block; color: var(--muted); font-size: var(--fs-sm); }
+.ec-table tr[data-row="profit"] :is(th, td) { font-weight: 700; border-top: 1px solid var(--border-strong); }
+.ec-table tr[data-row="costs"] :is(th, td) { font-weight: 600; }
+.ec-lines { margin-top: 10px; }
+.ec-line { margin: 4px 0 0; font-size: var(--fs-sm); }
+.ec-phone { display: none; }
+/* the figures: folds as Setup's parts; a row is its label, box and tag, then its note and where it applies */
+.ec-intro { margin: 0 0 8px; font-size: var(--fs-sm); }
+.ec-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 8px; color: var(--warning-text); font-size: var(--fs-sm); }
+.ec-fold { border-top: 1px solid var(--border); }
+.ec-fold-head { font-weight: 600; }
+.ec-fig { display: grid; grid-template-columns: minmax(0, 1fr) auto 10.5em; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.ec-fold > summary + .ec-fig { border-top: 0; }
+.ec-fig-label { font-weight: 500; }
+.ec-fig-field { display: flex; align-items: center; gap: 6px; }
+.ec-box { width: 9em; min-height: 36px; padding: 6px 10px; font: inherit; text-align: right; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
+.ec-box[aria-invalid="true"] { border-color: var(--critical-text); }
+.ec-unit { min-width: 6.5em; color: var(--muted); font-size: var(--fs-sm); }
+.ec-fig-value { font-variant-numeric: tabular-nums; }
+/* the source tag: a neutral mark chip, its words saying the source (never colour alone) */
+.ec-tag { justify-self: end; padding: 2px 10px; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.ec-tag[data-source="owner"] { background: var(--accent-soft); }
+.ec-error, .ec-note, .ec-applies, .ec-sim { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); }
+.ec-error { color: var(--critical-text); }
+.ec-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.ec-note-line { margin: 0; }
+.ec-warn { color: var(--warning-text); }
+.ec-sim { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ec-foot { margin: 10px 0 0; font-size: var(--fs-sm); }
+@media (max-width: 600px) {
+  .ec-pick { flex: 1 1 100%; }
+  /* the comparison: a block a way, Your container first, its head the way's name with its profit */
+  .ec-desk { display: none; }
+  .ec-phone { display: grid; gap: 16px; }
+  .ec-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .ec-block-name { margin: 0; font-size: var(--fs-md); }
+  .ec-block-profit { margin: 0; font-weight: 700; text-align: right; }
+  .ec-block-table tbody th { font-weight: 400; color: var(--ink-2); }
+  /* a figure: its label over its box; the tag beside the box */
+  .ec-fig { grid-template-columns: minmax(0, 1fr) auto; }
+  .ec-unit { min-width: 0; }
+  .ec-fig-label { grid-column: 1 / -1; }
+  .ec-box { min-height: 44px; }
+  .ec-fig .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; }
+}
+/* ---- end Economics ---- */
+```
+
+- [ ] **Step 6: Run the page's and the roles' tests**
+
+Run: `node --disable-warning=ExperimentalWarning --test tests/web-economics-page.test.js tests/web-roles.test.js tests/web-shell.test.js`
+Expected: PASS (web-economics-page 6 tests). Then `npm test`: 2998 tests, 0 fail.
+
+- [ ] **Step 7: Look at it once**
+
+Seed a look database and start a look server (port 19200, a gateway that does not exist, a throwaway file):
+
+```bash
+mkdir -p /tmp/economics && rm -f /tmp/economics/look.db*
+cat > /tmp/economics/seed.mjs <<'SEED'
+import { openDb } from '/home/foqcus/Documents/mushroom-farm/.claude/worktrees/economics/server/db.js';
+import { setOwnerPassword } from '/home/foqcus/Documents/mushroom-farm/.claude/worktrees/economics/server/owner.js';
+import { createSales } from '/home/foqcus/Documents/mushroom-farm/.claude/worktrees/economics/server/sales.js';
+const db = openDb('/tmp/economics/look.db');
+const DAY = 86400000;
+const now = Date.now();
+console.log(await setOwnerPassword(db, 'Ray', 'Tq7#vxR2pLm9!zKw'));
+const one = db.createRoom({ name: 'Container 1', length: 12, width: 2.35, height: 2.39, trhAddress: 1 }, now - 120 * DAY).id;
+const two = db.createRoom({ name: 'Container 2', length: 6, width: 2.35, height: 2.39, trhAddress: 2 }, now - 120 * DAY).id;
+db.setProgram(one, { ...db.getProgram(one), crops: [{ crop: 'lionsmane', blocks: 1400 }] }, { change: 'start', at: now - 90 * DAY });
+const run = db.openRun(one);
+for (let i = 0; i < 6; i++) db.insertHarvest({ roomId: one, runId: run.id, crop: 'lionsmane', stage: 'fruiting', flush: 1, blocks: 1400, kg: 50, pickedAt: now - (80 - i * 5) * DAY, worker: null, taskId: null, at: now - 80 * DAY });
+db.setProgram(one, { ...db.getProgram(one), crops: [] }, { change: 'end', at: now - 45 * DAY });
+db.setProgram(one, { ...db.getProgram(one), crops: [{ crop: 'lionsmane', blocks: 1482 }] }, { change: 'start', at: now - 40 * DAY });
+const sales = createSales({ db, now: () => now });
+const buyer = sales.addBuyer({ name: 'Kedai' }).id;
+sales.record({ soldAt: now - 70 * DAY, buyerId: buyer, lines: [{ crop: 'lionsmane', kg: 120, priceKg: 48, roomId: one }] });
+db.setProgram(two, { ...db.getProgram(two), crops: [{ crop: 'oyster', blocks: 600 }] }, { change: 'start', at: now - 10 * DAY });
+db.close();
+console.log('seeded');
+SEED
+node --disable-warning=ExperimentalWarning /tmp/economics/seed.mjs
+FARM_DB=/tmp/economics/look.db FARM_PORT=19200 FARM_GATEWAY=127.0.0.1:19201 node --disable-warning=ExperimentalWarning server/main.js
+```
+
+Expected: `{ id: 1, name: 'Ray' }`, `seeded`, then `Farm app on http://localhost:19200 (database /tmp/economics/look.db, gateway 127.0.0.1:19201, reading every 5 s)`. Sign in as Ray with that password and open `#/business/economics`:
+
+| Check | See |
+|---|---|
+| The strip | Seven tabs, Economics last and current; the address becomes `?room=1&crop=lionsmane` |
+| Headline | "Lion's mane in Container 1: RM … a month, break-even RM … a kg, pays back in … months." then "A highland grower makes RM 2,215.14 on a fifth of the equipment."; the sources line names selling price, blocks and yield from your runs |
+| Typing | Type `60x` in Selling price: the headline moves at once with RM 60, the refusal shows under the box; delete the `x` and press Enter: "You set", the note "You set this on … · Your runs: RM 48.00 a kg." and **Back to default**; Back to default puts 48 back in the box, the cursor on it |
+| Work it out | On Electricity per block: "Working it out · …%", then within about 10 s "Simulator, …: … kWh over 42 days for 1,482 blocks." and the tag Simulator |
+| A room gone | `#/business/economics?room=99&crop=oyster`: "That room is gone; showing Container 1." and the address tidied to `?room=1&crop=oyster`; the headline "Grey oyster in Container 1: −RM 1,400.38 a month loss, …" |
+| Phone (390 px) | The selects stacked, one block a way, every box, select, button and link 44 px (`[...document.querySelectorAll('.ec-page :is(input, button, select, a, summary)')].filter((n) => n.offsetParent).filter((n) => n.getBoundingClientRect().height < 44).length` is `0`), no sideways scroll |
+
+Both themes, no console errors. Stop the server (Ctrl-C) and remove `/tmp/economics/look.db*` and `/tmp/economics/seed.mjs`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add web/economics-page.js web/app.js web/styles.css tests/web-economics-page.test.js tests/web-roles.test.js
+git commit -m "Economics: the page (the room and crop, the headline, a month each way as a table or a block a way on a phone, the Figures card in folds with each figure's source, typing worked out at once and saved on leaving the box, Back to default, Work it out), mounted under the Business strip, its .ec- styles"
+```
+
+---
+## Part 4: documents, the look and the reviews
+
+### Task 12: The documents (spec 10)
+
+**Files:**
+- Modify: `README.md` (the Business paragraph; an Economics paragraph after the Summary's)
+- Modify: `PRODUCT.md` (a capability row)
+- Modify: `DESIGN.md` (the Business tab strip row; an Economics section after the Summary's)
+- Modify: `docs/superpowers/specs/2026-11-06-economics-design.md` (section 13, what shipped)
+
+The contract's section 7 row for Economics is already written (2026-11-06, the owner's yes; version 26 since the login merged).
+
+- [ ] **Step 1: README**
+
+Replace:
+
+```markdown
+**Business.** The top bar's **Business** (`#/business`, between Harvest and Overview) holds six pages under one strip of tabs, Summary, Batches, Inventory, Sales, Costs and Runs, each described below; `#/business` is the Summary, always.
+```
+
+with:
+
+```markdown
+**Business.** The top bar's **Business** (`#/business`, between Harvest and Overview) holds seven pages under one strip of tabs, Summary, Batches, Inventory, Sales, Costs, Runs and Economics, each described below; `#/business` is the Summary, always.
+```
+
+Replace:
+
+```markdown
+Route: `GET /api/business/summary`. No database step. Spec: `docs/superpowers/specs/2026-11-06-business-summary-design.md`.
+```
+
+with:
+
+```markdown
+Route: `GET /api/business/summary`. No database step. Spec: `docs/superpowers/specs/2026-11-06-business-summary-design.md`.
+
+**Economics.** `#/business/economics` (`?room=<id>&crop=<key>`), the seventh Business tab: what one of your rooms makes a month with one crop (grey oyster, pink oyster, black jelly or lion's mane), against a lowland shed, a highland grower, importing and reselling and, for lion's mane, a warm strain, each sized to the room's blocks (only the ways that make sense for the crop; the page says why the others are left out). A headline gives the room's profit a month, its break-even price and when the equipment and the first fill of blocks pay back, then the best other way; a table compares every way a month by part (blocks, electricity, labour, packing, transport, rent, the equipment written off), on a phone one block a way. Under **Figures** every figure says where it comes from: **You set** (saved for every device, with **Back to default**), **Your runs** (the room's finished runs of the crop: the yield from Harvest, the price from Sales, the block price from Batches, the electricity per block from the measured energy), **Simulator**, **Settings** (the expected price and the electricity price) or **Research** (with its range, confidence and sources); the money is worked out again as you type. **Work it out** runs the room's simulation with the crop over one block life (one of the room's simulations, offline; nothing is switched) and saves the electricity per block it gives. The owner's only. Routes: `GET /api/economics?room=&crop=`, `PUT` and `DELETE /api/economics/figures`, `POST /api/economics/work-out`. Economics needs database 26: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-economics.db`). Spec: `docs/superpowers/specs/2026-11-06-economics-design.md` (its research: `2026-11-06-economics-defaults.md`).
+```
+
+- [ ] **Step 2: PRODUCT.md**
+
+Replace:
+
+```markdown
+| Summary | `#/business`: this month's money as Costs gives it and last month's result; what needs the owner (money owed, stock below zero or low, a use-by near, blocks ready for a room, blocks with no price), the most urgent first, each linking to where it is fixed; the runs in progress with their profit so far |
+```
+
+with:
+
+```markdown
+| Summary | `#/business`: this month's money as Costs gives it and last month's result; what needs the owner (money owed, stock below zero or low, a use-by near, blocks ready for a room, blocks with no price), the most urgent first, each linking to where it is fixed; the runs in progress with their profit so far |
+| Economics | `#/business/economics`: one room and crop's month against a lowland shed, a highland grower, importing and reselling and a warm strain; profit, break-even and payback; every figure tagged You set, Your runs, Simulator, Settings or Research (with its sources), edited in place; Work it out on the room's simulation |
+```
+
+- [ ] **Step 3: DESIGN.md**
+
+Replace:
+
+```markdown
+| Tab strip | Summary · Batches · Inventory · Sales · Costs · Runs, in that order, above the page's head: the room page's underline tabs as they are (`.room-tabs`; `web/business-tabs.js`, a `nav` named "Business"), the current one in `ink` on the 2 px `accent` line. On the six pages only: a batch, an item, Count stock and a run keep their back link, and a sheet for print (4-2, 4-5) has none (Runs: 2026-11-05; Summary: 2026-11-06) |
+```
+
+with:
+
+```markdown
+| Tab strip | Summary · Batches · Inventory · Sales · Costs · Runs · Economics, in that order, above the page's head: the room page's underline tabs as they are (`.room-tabs`; `web/business-tabs.js`, a `nav` named "Business"), the current one in `ink` on the 2 px `accent` line. On the seven pages only: a batch, an item, Count stock and a run keep their back link, and a sheet for print (4-2, 4-5) has none (Runs: 2026-11-05; Summary: 2026-11-06; Economics: 2026-11-10) |
+```
+
+Replace:
+
+```markdown
+| Styles | The `.sm-` block at the end of `styles.css`, tokens only; everything else is the other modules' classes |
+
+### Sign-in
+```
+
+with:
+
+```markdown
+| Styles | The `.sm-` block at the end of `styles.css`, tokens only; everything else is the other modules' classes |
+
+### Economics
+(2026-11-10; spec `docs/superpowers/specs/2026-11-06-economics-design.md`.) The **Economics** tab, `#/business/economics?room=&crop=`, the seventh of the Business strip: one room and crop's month against the other ways to grow it or buy it in. The owner's only. Where each part lives:
+
+| Part | Design |
+|---|---|
+| Head | "Economics", "What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in." Under it Calendar's labelled selects **Room** and **Crop** (Grey oyster, Pink oyster, Black jelly, Lion's mane), side by side, stacked up to 600 px; the choice goes into the address in place |
+| Headline | A card with no title: the room's month in `fs-lg` 600 ("Lion's mane in Container 1: RM 3,003.16 a month, break-even RM 38.23 a kg, pays back in 13 months."; a loss's figure only in `critical-text`), the best other way under it in `fs-md` `ink-2`, then a muted `fs-sm` line on where the figures come from ("From your runs: yield, selling price · Simulator: electricity · You set: 2 · The rest is research.") |
+| A month, each way | A data table, a column a way ("Your container" with the room's name muted under it, Lowland shed, Highland grower, Import and resell, Warm strain), a row a part, Profit a month bold over a `border-strong` rule, a loss in `critical-text` with "Loss" under it; its box scrolls sideways when it must (a named region, a Tab stop). Up to 600 px one block a way, Your container first: its name with its profit beside it, then a two-column table of the rest. Muted `fs-sm` lines under it: the first fill, "Never: …" when a way never pays back, the sizing, the ways not compared and why |
+| Figures | Folds (DESIGN's): **Shared by every way** and **Your container** open, one more per shown way closed, each head "Lowland shed · 13 figures · all research" ("· 2 you set"). A row: the label, a 9em right-aligned number box with its unit muted beside it (the boxes in one column), the source tag right (a neutral mark chip, 12 px 600: You set on `accent-soft`, Your runs · 4 runs, Simulator, Settings, Research), then muted `fs-sm` lines: the note (Research's range, confidence and sources as links opening a new tab; Your runs' kg, blocks, sales or batches; the date You set it and the real figure beside it, with a quiet **Back to default**) and where it applies ("Every room, Lion's mane"). The electricity price is Settings' text with **Change in Settings** in place of a box. A refusal under its box in `critical-text` (`aria-invalid`, `aria-describedby`); a warning note in `warning-text` |
+| Typing | Each keystroke works the headline and the table out again in the browser (the last valid figure stays in the sums while a box holds something that is not one); leaving the box saves it ("Saving…" in the tag; a polite live line "Saved: Selling price, RM 55.00 a kg, every room."); no answer leaves it "Not saved" with **Retry** |
+| Work it out | On the Electricity per block row: what it will run and that nothing is switched, then **Work it out**; "Waiting for another simulation…", "Working it out · 40 %" (from the `simulation` event), "Simulator, 6 Nov 14:02: 708.7 kWh over 42 days for 1,482 blocks." with **Work it out again**, or the failure in `warning-text` with **Try again** |
+| Live | Asks again on the `economics`, `harvest`, `sales`, `batches` and `costs` events, a room's crops or name, the stream's return and a 60 s timer; a repaint keeps the cursor and never rewrites a box being typed in; the same answer paints nothing |
+| Styles | The `.ec-` block at the end of `styles.css`, tokens only; 44 px boxes, selects, buttons and links on a phone |
+
+### Sign-in
+```
+
+- [ ] **Step 4: The spec's "what shipped"**
+
+At the end of `docs/superpowers/specs/2026-11-06-economics-design.md` replace:
+
+```markdown
+| The crops are the four the owner named | The other crops have no research; adding one is a defaults entry and a test |
+```
+
+with:
+
+```markdown
+| The crops are the four the owner named | The other crops have no research; adding one is a defaults entry and a test |
+
+## 13. What shipped beyond this spec
+
+The plan (`docs/superpowers/plans/2026-11-06-economics.md`) settled these where the spec was open; the build follows them.
+
+| Part | What shipped |
+|---|---|
+| Server files | Your runs (`server/economics-runs.js`), Work it out's body and figure (`server/economics-sim.js`) and the routes (`server/economics-api.js`) beside the service (`server/economics.js`); the Figures card's words in `web/economics-figures.js` beside `web/economics-math.js` |
+| `settleEconomicsSim` | Finds the row by room and crop (`{ roomId, crop, … }`), not by `simId`: a Work it out the simulation's checks refuse has no run and still fails its row |
+| The view | `sim.status` is `'waiting'` while the run is queued; `machinesNote` names the machines at Simulate's defaults; a figure's `research` carries its `sources` and `note` |
+| Pending energy | A day still being worked out leaves the electricity per block from the next source with the "working out the energy…" note; Harvest's own warm (started by `roomView`) publishes `harvest` when done, which the page hears |
+| Over 90 days | The kWh is scaled by the block life the run was started for (kept in memory; after a restart, the run's own days) |
+| A figure of a way not shown | Refused as "Unknown figure" |
+| The live stream | A worker's stream never carries `economics` (`OWNER_EVENTS` in `server/live.js`) |
+| The phone's comparison | One small table a way (its name and profit as its head) instead of ARIA-roled blocks |
+| Dates | Farm time (`farmDate`, `farmTime`), as the other Business pages |
+```
+
+- [ ] **Step 5: Run everything and commit**
+
+Run: `npm test`
+Expected: 2998 tests, 0 fail.
+
+```bash
+git add README.md PRODUCT.md DESIGN.md docs/superpowers/specs/2026-11-06-economics-design.md
+git commit -m "Economics: README (the seventh Business page and database 26), PRODUCT.md, DESIGN.md (the strip, the Economics section) and the spec's what shipped"
+```
+
+---
+
+### Task 13: The UI/UX audit and its fixes (run by the lead)
+
+The owner's standing step for a UI iteration: an Impeccable critique and audit, then the fixes, before the finish review.
+
+- [ ] **Step 1: Critique and audit.** Run the `impeccable` skill's critique and audit on the Economics tab against a look server (Task 11 Step 7's seed and command): desk 1440 px and phone 390 px (also 1024 and 360 px, spec 11.3), dark and light themes; states: a new farm (all research), a room with runs (the seed), Work it out working and failed (stop the server mid-run, start it again: "Stopped by a restart of the farm app"), a Sales failure (spec 9.2), a figure refused and one not saved (the server stopped while saving). Save the reports under `.impeccable/critique/`.
+- [ ] **Step 2: Fix.** Each finding fixed in its own commit ("Economics: the audit's …"), TDD where it is behaviour, `npm test` green after each; the DESIGN.md Economics section kept true.
+- [ ] **Step 3: Look again** at the four widths and both themes; no console errors.
+
+---
+
+### Task 14: The final whole-branch review (run by the lead)
+
+- [ ] **Step 1: Review.** A code review of the whole branch against `v2` (`git diff 938a61e...feat/economics`) and this plan: the golden numbers, the version 26 step, the owner's only (routes, the live stream, the worker's pages), the contract (no other module's way of working a figure changed), metric units and RM, the One Format Rule, the marked lines in shared files.
+- [ ] **Step 2: Fix** what it finds, each in its own commit, `npm test` green.
+- [ ] **Step 3: Hand over.** The branch is ready to merge into `v2`; it is not merged, pushed or deployed here. Stop with the branch, its last commit and the test count; the owner decides the merge and the deploy (copy the VM's database before the first start at version 26).
+
+---
+
+## Self-review
+
+| Check | Result |
+|---|---|
+| Spec coverage | Scope 1 and placement 2 → Tasks 8, 11; data 3 → Task 3; figures 4.1–4.3 → Tasks 2, 6; your runs 4.4, failures 4.5 → Task 4; model 5 → Task 1; Work it out 6.1 → Task 5, 6.2 → Task 6, 6.3 → Tasks 10, 11; API 7.1 → Task 7, view 7.2 → Task 6, events 7.3 → Tasks 6–8; page 8.1, 8.5 → Task 11, headline 8.2, rows 8.3, not compared 8.4, numbers 8.7 → Task 9, notes 8.6 → Task 10; live, states, edge cases 9 → Tasks 6, 10, 11; files 10 → every task, documents → Task 12; tests 11.1 → Tasks 1 and 9, 11.2 → Tasks 2 and 9, 11.3 → each task's test, the look → Tasks 11 and 13 |
+| Placeholders | None: every new file is given whole, every edit as its exact old and new text |
+| Names | `grow`, `trade`, `blockLife`, `housesOf`, `inputsOf`, `compare`, `HOUSE_BLOCKS`; `figureOf`, `figuresFor`, `placeOf`, `checkFigure`, `researchOf`, `sizeOf`, `WAYS`, `LEFT`, `WAY_NAMES`, `SOURCES`; `SIM_KEY` and the six db methods; `yourRuns`; `simBody`, `simFigure`, `DELETED_TEXT`; `createEconomics`, `EconomicsError`; `createEconomicsRoutes`; `OWNER_EVENTS`; `ECONOMICS_HASH`, `economicsHash`; the `economics-math.js` and `economics-figures.js` exports; `mount`: each used with the same name and shape in every later task |
+| Built | Applied task by task to a copy of `45e2d67` (`scratch/econ-plancheck`): each task's test fails before and passes after; `npm test` 2930, 2939, 2943, 2949, 2952, 2963, 2969, 2973, 2982, 2992, 2998, 2998 after Tasks 1–12, 0 fail; the page looked at on port 19200 at 1440 and 390 px, both themes: typing, saving, Back to default, Work it out to a saved figure, a gone room, no console errors |
