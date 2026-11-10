@@ -286,7 +286,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (n.sources) {
       p.append(' Sources: ');
       n.sources.forEach((s, i) => {
-        const words = [s.title, s.year].filter(Boolean).join(' ');
+        const words = [s.title, s.year].filter(Boolean).join('\u00a0'); // "Shroomy 2026" stays on one line
         p.append(i ? ', ' : '', s.url ? link(words, s.url, true) : words);
       });
       p.append('.');

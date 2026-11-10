@@ -2,7 +2,15 @@
 // 2026-11-06-economics-defaults.md, section 1, gives every value, range, confidence and source). Pure: imported by the farm
 // server (which resolves each figure's source) and by the page (which checks a typed figure before it is sent).
 //   ECONOMICS_CROPS · WAYS · LEFT · WAY_NAMES · FIGURES · figureOf(key) · figuresFor(crop) · placeOf(key, roomId, crop)
-//   checkFigure(key, value) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES
+//   checkFigure(key, value) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES · keepTogether(text)
+
+// A number keeps its unit at a wrap and RM or USD its number (a no-break space), and a range of numbers never breaks at its
+// dash (word joiners around it): the Units Rule, as text-math.js's keepUnits does for the climate's units. Every research
+// note goes through it, so a note is written here with plain spaces.
+const NB = '\u00a0';
+const UNIT_AFTER = /(?<=\d) (?=(?:°C|%|kWh|kg|g|m³|L\/h|W|hp|h|ft|sen|days?|months?|blocks?|flush(?:es)?|CNY|min|RM\/kg|RM)(?![\w/³]))/g;
+const MONEY_BEFORE = /(?<=\b(?:RM|USD)) (?=[\d−-])/g;
+export const keepTogether = (text) => text.replace(UNIT_AFTER, NB).replace(MONEY_BEFORE, NB).replace(/(?<=\d)–(?=\d)/g, '\u2060–\u2060');
 
 // The crops the owner named (spec 1), in the Crop select's order.
 export const ECONOMICS_CROPS = ['oyster', 'pink', 'woodear', 'lionsmane'];
@@ -97,12 +105,12 @@ export function checkFigure(key, value) {
   if (!f) return 'Unknown figure';
   if (f.settings) return `${f.label} is set in Settings`;
   const ok = typeof value === 'number' && Number.isFinite(value) && value >= f.min && value <= f.max && (!f.whole || Number.isInteger(value));
-  return ok ? null : `${f.label} must be ${f.whole ? 'a whole number' : 'a number'} from ${f.min} to ${f.max}${f.unit ? ` ${f.unit}` : ''}`;
+  return ok ? null : `${f.label} must be ${f.whole ? 'a whole number' : 'a number'} from ${f.min} to ${f.max}${f.unit ? `${NB}${f.unit}` : ''}`;
 }
 
 // ---- The research defaults (appendix section 1) ----
 // r(value, low, high, confidence, sources, note): one default; a figure's entry is one for every crop or one per crop.
-const r = (value, low, high, confidence, sources, note = '') => ({ value, low, high, confidence, sources, note });
+const r = (value, low, high, confidence, sources, note = '') => ({ value, low, high, confidence, sources, note: keepTogether(note) });
 const perCrop = (entries) => ({ perCrop: entries });
 const LIONS_42 = 'Set so the block life is the owner\'s earlier 42 days (35–56)';
 // The highland grower's and the warm strain's block life and handling (lion's mane only; appendix 1.6 and 1.7). The

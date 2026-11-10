@@ -10,7 +10,7 @@ import { ECONOMICS_CROPS, WAYS, figuresFor, researchOf } from '../web/economics-
 
 const NB = '\u00a0';
 // The words as the spec writes them: a number keeps its unit with a no-break space (the Units Rule), read here as a space.
-const plain = (v) => (typeof v === 'string' ? v.replaceAll(NB, ' ') : Array.isArray(v) ? v.map(plain) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)])) : v);
+const plain = (v) => (typeof v === 'string' ? v.replaceAll(NB, ' ').replaceAll('\u2060', '') : Array.isArray(v) ? v.map(plain) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)])) : v);
 const text = (h) => plain([h.first.map((p) => (typeof p === 'string' ? p : p.text)).join(''), h.second].filter(Boolean).join(' '));
 
 // The model page's inputs (section 11.1) as figures.
@@ -170,7 +170,7 @@ test('the spec review: RM through Costs\' formatters, RM 0.00 is not a loss, not
   const pays = headline([r('yours', 120, { paybackAll: Infinity })], { room: 'R', crop: 'lionsmane', life: 60 }).first[0];
   assert.ok(pays.includes(`60${NB}months`));
   assert.ok(neverLine([r('yours', 1, { paybackAll: Infinity })], 60).includes(`60${NB}months`));
-  assert.ok(leftLine('oyster').includes(`25${NB}\u00b0C`) && leftLine('oyster').includes(`3\u20134${NB}days`) && leftLine('woodear').includes(`18${NB}\u00b0C`));
+  assert.ok(leftLine('oyster').includes(`25${NB}\u00b0C`) && leftLine('oyster').includes(`3\u2060\u2013\u20604${NB}days`) && leftLine('woodear').includes(`18${NB}\u00b0C`));
 });
 
 test('the code review: a loss is decided as moneyText decides its sign (half a sen rounds away from zero)', () => {

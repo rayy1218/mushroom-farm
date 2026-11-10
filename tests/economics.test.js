@@ -150,7 +150,7 @@ test('setFigure and clearFigure refuse: a room not there, a bad crop, a figure n
   refused(() => s.econ.setFigure({ room: s.room, crop: 'x', key: 'price', value: 1 }), 400, 'Pick a crop', 'crop');
   refused(() => s.econ.setFigure({ room: s.room, crop: 'oyster', key: 'highland.yieldG', value: 1 }), 400, 'Unknown figure', 'key');
   refused(() => s.econ.setFigure({ room: s.room, crop: 'oyster', key: 'tariff', value: 1 }), 400, 'Electricity price is set in Settings', 'key');
-  refused(() => s.econ.setFigure({ room: s.room, crop: 'oyster', key: 'yours.loss', value: 100 }), 400, 'Blocks lost must be a number from 0 to 90 %', 'value');
+  refused(() => s.econ.setFigure({ room: s.room, crop: 'oyster', key: 'yours.loss', value: 100 }), 400, 'Blocks lost must be a number from 0 to 90\u00a0%', 'value');
   refused(() => s.econ.clearFigure({ room: s.room, crop: 'oyster', key: 'nope' }), 400, 'Unknown figure', 'key');
   assert.equal(fig(s.econ.clearFigure({ room: s.room, crop: 'oyster', key: 'price' }), 'price').source, 'research', 'nothing set: as it was');
   assert.deepEqual(s.heard, [], 'nothing saved, nothing told');

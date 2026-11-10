@@ -11,7 +11,7 @@ import {
 import { figuresFor, researchOf } from '../web/economics-defaults.js';
 
 const NB = ' ';
-const plain = (v) => JSON.parse(JSON.stringify(v).replaceAll(NB, ' '));
+const plain = (v) => JSON.parse(JSON.stringify(v).replaceAll(NB, ' ').replaceAll('\u2060', '')); // a range's word joiners too
 const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)), h - 8);
 const ctx = { room: 'Container 1', crop: 'lionsmane' };
 
@@ -122,9 +122,9 @@ test('the sources line: what is real named, the owner\'s counted; all research',
 
 test('a typed figure: checked as the server checks it; the values with the typed ones over the saved', () => {
   assert.deepEqual(typed('price', ' 55 '), { value: 55 });
-  assert.deepEqual(typed('price', ''), { error: 'Selling price must be a number from 0 to 1000 RM/kg' });
-  assert.deepEqual(typed('price', 'abc'), { error: 'Selling price must be a number from 0 to 1000 RM/kg' });
-  assert.deepEqual(typed('yours.blocks', '1740.5'), { error: 'Blocks in the room must be a whole number from 1 to 100000 blocks' });
+  assert.deepEqual(typed('price', ''), { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg' });
+  assert.deepEqual(typed('price', 'abc'), { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg' });
+  assert.deepEqual(typed('yours.blocks', '1740.5'), { error: 'Blocks in the room must be a whole number from 1 to 100000\u00a0blocks' });
   const values = valuesOf(figures(), { price: 60 });
   assert.deepEqual([values.price, values.wage, values['yours.blocks']], [60, 10, 1482]);
   assert.deepEqual([boxText(1740), boxText(38.23), boxText(0.40177), boxText(null)], ['1740', '38.23', '0.4018', '']);
@@ -150,9 +150,9 @@ test('the draft: typing a figure recalculates at once; one that is not a figure 
   assert.deepEqual(draft.type('price', '55'), { value: 55 });
   assert.ok(profit() > 2183.70 + 1000, 'RM 5 more a kg over 217 kg');
   const at55 = profit();
-  assert.deepEqual(draft.type('price', '55x'), { error: 'Selling price must be a number from 0 to 1000 RM/kg' });
+  assert.deepEqual(draft.type('price', '55x'), { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg' });
   assert.equal(profit(), at55, 'the last valid figure stays in the sums');
-  assert.equal(draft.error('price'), 'Selling price must be a number from 0 to 1000 RM/kg');
+  assert.equal(draft.error('price'), 'Selling price must be a number from 0 to 1000\u00a0RM/kg');
   assert.equal(draft.unsaved('price'), true);
   draft.use({ ...reply, figures: figures().map((f) => (f.key === 'wage' ? { ...f, value: 12, source: 'owner' } : f)) });
   assert.equal(draft.values().price, 55, 'a new reply keeps the typed figure');
@@ -169,7 +169,7 @@ test('the draft: a new room or crop clears what was typed; a save drops only the
   draft.type('price', '60');
   draft.type('wage', 'abc');
   draft.use({ ...reply, figures: list.slice() });
-  assert.deepEqual([draft.values().price, draft.error('wage')], [60, 'Labour cost must be a number from 0 to 200 RM an hour'], 'the same room and crop keeps it');
+  assert.deepEqual([draft.values().price, draft.error('wage')], [60, 'Labour cost must be a number from 0 to 200\u00a0RM an hour'], 'the same room and crop keeps it');
   draft.use({ ...reply, crop: 'pink' });
   assert.deepEqual([draft.unsaved('price'), draft.error('wage'), draft.values().price], [false, null, 50], 'a new crop clears it');
   draft.use({ ...reply, crop: 'pink' });

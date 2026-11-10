@@ -65,7 +65,7 @@ test('PUT and DELETE /api/economics/figures: saved, told, cleared; refusals in t
   assert.deepEqual([fig(put.body, 'price').value, fig(put.body, 'price').source], [55, 'owner']);
   assert.deepEqual(economics(seen), [{ roomId: room, crop: 'lionsmane' }]);
   assert.deepEqual(await call('PUT', '/api/economics/figures', { room, crop: 'lionsmane', key: 'price', value: 5000 }),
-    { status: 400, body: { error: 'Selling price must be a number from 0 to 1000 RM/kg', field: 'value' } });
+    { status: 400, body: { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg', field: 'value' } });
   assert.deepEqual(await call('PUT', '/api/economics/figures', { room, crop: 'lionsmane', key: 'nope', value: 1 }),
     { status: 400, body: { error: 'Unknown figure', field: 'key' } });
   assert.deepEqual(await call('PUT', '/api/economics/figures', { room, crop: 'lionsmane', key: 'tariff', value: 0.6 }),

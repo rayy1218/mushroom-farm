@@ -90,11 +90,11 @@ test('the figures: the shared ones, Your container\'s, then each shown way\'s; s
 
 test('checkFigure: a number in range passes; out of range, not a number or not whole is refused in the Settings rule\'s words', () => {
   assert.equal(checkFigure('price', 55), null);
-  assert.equal(checkFigure('price', 1001), 'Selling price must be a number from 0 to 1000 RM/kg');
-  assert.equal(checkFigure('price', '55'), 'Selling price must be a number from 0 to 1000 RM/kg');
-  assert.equal(checkFigure('yours.blocks', 1.5), 'Blocks in the room must be a whole number from 1 to 100000 blocks');
+  assert.equal(checkFigure('price', 1001), 'Selling price must be a number from 0 to 1000\u00a0RM/kg');
+  assert.equal(checkFigure('price', '55'), 'Selling price must be a number from 0 to 1000\u00a0RM/kg');
+  assert.equal(checkFigure('yours.blocks', 1.5), 'Blocks in the room must be a whole number from 1 to 100000\u00a0blocks');
   assert.equal(checkFigure('yours.flushes', 0), 'Flushes per block must be a whole number from 1 to 10');
-  assert.equal(checkFigure('yours.loss', 100), 'Blocks lost must be a number from 0 to 90 %');
+  assert.equal(checkFigure('yours.loss', 100), 'Blocks lost must be a number from 0 to 90\u00a0%');
   assert.equal(checkFigure('yours.loss', 90), null);
   assert.equal(checkFigure('tariff', 0.6), 'Electricity price is set in Settings');
   assert.equal(checkFigure('nope', 1), 'Unknown figure');
@@ -139,11 +139,11 @@ test('researchOf: racks fall back to the room\'s own blocks; blocks are capped a
 });
 
 test('checkFigure: the edges of a range, and what is not a finite number', () => {
-  const priceError = 'Selling price must be a number from 0 to 1000 RM/kg';
+  const priceError = 'Selling price must be a number from 0 to 1000\u00a0RM/kg';
   for (const v of [NaN, null, undefined, Infinity, -Infinity]) assert.equal(checkFigure('price', v), priceError, String(v));
   assert.equal(checkFigure('price', -0.01), priceError);
   assert.equal(checkFigure('price', 0), null);
   assert.equal(checkFigure('yours.turn', 0), null);
   assert.equal(checkFigure('yours.blocks', 100000), null);
-  assert.equal(checkFigure('yours.blocks', 100001), 'Blocks in the room must be a whole number from 1 to 100000 blocks');
+  assert.equal(checkFigure('yours.blocks', 100001), 'Blocks in the room must be a whole number from 1 to 100000\u00a0blocks');
 });

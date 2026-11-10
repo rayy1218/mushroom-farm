@@ -7,11 +7,12 @@ import { moneyText, perKgText } from './costs-math.js';
 import { kgText } from './harvest-math.js';
 import { grouped } from './overview-math.js';
 import { cropShortName } from './crops.js';
-import { figureOf, WAY_NAMES } from './economics-defaults.js';
+import { figureOf, WAY_NAMES, keepTogether } from './economics-defaults.js';
 import { HOUSE_BLOCKS } from './economics-model.js';
 
 const NB = '\u00a0'; // a number keeps its unit at a wrap (the Units Rule)
 const DASH = '—';
+const RANGE_DASH = '\u2060–\u2060';
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const cents = (v) => Math.sign(v) * Math.round(Math.abs(v) * 100); // a figure as it shows, its sign decided as moneyText decides it
 const beText = (v) => `${perKgText(v)} a${NB}kg`;
@@ -57,11 +58,11 @@ export function figureText(key, v) {
   if (!finite(v)) return DASH;
   return parts(key, v).join('');
 }
-// A research range: "150–400 g", "RM 8.00–13.00 a kg".
+// A research range: "150–400 g", "RM 8.00–13.00 a kg"; word joiners keep it whole at its dash.
 export function rangeText(key, low, high) {
   if (!finite(low) || !finite(high)) return DASH;
   const [before, a, after] = parts(key, low);
-  return `${before}${a}–${parts(key, high)[1]}${after}`;
+  return `${before}${a}${RANGE_DASH}${parts(key, high)[1]}${after}`;
 }
 
 // A way's name: as a column head, or in a sentence ("A highland grower", lower-cased after a comma).
@@ -157,4 +158,4 @@ const LEFT_WORDS = {
   woodear: `Not compared: a highland grower (growth slows sharply below 18${NB}°C).`,
   lionsmane: `Not compared: a lowland shed with the usual strain (it fruits at 18–24${NB}°C); the warm strain is the lowland shed for lion's mane.`,
 };
-export const leftLine = (crop) => LEFT_WORDS[crop] ?? null;
+export const leftLine = (crop) => (LEFT_WORDS[crop] ? keepTogether(LEFT_WORDS[crop]) : null);
