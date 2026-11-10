@@ -99,7 +99,8 @@ test('Work it out through the real simulations queue: a 10-block room over one d
   assert.equal(started.status, 202, JSON.stringify(started.body));
   assert.ok(['waiting', 'working'].includes(started.body.sim.status));
   assert.equal((await call('POST', '/api/economics/work-out', { room, crop: 'oyster' })).status, 409, 'one at a time');
-  for (let i = 0; i < 200 && economics(seen).length < 6; i++) await new Promise((r) => setTimeout(r, 50));
+  const ended = () => seen.some(([type, d]) => type === 'simulation' && (d.status === 'done' || d.status === 'failed'));
+  for (let i = 0; i < 200 && !ended(); i++) await new Promise((r) => setTimeout(r, 50)); // its run's end settles the row
   const v = (await call('GET', `/api/economics?room=${room}&crop=oyster`)).body;
   assert.equal(v.sim.status, 'done', JSON.stringify(v.sim));
   assert.deepEqual([v.sim.blocks, v.sim.days], [10, 1]);
@@ -124,19 +125,28 @@ test('built with the API, after the simulations queue: a Work it out left workin
   assert.deepEqual([v.sim.status, v.sim.error], ['failed', RESTART_TEXT]);
 });
 
-test('api.close stops the Economics service: a run ending after it settles nothing', (t) => {
+test('api.close stops the Economics service: a run ending while it is open settles; one ending after it, nothing', (t) => {
   const db = openDb(':memory:');
   t.after(() => db.close());
   const events = createEvents();
   const room = db.createRoom(ROOM, Date.now()).id;
   const api = createApi(db, null, null, null, null, null, events);
   const at = Date.now();
-  const run = db.createRun(room, { days: 1 }, at);
-  db.startEconomicsSim({ roomId: room, crop: 'oyster', simId: run.id, at });
+  const working = (crop) => {
+    const run = db.createRun(room, { days: 1 }, at);
+    db.startEconomicsSim({ roomId: room, crop, simId: run.id, at });
+    return run;
+  };
+  const end = (run) => {
+    db.finishRun(run.id, { status: 'failed', error: 'Stopped' }, at + 1);
+    events.publish('simulation', { id: run.id, status: 'failed' });
+  };
+  const [oyster, pink] = [working('oyster'), working('pink')];
+  end(oyster);
+  assert.deepEqual(db.economicsSimsWorking().map((row) => row.crop), ['pink'], 'listening while open: the oyster row settled');
   api.close();
-  db.finishRun(run.id, { status: 'failed', error: 'Stopped' }, at + 1);
-  events.publish('simulation', { id: run.id, status: 'failed' });
-  assert.equal(db.economicsSimsWorking().length, 1, 'no longer listening');
+  end(pink);
+  assert.deepEqual(db.economicsSimsWorking().map((row) => row.crop), ['pink'], 'no longer listening');
 });
 
 // Signs in Ali (a worker, PIN 482913) and Ray (the owner) on a login app. → their cookies.

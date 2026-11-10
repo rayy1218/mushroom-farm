@@ -34,7 +34,8 @@ const json = (res, status, data) => {
 // the stream, so a sign-in that ended is noticed up to one ping late (25 s). The browser's reconnect then meets the gate's
 // 401. With sign-in on, the gate's req.who counts the streams of each sign-in (sessionId) and person (id), and keeps
 // OWNER_RESERVE places from anyone not an owner; the 429s come before the 503. Without sign-in (no check, no req.who)
-// none of it applies. pingMs and maxClients are only replaced by tests.
+// none of it applies. A stream that is not an owner's (req.who a worker) never carries the events in OWNER_EVENTS; without
+// sign-in every stream is the owner's. pingMs and maxClients are only replaced by tests.
 export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, check = null, now = Date.now, log = console.error }) {
   const open = new Set(); // { res, off, ping, session, person }
   const perSession = new Map(); // session id → its open streams
