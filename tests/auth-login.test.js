@@ -11,18 +11,25 @@ const T = Date.UTC(2026, 10, 6, 2); // 10:00 on the farm
 const MIN = 60_000;
 const tokenOf = (cookie) => /^farm_session=([^;]+)/.exec(cookie)[1];
 
-async function setup(t, { check, notify } = {}) {
+// These tests are about counting, locks and races, not hashing (tests/auth.test.js covers hashSecret/checkSecret, and two tests
+// here stay on the real path with setup(t, { real: true })). So accounts get a cheap stand-in hash, compared exactly; a real hash
+// (one the server made, e.g. a changed password) still goes to the real checkSecret.
+const fakeHash = async (secret) => `fake$${secret}`;
+const fastCheck = async (secret, stored) => (stored.startsWith('fake$') ? stored === `fake$${secret}` : checkSecret(secret, stored));
+
+async function setup(t, { check, notify, real = false } = {}) {
+  const hash = real ? hashSecret : fakeHash;
   const db = openDb(':memory:');
   db.setWorkers([{ name: 'Ali', active: true }, { name: 'Nopin', active: true }, { name: 'Gone', active: true }]);
   const id = (n) => db.listWorkers().find((w) => w.name === n).id;
-  db.setSecret(id('Ali'), await hashSecret('482913'));
-  db.setSecret(id('Gone'), await hashSecret('482913'));
-  const ray = db.setOwner('Ray', await hashSecret('long enough password'));
+  db.setSecret(id('Ali'), await hash('482913'));
+  db.setSecret(id('Gone'), await hash('482913'));
+  const ray = db.setOwner('Ray', await hash('long enough password'));
   db.setWorkers(db.listWorkers().map((w) => ({ ...w, active: w.name !== 'Gone' })));
   let now = T;
   const lines = [];
   const notes = [];
-  const auth = createAuth({ db, now: () => now, log: (line) => lines.push(line), notify: notify ?? ((text) => { notes.push(text); }), ...(check ? { check } : {}) });
+  const auth = createAuth({ db, now: () => now, log: (line) => lines.push(line), notify: notify ?? ((text) => { notes.push(text); }), ...(real ? {} : { check: check ?? fastCheck }) });
   t.after(() => { auth.close(); db.close(); });
   const req = ({ address = '100.64.0.9', cookie, forwarded } = {}) => ({
     socket: { remoteAddress: address },
@@ -33,7 +40,7 @@ async function setup(t, { check, notify } = {}) {
 }
 
 test('the right PIN signs a worker in for 30 days: the reply, the cookie, the session (only the hash), the log', async (t) => {
-  const { db, auth, ali, req, res, lines } = await setup(t);
+  const { db, auth, ali, req, res, lines } = await setup(t, { real: true }); // the real hash and check, end to end
   const r = await auth.login(req(), { id: ali, secret: '482913' });
   assert.equal(r.status, 200);
   assert.deepEqual(r.body, { id: ali, name: 'Ali', role: 'worker' });
@@ -54,7 +61,7 @@ test("through Tailscale's https proxy (from this machine) the cookie is Secure; 
 });
 
 test("the right password signs an owner in for 7 days", async (t) => {
-  const { auth, ray, req } = await setup(t);
+  const { auth, ray, req } = await setup(t, { real: true }); // the real hash and check, end to end
   const r = await auth.login(req(), { id: ray, secret: 'long enough password' });
   assert.deepEqual([r.status, r.body.role], [200, 'owner']);
   assert.match(r.cookie, /Max-Age=604800$/);
@@ -199,12 +206,12 @@ test('a note that fails (throws or rejects) is logged; the sign-in answers as ev
 test('a sign-in in flight when the PIN changes: the same 401 as a wrong PIN, no session, not counted as a wrong try', async (t) => {
   let change = null;
   const check = async (secret, stored) => {
-    const right = await checkSecret(secret, stored);
+    const right = await fastCheck(secret, stored);
     if (change) { const c = change; change = null; await c(); }
     return right;
   };
   const { db, auth, ali, req, lines } = await setup(t, { check });
-  change = async () => db.setSecret(ali, await hashSecret('593024'));
+  change = async () => db.setSecret(ali, await fakeHash('593024'));
   assert.deepEqual(await auth.login(req(), { id: ali, secret: '482913' }), PIN_WRONG);
   assert.equal(db.accounts(T).find((a) => a.id === ali).sessions, 0);
   assert.match(lines.at(-1), / changed$/);
@@ -263,7 +270,7 @@ test('logout ends only this session', async (t) => {
 });
 
 test("an owner's own password: the current one needed; the next one checked; other browsers signed out, this one kept", async (t) => {
-  const { auth, ray, req, res } = await setup(t);
+  const { auth, ray, req, res } = await setup(t, { real: true }); // changePassword checks with the real checkSecret
   const here = `farm_session=${tokenOf((await auth.login(req(), { id: ray, secret: 'long enough password' })).cookie)}`;
   const there = `farm_session=${tokenOf((await auth.login(req(), { id: ray, secret: 'long enough password' })).cookie)}`;
   const me = auth.who(req({ cookie: here }), res());
@@ -326,7 +333,7 @@ function gated() {
   let gate = null;
   const check = async (secret, stored) => {
     if (secret === WRONG.secret && gate) await gate;
-    return checkSecret(secret, stored);
+    return fastCheck(secret, stored);
   };
   return { check, hold: () => { gate = new Promise((r) => { open = r; }); }, let: () => { gate = null; open(); } };
 }
@@ -373,7 +380,7 @@ test('a wrong try in flight when the owner unlocks answers as a wrong PIN, not L
 });
 
 test("a full address count (10,000 addresses) drops its oldest: it never refuses a new address, the owner's included", async (t) => {
-  const check = async (secret, stored) => (secret === 'fast wrong' ? false : checkSecret(secret, stored));
+  const check = async (secret, stored) => (secret === 'fast wrong' ? false : fastCheck(secret, stored));
   const { auth, ray, req } = await setup(t, { check });
   for (let i = 0; i <= 10_000; i++) {
     const r = await auth.login(req({ address: '127.0.0.1', forwarded: `2001:db8:${(i >> 8).toString(16)}:${(i & 255).toString(16)}::1` }), { id: 9999, secret: 'fast wrong' });
@@ -407,7 +414,7 @@ test('the internet may use 12 of the 16 checks at once: the 13th is busy, the ta
 });
 
 test('the internet budget: 600 checked tries in 15 minutes over all accounts; then 429 for the internet only', async (t) => {
-  const check = async (secret, stored) => (secret === 'fast wrong' ? false : checkSecret(secret, stored));
+  const check = async (secret, stored) => (secret === 'fast wrong' ? false : fastCheck(secret, stored));
   const { auth, ali, ray, req, at, lines } = await setup(t, { check });
   const internet = (i) => req({ address: '127.0.0.1', forwarded: `198.51.${Math.floor(i / 20)}.${i % 20}` });
   for (let i = 0; i < 600; i++) assert.equal((await auth.login(internet(i), { id: 9999, secret: 'fast wrong' })).status, 401, `try ${i + 1}`);
