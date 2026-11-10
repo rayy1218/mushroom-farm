@@ -15,11 +15,11 @@ const SCRIPT = fileURLToPath(new URL('../server/owner.js', import.meta.url));
 
 test('setOwnerPassword: checks the name and the password, then sets the owner', async () => {
   const db = openDb(':memory:');
-  assert.deepEqual(await setOwnerPassword(db, '  ', 'long enough password'), { error: 'Give a name of 1 to 40 characters' });
-  assert.deepEqual(await setOwnerPassword(db, 'Ray', 'short'), { error: 'The password must be at least 12 characters' });
-  const { id } = await setOwnerPassword(db, ' Ray ', 'long enough password');
+  assert.deepEqual(await setOwnerPassword(db, '  ', 'blue otter cello moss'), { error: 'Give a name of 1 to 40 characters' });
+  assert.deepEqual(await setOwnerPassword(db, 'Ray', 'short'), { error: 'Use at least 14 characters, for example four random words' });
+  const { id } = await setOwnerPassword(db, ' Ray ', 'blue otter cello moss');
   assert.equal(db.account(id).name, 'Ray');
-  assert.equal(await checkSecret('long enough password', db.account(id).secretHash), true);
+  assert.equal(await checkSecret('blue otter cello moss', db.account(id).secretHash), true);
   db.close();
 });
 
@@ -28,10 +28,10 @@ test('the script: the password twice from a pipe; two that differ change nothing
   const run = (input) => spawnSync(process.execPath, ['--disable-warning=ExperimentalWarning', SCRIPT, 'Ray'], {
     input, env: { ...process.env, FARM_DB: file }, encoding: 'utf8',
   });
-  const differ = run('long enough password\nanother long password\n');
+  const differ = run('blue otter cello moss\ntall cedar plum window\n');
   assert.equal(differ.status, 1);
   assert.match(differ.stderr, /The two passwords differ/);
-  const ok = run('long enough password\nlong enough password\n');
+  const ok = run('blue otter cello moss\nblue otter cello moss\n');
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout, /Ray is an owner and can sign in with that password\./);
   const db = openDb(file);
@@ -43,7 +43,7 @@ const runScript = (args, input, file) => spawnSync(process.execPath, ['--disable
   input, env: { ...process.env, FARM_DB: file }, encoding: 'utf8',
 });
 const tmpDb = () => join(mkdtempSync('/tmp/login/owner-'), 'farm.db');
-const PW = 'long enough password';
+const PW = 'blue otter cello moss';
 
 test('the script: no name, a bad name or a short password stop before anything is written', () => {
   const file = tmpDb();
@@ -55,7 +55,7 @@ test('the script: no name, a bad name or a short password stop before anything i
   assert.match(long.stderr, /Give a name of 1 to 40 characters/);
   const short = runScript(['Ray'], 'short\nshort\n', file);
   assert.equal(short.status, 1);
-  assert.match(short.stderr, /The password must be at least 12 characters/);
+  assert.match(short.stderr, /Use at least 14 characters, for example four random words/);
   assert.equal(existsSync(file), false);
 });
 
@@ -68,7 +68,7 @@ test('the script: a database that cannot be opened ends in one line, not a stack
 
 test('the script: passwords that differ leave the database without an owner', () => {
   const file = tmpDb();
-  assert.equal(runScript(['Ray'], PW + '\nanother long password\n', file).status, 1);
+  assert.equal(runScript(['Ray'], PW + '\ntall cedar plum window\n', file).status, 1);
   if (existsSync(file)) {
     const db = openDb(file);
     assert.deepEqual(db.loginNames(), []);

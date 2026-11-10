@@ -28,7 +28,7 @@ export function createAccountRoutes({ db, now = Date.now, onUnlock = () => {} })
     if (what === 'secret') {
       if (req.who?.id === account.id) throw new HttpError(400, 'Use Change password on Settings', 'secret');
       const secret = (await readJson(req))?.secret;
-      const problem = account.role === 'owner' ? passwordError(secret) : pinError(secret);
+      const problem = account.role === 'owner' ? passwordError(secret, { name: account.name }) : pinError(secret);
       if (problem) throw new HttpError(400, problem, 'secret');
       // Written only while the role is still the one the rule came from (the hash is slow; a role change can come between).
       if (!db.setSecret(account.id, await hashSecret(secret), account.role)) {

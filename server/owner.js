@@ -19,7 +19,7 @@ export function nameError(name) {
 
 // → { id, name } (the name as stored: an existing worker keeps their spelling) or { error }.
 export async function setOwnerPassword(db, name, password) {
-  const bad = nameError(name) || passwordError(password);
+  const bad = nameError(name) || passwordError(password, { name: name.trim() });
   if (bad) return { error: bad };
   const id = db.setOwner(name.trim(), await hashSecret(password));
   return { id, name: db.account(id).name };
@@ -79,7 +79,7 @@ function passwordReader() {
   }
   const keys = { text: '', esc: '', cr: false };
   return {
-    first: () => askHidden('Password (12 characters or more): ', keys),
+    first: () => askHidden('Password (14 characters or more, for example four random words): ', keys),
     second: () => askHidden('Again: ', keys),
   };
 }
@@ -93,7 +93,7 @@ async function main() {
   if (badName) fail(badName);
   const reader = passwordReader();
   const password = await reader.first();
-  const badPassword = passwordError(password);
+  const badPassword = passwordError(password, { name: name.trim() });
   if (badPassword) fail(badPassword);
   if (password !== await reader.second()) fail('The two passwords differ');
   const db = openDb(process.env.FARM_DB || fileURLToPath(new URL('../data/v2.db', import.meta.url)));

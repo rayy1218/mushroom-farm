@@ -167,7 +167,7 @@ test("a worker's sign-in line on Settings → Workers", () => {
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 400 * 86_400_000, sessions: 0 }, at), 'Worker · locked: unlock to let them sign in');
   assert.equal(accountActions({ role: 'worker', hasSecret: true, lockedUntil: LOCKED_UNTIL_UNLOCKED, sessions: 0 }, { self: false, otherOwner: false, now: at }).unlock, true);
   assert.deepEqual(secretAction({ role: 'worker', hasSecret: false }), { label: 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' });
-  assert.deepEqual(secretAction({ role: 'owner', hasSecret: true }), { label: 'Change password', field: 'Password (12 characters or more)', kind: 'password' });
+  assert.deepEqual(secretAction({ role: 'owner', hasSecret: true }), { label: 'Change password', field: 'Password (14 characters or more)', kind: 'password' });
 });
 
 // Review of Task 11: which of a row's sign-in buttons show, and the confirms' words, as pure functions.

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
-import { createAuth, hashSecret, checkSecret, tokenHash, addressKey, LOCKED_UNTIL_UNLOCKED } from '../server/auth.js';
+import { createAuth, hashSecret, checkSecret, tokenHash, addressKey, fromTailnet, LOCKED_UNTIL_UNLOCKED } from '../server/auth.js';
 
 const T = Date.UTC(2026, 10, 6, 2); // 10:00 on the farm
 const MIN = 60_000;
@@ -24,8 +24,9 @@ async function setup(t, { check, notify } = {}) {
   const notes = [];
   const auth = createAuth({ db, now: () => now, log: (line) => lines.push(line), notify: notify ?? ((text) => { notes.push(text); }), ...(check ? { check } : {}) });
   t.after(() => { auth.close(); db.close(); });
-  const req = ({ address = '100.64.0.9', cookie } = {}) => ({
-    socket: { remoteAddress: address }, headers: { 'user-agent': 'Test phone', ...(cookie ? { cookie } : {}) },
+  const req = ({ address = '100.64.0.9', cookie, forwarded } = {}) => ({
+    socket: { remoteAddress: address },
+    headers: { 'user-agent': 'Test phone', ...(cookie ? { cookie } : {}), ...(forwarded ? { 'x-forwarded-for': forwarded } : {}) },
   });
   const res = () => { const headers = {}; return { headers, setHeader: (k, v) => { headers[k] = v; } }; };
   return { db, auth, ali: id('Ali'), nopin: id('Nopin'), gone: id('Gone'), ray, req, res, lines, notes, at: (ms) => { now = ms; } };
@@ -119,7 +120,7 @@ test("a worker's daily cap: 20 wrong tries in 24 hours over any addresses lock t
   assert.deepEqual(rs.slice(0, 19).map((r) => r.status), Array(19).fill(401));
   assert.deepEqual(rs[19], LOCKED_TODAY, 'the 20th');
   assert.deepEqual([db.account(ali).failedTries, db.account(ali).lockedUntil], [0, LOCKED_UNTIL_UNLOCKED]);
-  assert.deepEqual(notes, ['🔒 Sign-in: Ali locked after 20 wrong tries today; unlock in Settings → Workers']);
+  assert.deepEqual(notes, ['⚠️ Sign-in: 10 wrong tries for Ali today', '🔒 Sign-in: Ali locked after 20 wrong tries today; unlock in Settings → Workers']);
   assert.deepEqual(await auth.login(req(from('100.64.4.1')), { id: ali, secret: '482913' }), LOCKED_TODAY, 'the right PIN too');
   at(T + 3 * 86_400_000);
   assert.deepEqual(await auth.login(req(from('100.64.4.2')), { id: ali, secret: '482913' }), LOCKED_TODAY, 'days later too');
@@ -127,7 +128,7 @@ test("a worker's daily cap: 20 wrong tries in 24 hours over any addresses lock t
   auth.unlocked(ali); // … and its hook
   assert.deepEqual(await auth.login(req(from('100.64.3.0')), { ...WRONG, id: ali }), PIN_WRONG, 'the counts start again');
   assert.equal((await auth.login(req(from('100.64.3.0')), { id: ali, secret: '482913' })).status, 200);
-  assert.equal(notes.length, 1);
+  assert.equal(notes.length, 2);
 });
 
 test("the daily cap's 24 hours: 19 wrong, a day later 19 more, and the account is not locked", async (t) => {
@@ -156,19 +157,33 @@ test('tries in flight together each count: 6 wrong at once from one address lock
   assert.equal((await auth.login(req(from('100.64.1.9')), { id: ali, secret: '482913' })).status, 200);
 });
 
-test("the owner's Telegram note when an address locks an account: once an hour per account at most", async (t) => {
+test("the owner's Telegram note when an address locks an account: once an hour per account at most, with the hour's locks", async (t) => {
   const { auth, ali, ray, req, at, notes } = await setup(t);
+  const locks = () => notes.filter((n) => n.startsWith('🔒'));
   for (let i = 0; i < 5; i++) await auth.login(req(from('100.64.9.1')), { ...WRONG, id: ali });
-  assert.deepEqual(notes, ['🔒 Sign-in: 5 wrong tries for Ali from 100.64.9.1; locked for that address until 10:15']);
+  assert.deepEqual(locks(), ['🔒 Sign-in: 5 wrong tries for Ali from 100.64.9.1; locked for that address until 10:15 (1 address lock in the last hour)']);
   at(T + 20 * MIN);
   for (let i = 0; i < 5; i++) await auth.login(req(from('100.64.9.2')), { ...WRONG, id: ali });
-  assert.equal(notes.length, 1, 'within the hour: no second note for Ali');
+  assert.equal(locks().length, 1, 'within the hour: no second note for Ali');
   for (let i = 0; i < 5; i++) await auth.login(req(from('100.64.9.2')), { id: ray, secret: 'not the password' });
-  assert.equal(notes.at(-1), '🔒 Sign-in: 5 wrong tries for Ray from 100.64.9.2; locked for that address until 10:35', "another account's own hour");
+  assert.equal(locks().at(-1), '🔒 Sign-in: 5 wrong tries for Ray from 100.64.9.2; locked for that address until 10:35 (1 address lock in the last hour)', "another account's own hour");
   at(T + 60 * MIN);
   for (let i = 0; i < 5; i++) await auth.login(req(from('100.64.9.3')), { ...WRONG, id: ali });
-  assert.equal(notes.length, 3);
-  assert.equal(notes.at(-1), '🔒 Sign-in: 5 wrong tries for Ali from 100.64.9.3; locked for that address until 11:15');
+  assert.equal(locks().length, 3);
+  assert.equal(locks().at(-1), '🔒 Sign-in: 5 wrong tries for Ali from 100.64.9.3; locked for that address until 11:15 (2 address locks in the last hour)');
+});
+
+test("a worker's 10th wrong try today: one warning note in the 24 hours", async (t) => {
+  const { auth, ali, req, at, notes } = await setup(t);
+  for (let i = 0; i < 9; i++) await auth.login(req(from(`100.64.13.${Math.floor(i / 4)}`)), { ...WRONG, id: ali });
+  assert.deepEqual(notes, []);
+  await auth.login(req(from('100.64.13.9')), { ...WRONG, id: ali });
+  assert.deepEqual(notes, ['⚠️ Sign-in: 10 wrong tries for Ali today']);
+  for (let i = 0; i < 4; i++) await auth.login(req(from('100.64.14.1')), { ...WRONG, id: ali });
+  assert.equal(notes.length, 1, 'once in the 24 hours');
+  at(T + 24 * 60 * MIN);
+  for (let i = 0; i < 10; i++) await auth.login(req(from(`100.64.15.${Math.floor(i / 4)}`)), { ...WRONG, id: ali });
+  assert.deepEqual(notes, ['⚠️ Sign-in: 10 wrong tries for Ali today', '⚠️ Sign-in: 10 wrong tries for Ali today'], 'the next 24 hours');
 });
 
 test('a note that fails (throws or rejects) is logged; the sign-in answers as ever', async (t) => {
@@ -252,17 +267,19 @@ test("an owner's own password: the current one needed; the next one checked; oth
   const here = `farm_session=${tokenOf((await auth.login(req(), { id: ray, secret: 'long enough password' })).cookie)}`;
   const there = `farm_session=${tokenOf((await auth.login(req(), { id: ray, secret: 'long enough password' })).cookie)}`;
   const me = auth.who(req({ cookie: here }), res());
-  assert.deepEqual(await auth.changePassword(req(), me, { current: 'wrong', next: 'a brand new password' }),
+  assert.deepEqual(await auth.changePassword(req(), me, { current: 'wrong', next: 'blue otter cello moss' }),
     { status: 400, body: { error: 'That password is not right', field: 'current' } });
   assert.deepEqual(await auth.changePassword(req(), me, { current: 'long enough password', next: 'short' }),
-    { status: 400, body: { error: 'The password must be at least 12 characters', field: 'next' } });
-  const r = await auth.changePassword(req(), me, { current: 'long enough password', next: 'a brand new password' });
+    { status: 400, body: { error: 'Use at least 14 characters, for example four random words', field: 'next' } });
+  assert.deepEqual(await auth.changePassword(req(), me, { current: 'long enough password', next: 'blue otter Ray cello' }),
+    { status: 400, body: { error: 'Pick a password that is harder to guess (no names, farm words or a word with a year)', field: 'next' } }, 'their name');
+  const r = await auth.changePassword(req(), me, { current: 'long enough password', next: 'blue otter cello moss' });
   assert.equal(r.status, 204);
   assert.match(r.cookie, /Max-Age=604800$/);
   assert.equal(auth.who(req({ cookie: there }), res()), null);
   assert.equal(auth.who(req({ cookie: here }), res()), null, 'the old token of this browser ended too; the new cookie replaces it');
   assert.equal(auth.who(req({ cookie: `farm_session=${tokenOf(r.cookie)}` }), res()).name, 'Ray');
-  assert.equal((await auth.login(req(), { id: ray, secret: 'a brand new password' })).status, 200);
+  assert.equal((await auth.login(req(), { id: ray, secret: 'blue otter cello moss' })).status, 200);
 });
 
 test('prune: expired sessions and old address counts go', async (t) => {
@@ -296,4 +313,123 @@ test('an owner-only password change; a long secret is just wrong; log results', 
   assert.match(lines.at(-1), / wrong$/);
   await auth.login(req(), { id: 9999, secret: '000001' });
   assert.match(lines.at(-1), / unknown$/);
+});
+
+// ---- The review of 93a4e0e ----
+
+// A check that waits, for the wrong secret only, until let() (the right one and the dummy go at once).
+function gated() {
+  let open = null;
+  let gate = null;
+  const check = async (secret, stored) => {
+    if (secret === WRONG.secret && gate) await gate;
+    return checkSecret(secret, stored);
+  };
+  return { check, hold: () => { gate = new Promise((r) => { open = r; }); }, let: () => { gate = null; open(); } };
+}
+
+test('the daily lock goes with the right try when a wrong one counted after it settles later: no lock left, no Locked', async (t) => {
+  const g = gated();
+  const { db, auth, ali, req, notes } = await setup(t, { check: g.check });
+  for (let i = 0; i < 18; i++) await auth.login(req(from(`100.64.16.${Math.floor(i / 4)}`)), { ...WRONG, id: ali });
+  g.hold();
+  const right = auth.login(req(from('100.64.17.1')), { id: ali, secret: '482913' }); // counted 19th
+  const wrongTry = auth.login(req(from('100.64.17.2')), { ...WRONG, id: ali }); // counted 20th: the lock is stored
+  assert.equal(db.account(ali).lockedUntil, LOCKED_UNTIL_UNLOCKED);
+  assert.equal((await right).status, 200, 'the right try settles first and takes the lock it is no longer reached with');
+  assert.equal(db.account(ali).lockedUntil, null);
+  g.let();
+  assert.deepEqual(await wrongTry, PIN_WRONG, '19 wrong: no Locked');
+  assert.equal(db.account(ali).lockedUntil, null);
+  assert.ok(!notes.some((n) => n.startsWith('🔒')));
+  assert.deepEqual(await auth.login(req(from('100.64.17.3')), { ...WRONG, id: ali }), LOCKED_TODAY, 'the 20th wrong');
+  assert.equal(notes.at(-1), '🔒 Sign-in: Ali locked after 20 wrong tries today; unlock in Settings → Workers');
+});
+
+test('a wrong try in flight when the owner unlocks answers as a wrong PIN, not Locked (the daily lock and an address lock)', async (t) => {
+  const g = gated();
+  const { db, auth, ali, req } = await setup(t, { check: g.check });
+  for (let i = 0; i < 19; i++) await auth.login(req(from(`100.64.18.${Math.floor(i / 4)}`)), { ...WRONG, id: ali });
+  g.hold();
+  const twentieth = auth.login(req(from('100.64.19.1')), { ...WRONG, id: ali });
+  assert.equal(db.account(ali).lockedUntil, LOCKED_UNTIL_UNLOCKED);
+  db.setTries(ali, 0, null); // the owner's Unlock
+  auth.unlocked(ali);
+  g.let();
+  assert.deepEqual(await twentieth, PIN_WRONG);
+  assert.equal(db.account(ali).lockedUntil, null);
+
+  for (let i = 0; i < 4; i++) await auth.login(req(from('100.64.19.2')), { ...WRONG, id: ali });
+  g.hold();
+  const fifth = auth.login(req(from('100.64.19.2')), { ...WRONG, id: ali });
+  db.setTries(ali, 0, null);
+  auth.unlocked(ali);
+  g.let();
+  assert.deepEqual(await fifth, PIN_WRONG);
+  assert.deepEqual(await auth.login(req(from('100.64.19.2')), { ...WRONG, id: ali }), PIN_WRONG, 'that address is not locked');
+});
+
+test("a full address count (10,000 addresses) drops its oldest: it never refuses a new address, the owner's included", async (t) => {
+  const check = async (secret, stored) => (secret === 'fast wrong' ? false : checkSecret(secret, stored));
+  const { auth, ray, req } = await setup(t, { check });
+  for (let i = 0; i <= 10_000; i++) {
+    const r = await auth.login(req({ address: '127.0.0.1', forwarded: `2001:db8:${(i >> 8).toString(16)}:${(i & 255).toString(16)}::1` }), { id: 9999, secret: 'fast wrong' });
+    assert.ok(r.status === 401 || r.status === 429, String(r.status));
+  }
+  assert.equal((await auth.login(req(from('100.64.20.1')), { id: ray, secret: 'long enough password' })).status, 200);
+});
+
+test('fromTailnet: 100.64.0.0/10, fd7a:115c:a1e0::/48, or this machine with no X-Forwarded-For', () => {
+  const r = (address, forwarded) => ({ socket: { remoteAddress: address }, headers: forwarded ? { 'x-forwarded-for': forwarded } : {} });
+  for (const yes of [r('100.64.0.1'), r('100.127.255.254'), r('::ffff:100.100.1.2'), r('fd7a:115c:a1e0:ab12::1'), r('127.0.0.1'), r('::1'),
+    r('127.0.0.1', '100.101.102.103'), r('::1', 'fd7a:115c:a1e0::9')]) assert.equal(fromTailnet(yes), true, JSON.stringify(yes));
+  for (const no of [r('100.63.255.255'), r('100.128.0.1'), r('203.0.113.9'), r('fd7a:115c:a1e1::1'), r('2001:db8::1'),
+    r('127.0.0.1', '203.0.113.9'), r('127.0.0.1', '127.0.0.1')]) assert.equal(fromTailnet(no), false, JSON.stringify(no));
+});
+
+test('the internet may use 12 of the 16 checks at once: the 13th is busy, the tailnet keeps 4', async (t) => {
+  const { auth, req } = await setup(t);
+  const internet = (i) => req({ address: '127.0.0.1', forwarded: `203.0.113.${i}` });
+  const busy = { status: 503, body: { error: 'The farm app is busy. Try again in a moment' } };
+  const rs = await Promise.all([
+    ...Array.from({ length: 13 }, (_, i) => auth.login(internet(i), { id: 9999, secret: '000001' })),
+    ...Array.from({ length: 5 }, (_, i) => auth.login(req(from(`100.64.21.${i}`)), { id: 9999, secret: '000001' })),
+  ]);
+  assert.deepEqual(rs.map((r) => r.status), [...Array(12).fill(401), 503, 401, 401, 401, 401, 503]);
+  assert.deepEqual(rs[12], busy);
+});
+
+test('the internet budget: 600 checked tries in 15 minutes over all accounts; then 429 for the internet only', async (t) => {
+  const check = async (secret, stored) => (secret === 'fast wrong' ? false : checkSecret(secret, stored));
+  const { auth, ali, ray, req, at, lines } = await setup(t, { check });
+  const internet = (i) => req({ address: '127.0.0.1', forwarded: `198.51.${Math.floor(i / 20)}.${i % 20}` });
+  for (let i = 0; i < 600; i++) assert.equal((await auth.login(internet(i), { id: 9999, secret: 'fast wrong' })).status, 401, `try ${i + 1}`);
+  const spent = { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes' } };
+  assert.deepEqual(await auth.login(internet(1000), { id: ray, secret: 'long enough password' }), spent);
+  assert.match(lines.at(-1), / budget$/);
+  assert.equal((await auth.login(req(from('100.64.22.1')), { id: ray, secret: 'long enough password' })).status, 200, 'the tailnet');
+  assert.equal((await auth.login(req({ address: '127.0.0.1' }), { id: ali, secret: '482913' })).status, 200, 'a browser on the farm computer');
+  at(T + 15 * MIN);
+  assert.equal((await auth.login(internet(1001), { id: ray, secret: 'long enough password' })).status, 200);
+});
+
+test('refused tries log one line a minute per kind; the next line says how many more there were', async (t) => {
+  const { auth, ali, req, at, lines } = await setup(t);
+  for (let i = 0; i < 20; i++) await auth.login(req(), { id: 9999, secret: '000001' });
+  const before = lines.length;
+  for (let i = 0; i < 5; i++) await auth.login(req(), { id: ali, secret: '482913' });
+  assert.deepEqual(lines.slice(before).map((l) => l.replace(/^login \S+ /, '')), ['100.64.0.9 worker ' + ali + ' address-limited']);
+  at(T + MIN);
+  await auth.login(req(), { id: ali, secret: '482913' });
+  assert.deepEqual(lines.slice(before + 1), [
+    'login 2026-11-06T02:01:00.000Z address-limited: 4 more refused since 2026-11-06T02:00:00.000Z',
+    `login 2026-11-06T02:01:00.000Z 100.64.0.9 worker ${ali} address-limited`,
+  ]);
+  at(T + 2 * MIN);
+  auth.prune(); // a minute's count with no try after it is written by the hourly sweep
+  assert.equal(lines.length, before + 3);
+  for (let i = 0; i < 3; i++) await auth.login(req(), { id: ali, secret: '482913' });
+  at(T + 4 * MIN);
+  auth.prune();
+  assert.equal(lines.at(-1), 'login 2026-11-06T02:04:00.000Z address-limited: 2 more refused since 2026-11-06T02:02:00.000Z');
 });

@@ -232,7 +232,7 @@ export function accountLine(a, now) {
 // The row's button for the secret and its dialog's box.
 export function secretAction(a) {
   return a.role === 'owner'
-    ? { label: a.hasSecret ? 'Change password' : 'Set password', field: 'Password (12 characters or more)', kind: 'password' }
+    ? { label: a.hasSecret ? 'Change password' : 'Set password', field: 'Password (14 characters or more)', kind: 'password' }
     : { label: a.hasSecret ? 'Change PIN' : 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' };
 }
 

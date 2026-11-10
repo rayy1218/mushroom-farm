@@ -36,7 +36,7 @@ const TEMPLATE = `
       <p class="field-error" id="e-pw-current" role="status"></p>
     </div>
     <div class="field">
-      <label for="f-pw-next">New password (12 characters or more)</label>
+      <label for="f-pw-next">New password (14 characters or more)</label>
       <input id="f-pw-next" name="next" type="password" autocomplete="new-password" aria-describedby="e-pw-next">
       <p class="field-error" id="e-pw-next" role="status"></p>
     </div>

@@ -45,11 +45,14 @@ test('Set PIN: a worker\'s 6 digits; then they can sign in', async (t) => {
   assert.equal((await call('POST', '/api/workers/9999/secret', { secret: '482913' }, owner)).status, 404);
 });
 
-test("Set password: an owner's 12 characters or more", async (t) => {
+test("Set password: an owner's 14 characters or more, not with their name", async (t) => {
   const { call, ali, owner } = await farm(t);
   await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner); // not your own row: that is Change password
   assert.deepEqual((await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner)).body,
-    { error: 'The password must be at least 12 characters', field: 'secret' });
+    { error: 'Use at least 14 characters, for example four random words', field: 'secret' });
+  assert.deepEqual((await call('POST', `/api/workers/${ali}/secret`, { secret: 'blue otter ALI cello' }, owner)).body,
+    { error: 'Pick a password that is harder to guess (no names, farm words or a word with a year)', field: 'secret' });
+  assert.equal((await call('POST', `/api/workers/${ali}/secret`, { secret: 'blue otter cello moss' }, owner)).status, 200);
 });
 
 test('the role: a change clears the secret (a PIN is no password) and signs them out; the last owner stays', async (t) => {
@@ -75,7 +78,8 @@ test("Unlock: a worker the daily cap locked signs in again and their counts star
   const lockOut = async (net) => { for (let i = 0; i < 20; i++) await login('111112', `100.64.${net}.${Math.floor(i / 4)}`); };
   await lockOut(10);
   assert.equal(await login('482913', '100.64.11.1'), 429, 'the right PIN is refused');
-  assert.deepEqual(notes, ['🔒 Sign-in: Ali locked after 20 wrong tries today; unlock in Settings → Workers'], "the owner's note (app.js passes loginNotify to createAuth)");
+  assert.deepEqual(notes, ['⚠️ Sign-in: 10 wrong tries for Ali today', '🔒 Sign-in: Ali locked after 20 wrong tries today; unlock in Settings → Workers'],
+    "the owner's notes (app.js passes loginNotify to createAuth)");
   assert.equal(db.accounts(Date.now()).find((a) => a.id === ali).lockedUntil, LOCKED_UNTIL_UNLOCKED);
   assert.equal((await call('POST', `/api/workers/${ali}/unlock`, undefined, owner)).body.account.lockedUntil, null);
   assert.equal(await login('111112', '100.64.10.0'), 401, 'not locked again by the old counts');
@@ -121,7 +125,7 @@ test('the farm keeps an owner who can sign in: an owner without a password does 
 test('an owner who is inactive may be demoted', async (t) => {
   const { db, call, ali, ray, owner } = await farm(t);
   await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner);
-  await call('POST', `/api/workers/${ali}/secret`, { secret: 'another long password' }, owner);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: 'tall cedar plum window' }, owner);
   db.setWorkers([{ id: ali, name: 'Ali', active: false }, { id: ray, name: 'Ray', active: true }]);
   assert.equal((await call('PUT', `/api/workers/${ali}/role`, { role: 'worker' }, owner)).status, 200);
 });
@@ -138,7 +142,7 @@ test('your own row: no Set password here; demoting or signing out yourself clear
   assert.deepEqual((await call('POST', `/api/workers/${ray}/secret`, { secret: 'a brand new password' }, owner)).body,
     { error: 'Use Change password on Settings', field: 'secret' });
   await call('PUT', `/api/workers/${ali}/role`, { role: 'owner' }, owner);
-  await call('POST', `/api/workers/${ali}/secret`, { secret: 'another long password' }, owner); // a second usable owner
+  await call('POST', `/api/workers/${ali}/secret`, { secret: 'tall cedar plum window' }, owner); // a second usable owner
   const out = await call('POST', `/api/workers/${ray}/sign-out`, undefined, owner);
   assert.match(out.cookie, /^farm_session=;.*Max-Age=0/);
   const again = (await call('POST', '/api/login', { id: ray, secret: 'long enough password' })).cookie.split(';')[0];
