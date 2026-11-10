@@ -13,6 +13,7 @@ import { validateSimulation, RESTART_TEXT } from '../server/simulations.js';
 import { writeSettings } from '../server/settings.js';
 import { fixedZone } from '../server/usage.js';
 import { createEconomics, EconomicsError } from '../server/economics.js';
+import { DELETED_TEXT } from '../server/economics-sim.js';
 
 const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)), h - 8);
 const NOW = at('2026-11-10');
@@ -257,4 +258,53 @@ test('a late event of an older run never settles the run working now (only the r
   events.publish('simulation', { id: second.id, roomId: room, status: 'done', progress: 1 });
   v = s.econ.view();
   assert.deepEqual([v.sim.status, v.sim.simId, v.sim.value, v.sim.at], ['done', second.id, 0.4, NOW + 9000]);
+});
+
+test('a run id reused after its run was deleted (cancelled, no event): the row fails as deleted, its figure kept; the other room\'s run its own', (t) => {
+  const s = setup(t, { rooms: 2 });
+  const { db, events, setClock } = s;
+  const [one, two] = s.ids;
+  s.econ.workOut({ room: one, crop: 'lionsmane' });
+  const [done] = db.listRuns(one);
+  db.finishRun(done.id, { status: 'done', summary: { energy: { kWh: 725.6 } } }, NOW + 4000);
+  events.publish('simulation', { id: done.id, roomId: one, status: 'done', progress: 1 });
+  s.econ.workOut({ room: one, crop: 'lionsmane' });
+  const [cancelled] = db.listRuns(one);
+  db.deleteRun(cancelled.id); // simulations.cancel: no event
+  setClock(NOW + 60_000);
+  s.econ.setFigure({ room: two, crop: 'lionsmane', key: 'yours.turn', value: 70 }); // a 96-day block life: the run's 90 scaled
+  s.econ.workOut({ room: two, crop: 'lionsmane' });
+  const [impostor] = db.listRuns(two);
+  assert.equal(impostor.id, cancelled.id, 'SQLite gives the deleted top id to the next run');
+  db.finishRun(impostor.id, { status: 'done', summary: { energy: { kWh: 900 } } }, NOW + 70_000);
+  events.publish('simulation', { id: impostor.id, roomId: two, status: 'done', progress: 1 });
+  const v = s.econ.view({ room: one, crop: 'lionsmane' });
+  assert.deepEqual([v.sim.status, v.sim.error, v.sim.value, v.sim.at], ['failed', DELETED_TEXT, 0.478, NOW + 4000]);
+  const other = s.econ.view({ room: two, crop: 'lionsmane' });
+  assert.deepEqual([other.sim.status, other.sim.value, other.sim.kwh, other.sim.days], ['done', 0.632, 960, 96], 'scaled by its own life');
+});
+
+test('a run id reused in the same room by a later run: the view shows no progress of it, the row fails as deleted', (t) => {
+  const s = setup(t);
+  const { db, room, setClock } = s;
+  s.econ.workOut({ room, crop: 'oyster' });
+  const [cancelled] = db.listRuns(room);
+  db.deleteRun(cancelled.id);
+  setClock(NOW + 60_000);
+  const later = db.createRun(room, { physics: {} }, NOW + 60_000);
+  assert.equal(later.id, cancelled.id);
+  db.setRunProgress(later.id, 'running', 0.7);
+  const { sim } = s.econ.view({ room, crop: 'oyster' });
+  assert.deepEqual([sim.status, sim.error, sim.progress], ['failed', DELETED_TEXT, null]);
+});
+
+test('Work it out after a run cancelled with no event and no view: settled as deleted, a new run started (not 409)', (t) => {
+  const s = setup(t);
+  const { db, room } = s;
+  s.econ.workOut({ room, crop: 'pink' });
+  db.deleteRun(db.listRuns(room)[0].id);
+  const out = s.econ.workOut({ room, crop: 'pink' });
+  assert.equal(out.status, 202);
+  assert.equal(out.view.sim.status, 'waiting');
+  assert.equal(db.listRuns(room).length, 1);
 });

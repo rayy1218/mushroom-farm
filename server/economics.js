@@ -46,23 +46,33 @@ export function createEconomics({
   db, harvests, batches, simulations = null, events = null, now = Date.now, zone = localZone, log = console.error,
   days = (room, count) => roomDays(db, room, { now: now(), zone, count, cachedOnly: true }),
 }) {
-  const lives = new Map(); // simulation id → the block life it was started for (the kWh is scaled to it)
+  // 'roomId/crop' → { simId, life }: the block life its Work it out was started for (the kWh is scaled to it). Kept by room
+  // and crop, not by run: a deleted run's id is given to the next run (in any room), which may be another Work it out's.
+  const lives = new Map();
+  const lifeKey = (roomId, crop) => `${roomId}/${crop}`;
   const publish = (roomId, crop) => events?.publish('economics', { roomId, crop });
+
+  // The run a row works on, or null when it is gone: deleted, or its id since given to a run of another room or a later one.
+  function runOfRow(row) {
+    const run = row.simId === null ? null : db.getRun(row.simId, { withResult: false });
+    return run && run.roomId === row.roomId && run.createdAt <= row.startedAt ? run : null;
+  }
 
   // A row working on a run that has ended (or gone): its figure saved, or its failure with the figure before it kept.
   // → true when it settled.
   function settleFrom(row) {
-    const run = row.simId === null ? null : db.getRun(row.simId, { withResult: false });
+    const run = runOfRow(row);
     const where = { roomId: row.roomId, crop: row.crop };
     if (run && run.status !== 'done' && run.status !== 'failed') return false;
     if (!run) db.settleEconomicsSim({ ...where, error: DELETED_TEXT });
     else if (run.status === 'failed') db.settleEconomicsSim({ ...where, error: run.error ?? 'The simulation failed' });
     else {
-      const figure = simFigure(run, lives.get(run.id));
+      const own = lives.get(lifeKey(row.roomId, row.crop));
+      const figure = simFigure(run, own?.simId === run.id ? own.life : undefined);
       if (figure) db.settleEconomicsSim({ ...where, ...figure, at: run.finishedAt ?? now() });
       else db.settleEconomicsSim({ ...where, error: 'The simulation gave no electricity' });
     }
-    lives.delete(row.simId);
+    if (lives.get(lifeKey(row.roomId, row.crop))?.simId === row.simId) lives.delete(lifeKey(row.roomId, row.crop));
     publish(row.roomId, row.crop);
     return true;
   }
@@ -145,7 +155,7 @@ export function createEconomics({
   // The simulator row as the page shows it: waiting while its run is queued, the run's progress while it works.
   function simView(row) {
     if (!row) return null;
-    const run = row.status === 'working' && row.simId !== null ? db.getRun(row.simId, { withResult: false }) : null;
+    const run = row.status === 'working' ? runOfRow(row) : null;
     return {
       status: run?.status === 'queued' ? 'waiting' : row.status, simId: row.simId, progress: run ? run.progress : null,
       startedAt: row.startedAt, at: row.at, value: row.value, kwh: row.kwh, blocks: row.blocks, days: row.days, error: row.error,
@@ -207,6 +217,7 @@ export function createEconomics({
       const { room, crop } = body ?? {};
       const r = roomOf(room);
       const c = cropCheck(crop);
+      settleWorking((row) => row.roomId === r.id && row.crop === c); // a run cancelled or its event missed
       if (db.economicsSimsWorking().some((row) => row.roomId === r.id && row.crop === c)) {
         throw new EconomicsError(409, `Already working it out for ${r.name} and ${cropShortName(c)}`);
       }
@@ -222,7 +233,7 @@ export function createEconomics({
         publish(r.id, c);
         return { status: 200, view: view({ room: r.id, crop: c }) };
       }
-      lives.set(result.run.id, life);
+      lives.set(lifeKey(r.id, c), { simId: result.run.id, life });
       const row = db.startEconomicsSim({ ...where, simId: result.run.id, at: now() });
       publish(r.id, c);
       settleFrom(row); // a run that ended at once (a stand-in) is settled now
