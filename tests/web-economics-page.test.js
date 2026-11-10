@@ -127,6 +127,7 @@ test('the spec review\'s notes: Work it out\'s refusals shown and said; a failed
   assert.ok(page.includes('simRefused = err.status === 0 ? OFFLINE : err.message;'));
   assert.ok(page.includes("parts.push(el('p', 'ec-note-line ec-warn', simRefused));"));
   assert.ok(page.includes('said(simRefused);'));
+  assert.ok(page.includes('if (reply && simMoved(reply.sim, next.sim)) simRefused = null; // the run moved on: the refusal is old'));
   assert.ok(page.includes('said(`${figureOf(key).label}: couldn\'t save. Retry is under it.`);'));
   assert.ok(page.includes('said(err.message); // the refusal, as under the box'));
   assert.ok(page.includes('p.append(DOT, b);'));

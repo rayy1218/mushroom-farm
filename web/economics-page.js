@@ -16,7 +16,7 @@ import { blockLife, inputsOf } from './economics-model.js';
 import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText } from './economics-math.js';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox,
+  fitsWant, createReplies, keepsBox, simMoved,
 } from './economics-figures.js';
 import { DOT } from './text-math.js';
 
@@ -479,6 +479,7 @@ export function mount(container, { room = null, crop = null } = {}) {
       notSaved.clear();
       simRefused = null;
     }
+    if (reply && simMoved(reply.sim, next.sim)) simRefused = null; // the run moved on: the refusal is old
     reply = next;
     if (!reply.room) {
       els.picks.hidden = true;

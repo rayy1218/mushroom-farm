@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, valuesOf, typed, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox,
+  fitsWant, createReplies, keepsBox, simMoved,
 } from '../web/economics-figures.js';
 import { figuresFor, researchOf } from '../web/economics-defaults.js';
 
@@ -247,4 +247,13 @@ test('a repaint leaves a box alone while it is focused, unsaved or refused (the 
   assert.equal(keepsBox({ focused: true, unsaved: false, refused: false }), true);
   assert.equal(keepsBox({ focused: false, unsaved: true, refused: false }), true);
   assert.equal(keepsBox({ focused: false, unsaved: false, refused: true }), true, 'a refusal (the draft\'s or the server\'s) keeps the text it refused');
+});
+
+test('a refusal of Work it out stands until the run moves on (it starts, ends or fails)', () => {
+  const working = { status: 'working', at: 1, simId: 7 };
+  assert.equal(simMoved(working, { ...working, progress: 0.5 }), false, 'the same run, further on');
+  assert.equal(simMoved(working, { status: 'done', at: 2, simId: 7 }), true);
+  assert.equal(simMoved(null, working), true);
+  assert.equal(simMoved({ status: 'done', at: 2 }, { status: 'done', at: 3 }), true, 'worked out again');
+  assert.equal(simMoved(null, null), false);
 });

@@ -2,7 +2,7 @@
 // figure's tag, where it applies, its note, the simulator's line, the headline's sources line, and a typed figure checked
 // before it is sent. Pure: the figures are the server's view (server/economics.js), the words follow the One Format Rule.
 //   foldsOf · foldHead · tagText · appliesText · noteParts · simText · sourcesLine · valuesOf · typed · boxText · savedText
-//   · partsLine · createDraft · fitsWant · createReplies · keepsBox
+//   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved
 
 import { checkFigure, figureOf, SOURCES, WAY_NAMES } from './economics-defaults.js';
 import { compare } from './economics-model.js';
@@ -250,3 +250,7 @@ export function createReplies() {
 // A repaint leaves a box's text alone while the owner is in it, while it holds a figure not yet saved, or while its figure
 // is refused (the draft's check or the server's): the box keeps the text its refusal is about.
 export const keepsBox = ({ focused, unsaved, refused }) => focused || unsaved || refused;
+
+// Whether Work it out's run moved on between two replies (it started, ended, failed or was worked out again): a refusal
+// of the run before ("Already working it out…", no answer) is then old. Its progress alone is not a move.
+export const simMoved = (before, after) => (before?.status ?? null) !== (after?.status ?? null) || (before?.at ?? null) !== (after?.at ?? null);
