@@ -73,7 +73,7 @@ test('a deleted room takes its own rows; the farm\'s and the crops\' stay', () =
   db.close();
 });
 
-test('the simulator row: started (working), done with its figure, started again (the figure kept), failed (the figure kept)', () => {
+test('the simulator row: started (working), done with its figure, started again (the figure kept), failed (the figure kept), started and done again (the failure cleared)', () => {
   const db = openDb(':memory:');
   const one = db.createRoom(ROOM, T).id;
   const where = { roomId: one, crop: 'lionsmane' };
@@ -87,7 +87,23 @@ test('the simulator row: started (working), done with its figure, started again 
   assert.deepEqual([again.status, again.simId, again.startedAt, again.value, again.at], ['working', 9, T + 9000, 0.478, T + 4000]);
   const failed = db.settleEconomicsSim({ ...where, error: 'Stopped by a restart of the farm app' });
   assert.deepEqual([failed.status, failed.error, failed.value, failed.kwh], ['failed', 'Stopped by a restart of the farm app', 0.478, 708.7]);
+  const restarted = db.startEconomicsSim({ ...where, simId: 11, at: T + 20000 });
+  assert.deepEqual([restarted.status, restarted.error, restarted.value], ['working', null, 0.478], 'a start clears the failure');
+  const redone = db.settleEconomicsSim({ ...where, value: 0.5, at: T + 24000, kwh: 741, blocks: 1482, days: 42 });
+  assert.deepEqual([redone.status, redone.error, redone.value], ['done', null, 0.5], 'a done clears the failure');
   assert.equal(db.settleEconomicsSim({ roomId: one, crop: 'oyster', error: 'x' }), null, 'no row for grey oyster');
   assert.deepEqual(db.economicsFigures(one, 'lionsmane').map((r) => r.source), ['simulator'], 'the owner\'s row is apart');
+  db.close();
+});
+
+test('a settle with neither a value nor an error throws, and the saved figure stays', () => {
+  const db = openDb(':memory:');
+  const one = db.createRoom(ROOM, T).id;
+  const where = { roomId: one, crop: 'lionsmane' };
+  db.startEconomicsSim({ ...where, simId: 7, at: T });
+  db.settleEconomicsSim({ ...where, value: 0.478, at: T + 4000, kwh: 708.7, blocks: 1482, days: 42 });
+  assert.throws(() => db.settleEconomicsSim(where), /settleEconomicsSim: a value or an error/);
+  const [row] = db.economicsFigures(one, 'lionsmane');
+  assert.deepEqual([row.status, row.value, row.at, row.kwh, row.blocks, row.days], ['done', 0.478, T + 4000, 708.7, 1482, 42]);
   db.close();
 });
