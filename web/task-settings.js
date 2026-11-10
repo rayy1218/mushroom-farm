@@ -203,7 +203,7 @@ export function mountTaskSettings(container) {
     const self = x.id === me()?.id;
     const account = accounts?.get(x.id) ?? (accounts ? NO_ACCOUNT : null); // a name just added has no account row yet
     const acts = account && accountActions(account, { self, otherOwner: otherOwnerCanSignIn([...accounts.values()], x.id), now: Date.now() });
-    const remove = button('Remove', 'danger-text');
+    const remove = button('Remove', 'tk-quiet danger-text'); // red words, no frame: not the row's loudest button
     remove.setAttribute('aria-label', `Remove ${x.name}`);
     remove.dataset.focusKey = `remove-${x.id}`;
     rename.addEventListener('click', () => {

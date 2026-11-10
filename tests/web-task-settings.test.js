@@ -136,7 +136,7 @@ test("Workers: the row's buttons are accountActions'; no Remove on your own row;
 test("Workers: Set PIN or Set password is the row's main (framed) button while they cannot sign in; Rename and the rest are quiet", () => {
   assert.ok(cards.includes("const rename = button('Rename', 'tk-quiet');"));
   assert.ok(cards.includes("() => openSecret(x, a), a.hasSecret ? 'tk-quiet' : ''));"));
-  assert.ok(cards.includes("const remove = button('Remove', 'danger-text');"));
+  assert.ok(cards.includes("const remove = button('Remove', 'tk-quiet danger-text');"));
   for (const label of ["quiet(acts.role.label", "quiet('Unlock'", "quiet('Sign out everywhere'"]) {
     const line = cards.slice(cards.indexOf(label)).split('\n')[0];
     assert.ok(!/'tk-quiet' : ''/.test(line), label);
