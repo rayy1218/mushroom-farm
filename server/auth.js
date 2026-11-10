@@ -117,6 +117,7 @@ export function clientAddress(req) {
 // The request came from the tailnet (Tailscale's 100.64.0.0/10 or fd7a:115c:a1e0::/48, straight or through serve), or from
 // a browser on the farm computer (this machine, no X-Forwarded-For); else from the internet (Funnel).
 export function fromTailnet(req) {
+  if (req.headers['tailscale-funnel-request']) return false; // Tailscale marks a Funnel request (one that adds it only hurts itself)
   if (viaProxy(req) && !String(req.headers['x-forwarded-for'] ?? '').trim()) return true;
   const raw = clientAddress(req).toLowerCase();
   const v4 = /^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(raw);
@@ -156,7 +157,11 @@ export function addressKey(address) {
   const first = head === '' ? [] : head.split(':');
   const last = tail === null || tail === '' ? [] : tail.split(':');
   const groups = tail === null ? first : [...first, ...Array(Math.max(0, 8 - first.length - last.length)).fill('0'), ...last];
-  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+  const short = groups.map((g) => g.replace(/^0+(?=.)/, ''));
+  // The tailnet's devices share their first 96 bits (fd7a:115c:a1e0::/48): each counts on its own, so one device's tries
+  // never hold back another's.
+  if (a.startsWith('fd7a:115c:a1e0:')) return short.join(':');
+  return `${short.slice(0, 4).join(':')}::/64`;
 }
 
 // db: the farm database. log(line): one line per sign-in try (never the secret; refused ones at most a line a minute per
@@ -320,7 +325,9 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     if (held && held.lockedUntil !== null && held.lockedUntil > t) return refuse('locked-here', lockedReply(held.lockedUntil));
     if (internet) {
       if (budget.until <= t) budget = { count: 0, until: t + INTERNET.ms };
-      if (budget.count >= INTERNET.tries) return refuse('budget', fromHere);
+      if (budget.count >= INTERNET.tries) {
+        return refuse('budget', { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes' } });
+      }
       budget.count += 1;
     }
     // Count the try before the slow check (no await between the read and the write).

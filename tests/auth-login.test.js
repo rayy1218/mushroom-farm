@@ -295,6 +295,9 @@ test('addressKey: an IPv6 address counts by its /64, an IPv4-mapped one as its I
   assert.notEqual(addressKey('2001:db8:1:2::9'), addressKey('2001:db8:1:3::9'));
   assert.equal(addressKey('::ffff:203.0.113.9'), '203.0.113.9');
   assert.equal(addressKey('100.64.0.9'), '100.64.0.9');
+  // the tailnet's devices share their first 96 bits: each counts on its own, not by its /64
+  assert.notEqual(addressKey('fd7a:115c:a1e0:ab12:4843:cd96:6258:1'), addressKey('fd7a:115c:a1e0:ab12:4843:cd96:6258:2'));
+  assert.equal(addressKey('fd7a:115c:a1e0:ab12:4843:cd96:6258:1'), addressKey('FD7A:115C:A1E0:AB12:4843:CD96:6258:0001'));
 });
 
 test('17 sign-ins at once: the 17th is told the app is busy', async (t) => {
@@ -385,6 +388,10 @@ test('fromTailnet: 100.64.0.0/10, fd7a:115c:a1e0::/48, or this machine with no X
     r('127.0.0.1', '100.101.102.103'), r('::1', 'fd7a:115c:a1e0::9')]) assert.equal(fromTailnet(yes), true, JSON.stringify(yes));
   for (const no of [r('100.63.255.255'), r('100.128.0.1'), r('203.0.113.9'), r('fd7a:115c:a1e1::1'), r('2001:db8::1'),
     r('127.0.0.1', '203.0.113.9'), r('127.0.0.1', '127.0.0.1')]) assert.equal(fromTailnet(no), false, JSON.stringify(no));
+  // Tailscale marks a Funnel request: it is the internet whatever its address says
+  const funnel = { socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-forwarded-for': '100.101.102.103', 'tailscale-funnel-request': '?1' } };
+  assert.equal(fromTailnet(funnel), false);
+  assert.equal(fromTailnet({ socket: { remoteAddress: '127.0.0.1' }, headers: { 'tailscale-funnel-request': '?1' } }), false);
 });
 
 test('the internet may use 12 of the 16 checks at once: the 13th is busy, the tailnet keeps 4', async (t) => {
@@ -404,7 +411,7 @@ test('the internet budget: 600 checked tries in 15 minutes over all accounts; th
   const { auth, ali, ray, req, at, lines } = await setup(t, { check });
   const internet = (i) => req({ address: '127.0.0.1', forwarded: `198.51.${Math.floor(i / 20)}.${i % 20}` });
   for (let i = 0; i < 600; i++) assert.equal((await auth.login(internet(i), { id: 9999, secret: 'fast wrong' })).status, 401, `try ${i + 1}`);
-  const spent = { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes' } };
+  const spent = { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes' } };
   assert.deepEqual(await auth.login(internet(1000), { id: ray, secret: 'long enough password' }), spent);
   assert.match(lines.at(-1), / budget$/);
   assert.equal((await auth.login(req(from('100.64.22.1')), { id: ray, secret: 'long enough password' })).status, 200, 'the tailnet');
