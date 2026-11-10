@@ -96,7 +96,7 @@ test('the simulator\'s line: never, waiting, working, done (scaled past 90 days)
   const line = (sim, f = kwh, more = {}) => plain(simText(sim, f, { ...ctx, life: 42, machinesNote: null, ...more }));
   assert.deepEqual(line(null), { text: "Work it out runs Container 1's simulation with Lion's mane for one block life (42 days), with its machines from Setup. Nothing is switched.", action: 'Work it out' });
   assert.equal(line(null, kwh, { machinesNote: "Fan flow at Simulate's default (not on Setup)", life: 120 }).text,
-    "Work it out runs Container 1's simulation with Lion's mane for one block life (90 days), with its machines from Setup. Fan flow at Simulate's default (not on Setup). Nothing is switched.");
+    "Work it out runs Container 1's simulation with Lion's mane for one block life of 120 days (it runs 90 days and scales up), with its machines from Setup. Fan flow at Simulate's default (not on Setup). Nothing is switched.");
   assert.deepEqual(line({ status: 'waiting' }), { text: 'Waiting for another simulation…', action: null });
   assert.deepEqual(line({ status: 'working', progress: 0.4 }), { text: 'Working it out · 40 %', action: null });
   const done = { status: 'done', at: at('2026-11-06', 14) + 2 * 60_000, value: 0.478, kwh: 708.7, blocks: 1482, days: 42 };
@@ -158,4 +158,46 @@ test('the draft: typing a figure recalculates at once; one that is not a figure 
   assert.equal(draft.values().wage, 12);
   draft.drop('price');
   assert.deepEqual([draft.values().price, draft.error('price'), draft.unsaved('price')], [50, null, false]);
+});
+
+test('the draft: a new room or crop clears what was typed; a save drops only the value it saved; a first entry refused', () => {
+  const list = figures();
+  const reply = { room: { id: 1 }, crop: 'oyster', ways: ['yours'], figures: list };
+  const draft = createDraft();
+  draft.use(reply);
+  draft.type('price', '60');
+  draft.type('wage', 'abc');
+  draft.use({ ...reply, figures: list.slice() });
+  assert.deepEqual([draft.values().price, draft.error('wage')], [60, 'Labour cost must be a number from 0 to 200 RM an hour'], 'the same room and crop keeps it');
+  draft.use({ ...reply, crop: 'pink' });
+  assert.deepEqual([draft.unsaved('price'), draft.error('wage'), draft.values().price], [false, null, 50], 'a new crop clears it');
+  draft.use({ ...reply, crop: 'pink' });
+  draft.type('price', '60');
+  draft.use({ ...reply, room: { id: 2 }, crop: 'pink' });
+  assert.equal(draft.unsaved('price'), false, 'a new room clears it');
+
+  draft.type('price', '55');
+  draft.type('price', '60'); // typed while the save of 55 is in flight
+  draft.drop('price', 55);
+  assert.deepEqual([draft.unsaved('price'), draft.values().price], [true, 60], 'the reply of the 55 save leaves the 60');
+  draft.drop('price', 60);
+  assert.equal(draft.unsaved('price'), false);
+  draft.type('price', '60');
+  draft.drop('price');
+  assert.equal(draft.unsaved('price'), false, 'no value: Back to default drops it');
+
+  const fresh = createDraft();
+  fresh.use(reply);
+  const was = fresh.values().price;
+  fresh.type('price', 'abc');
+  assert.deepEqual([fresh.unsaved('price'), Boolean(fresh.error('price')), fresh.values().price], [false, true, was]);
+});
+
+test('the simulator\'s intro says a long block life as it is; a note with no text is not pushed', () => {
+  const kwh = one('yours.kwhBlock');
+  const text = (life) => plain(simText(null, kwh, { ...ctx, life, machinesNote: null })).text;
+  assert.match(text(120), /^Work it out runs Container 1's simulation with Lion's mane for one block life of 120 days \(it runs 90 days and scales up\), with its machines/);
+  assert.match(text(90), /for one block life \(90 days\), /);
+  assert.match(text(NaN), /for one block life \(1 day\), /);
+  assert.deepEqual(noteParts(one('wage', { source: 'runs', runs: { count: 1 } }), ctx), []);
 });

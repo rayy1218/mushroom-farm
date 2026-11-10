@@ -92,7 +92,8 @@ export function noteParts(f, ctx) {
   } else if (f.source === 'runs' && f.key === 'yours.loss') {
     out.push({ text: 'Counted in your yield: your runs\' kg a block is over every block put in.' });
   } else if (f.source === 'runs') {
-    out.push({ text: runsNote(f, ctx) });
+    const text = runsNote(f, ctx);
+    if (text) out.push({ text });
   } else if (f.source === 'settings' && f.key === 'price') {
     out.push({ text: 'Your expected price in Settings → Yield.', link: { text: 'Settings', href: SETTINGS_HASH } });
   } else if (f.source === 'settings') {
@@ -112,8 +113,10 @@ export function noteParts(f, ctx) {
 // The Electricity per block row's simulator line (spec 6.3): { text, tone?, action (the button's words) or null }. sim: the
 // view's; f: the kwhBlock figure; ctx: { room, crop, life (days), machinesNote }.
 export function simText(sim, f, { room, crop, life, machinesNote }) {
-  const days = Math.min(90, Math.max(1, Math.round(life)));
-  const intro = `Work it out runs ${room}'s simulation with ${cropShortName(crop)} for one block life (${plural(days, 'day', 'days')}), `
+  const wanted = Math.max(1, Math.round(life) || 1);
+  const days = Math.min(90, wanted);
+  const lifeText = wanted > 90 ? `of ${plural(wanted, 'day', 'days')} (it runs ${plural(90, 'day', 'days')} and scales up)` : `(${plural(days, 'day', 'days')})`;
+  const intro = `Work it out runs ${room}'s simulation with ${cropShortName(crop)} for one block life ${lifeText}, `
     + `with its machines from Setup.${machinesNote ? ` ${machinesNote}.` : ''} Nothing is switched.`;
   if (!sim) return { text: intro, action: 'Work it out' };
   if (sim.status === 'waiting') return { text: 'Waiting for another simulation…', action: null };
@@ -174,15 +177,24 @@ export function partsLine(errors) {
 
 // The figures as the page holds them while the owner types (spec 8.5, 9.1): the last reply's, with each box's last valid
 // figure over it until it is saved, put back or refused; a box whose text is not a figure keeps its last valid one in the
-// sums and its refusal. A new reply keeps what is typed. → { use(reply), type(key, text), drop(key), error(key),
+// sums and its refusal. A new reply keeps what is typed. → { use(reply), type(key, text), drop(key, value), error(key),
 // unsaved(key), values(), results() }.
 export function createDraft() {
   let figures = [];
   let ways = ['yours'];
+  let room;
+  let crop;
   const typedValues = {};
   const errors = {};
   return {
     use(reply) {
+      // Another room or crop: what was typed belongs to the one before.
+      if (reply.room?.id !== room || reply.crop !== crop) {
+        for (const key of Object.keys(typedValues)) delete typedValues[key];
+        for (const key of Object.keys(errors)) delete errors[key];
+      }
+      room = reply.room?.id;
+      crop = reply.crop;
       figures = reply.figures;
       ways = reply.ways;
     },
@@ -196,7 +208,9 @@ export function createDraft() {
       }
       return t;
     },
-    drop(key) {
+    // With the value that was saved, only that one goes (the owner may have typed another since); without, any (Back to default).
+    drop(key, value) {
+      if (value !== undefined && typedValues[key] !== value) return;
       delete typedValues[key];
       delete errors[key];
     },
