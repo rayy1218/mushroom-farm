@@ -36,7 +36,7 @@ the runs against the plan.
 | Route | `parseRoute('#/business/economics')` (also with `/` and `?room=<id>&crop=<key>`) → `{ name: 'economics', room, crop }`: `room` a whole number or null, `crop` one of `ECONOMICS_CROPS` (`'oyster'`, `'pink'`, `'woodear'`, `'lionsmane'`) or null. `canonicalHash` leaves a null out |
 | The room and crop shown | The address's; without a room, the first room of the reply's list (the Overview's order); without a crop, the room's main crop now when it is one of the four (`mainCrop`), else lion's mane (the farm's main target, PRODUCT.md). The page writes its choice into the address in place (`history.replaceState`, as Runs' Crop select), so a reload keeps it. No memory between visits (as the Summary) |
 | Mount | `app.js`: `: route.name === 'economics' ? economics.mount(page, { room: route.room, crop: route.crop }) // ---- Economics ----` into the `.bz-page` box under the strip; the view takes `.bz-view` |
-| Who | The owner. The routes are not on the login work's worker allow-list (`server/roles.js`, merged in 938a61e), so a worker gets 403, as for every money page |
+| Who | The owner. The routes are not on the login work's worker allow-list (`server/roles.js`, merged in 938a61e), so a worker gets 403 on every Economics route, as for every money page; a worker's live stream never carries the `economics` event (`OWNER_EVENTS` in `server/live.js`) |
 
 ## 3. Data (database version 26)
 
@@ -71,12 +71,12 @@ END;
 | `economicsFigures(roomId, crop)` | `[row]` (camelCase) | Every row with `room_id` in (0, roomId) and `crop` in ('', crop) |
 | `setEconomicsFigure({ roomId, crop, key, value, at })` | the row | Upserts the owner's row; `roomId` and `crop` are already 0 / '' where the key's scope says so (section 4) |
 | `clearEconomicsFigure({ roomId, crop, key })` | true when a row went | Deletes the owner's row only |
-| `startEconomicsSim({ roomId, crop, simId, at })` | the row | Upserts the simulator row of `'yours.kwhBlock'`: `status 'working'`, `sim_id`, `started_at`, `error` null; `value`, `at`, `kwh`, `blocks`, `days` kept (the figure before it stays) |
-| `settleEconomicsSim({ simId, value, at, kwh, blocks, days } \| { simId, error })` | the row or null | Done: `status 'done'` and the new value; failed: `status 'failed'`, `error`, the value kept |
+| `startEconomicsSim({ roomId, crop, simId, at })` | the row | Upserts the simulator row of `'yours.kwhBlock'`: `status 'working'`, `sim_id` (null when the simulation's checks refused the body: there is no run), `started_at`, `error` null; `value`, `at`, `kwh`, `blocks`, `days` kept (the figure before it stays) |
+| `settleEconomicsSim({ roomId, crop, value, at, kwh, blocks, days } \| { roomId, crop, error })` | the row or null | The row found by room and crop (one simulator row each), not by `simId`. Done: `status 'done'` and the new value; failed: `status 'failed'`, `error`, the value kept. Neither a value nor an error: throws |
 | `economicsSimsWorking()` | `[row]` | The rows still `'working'` (the server settles them at start, section 6) |
 
 Room ids are reused, so a deleted room's figures go with it (the trigger; `deleteRoom` is untouched). A farm or crop figure
-(`room_id` 0) stays.
+(`room_id` 0) stays. The service (section 6.2) settles a row only from the event of the run whose id is the row's `simId`.
 
 ## 4. The figures and where each comes from
 
@@ -94,7 +94,10 @@ Room ids are reused, so a deleted room's figures go with it (the trigger; `delet
 Scope says where a figure applies and so where it is saved: **farm** (every room and crop: `room_id` 0, `crop` ''), **crop**
 (every room, that crop: `room_id` 0), **room** (that room, every crop: `crop` ''), **room and crop**. Checks: a figure out of
 its range is refused with "<Label> must be a number from <min> to <max> <unit>" ("a whole number" when whole), the
-Settings rule's words. Defaults, ranges, confidence and sources: the appendix, section 1.
+Settings rule's words. Defaults, ranges, confidence and sources: the appendix, section 1. As built: the research electricity
+price is the app's 0.55 (Settings' default; its note works out 55.15 sen); the highland grower's and the warm strain's rows
+cite appendix 1.6's and 1.7's sources each; `researchOf` gives null for a figure the crop doesn't show; the research blocks
+are capped at the figure's 100,000.
 
 | Key | Label | Unit | Scope | Range | Ways |
 |---|---|---|---|---|---|
@@ -138,7 +141,7 @@ The first source that has the figure gives it; the page tags it. "You set" over 
 | `yours.yieldG` | You set › Your runs (Harvest) › Research |
 | `yours.loss` | You set › Your runs (0 when the yield is from your runs: "counted in your yield", section 4.4) › Research |
 | `yours.kwhBlock` | You set › Your runs (the room's measured energy) › Simulator › Research |
-| `yours.blocks` | You set › Your runs (the room's blocks now, from its Crop tab; else its latest run's) › Research (the room's volume × 22, rounded down) |
+| `yours.blocks` | You set › Your runs (the room's blocks now, from its Crop tab; else its latest run's) › Research (the room's volume × 22, rounded down, at least 1 and at most 100,000, the figure's top) |
 | `yours.container`, `yours.cooling`, `yours.humidifier`, `yours.racks` | You set › Research, from the room's size (appendix 1.4): over 40 m³ a 40 ft high cube, else a 20 ft; humidifiers one per 6 L/h of the room's humidifier output (Setup); racks RM 0.70 × `yours.blocks` |
 | `tariff` | Settings → Electricity price (Costs uses the same price) |
 | Every other figure | You set › Research |
@@ -154,7 +157,7 @@ dates.
 | Yield per block | Harvest: `harvests.roomView(R).past`, each counted run's `byCrop` entry for C | Σ kg of C ÷ Σ blocks of C × 1,000, in g. Harvest counts every block put in, so the lost blocks are already in it; `yours.loss` then reads 0 from your runs |
 | Selling price | Sales: the sale lines of C (`db.salesBetween`) tied to a counted run (`runId`, or no run and `roomId` R on a day of the run by Costs' `runOn` rule) | Σ total ÷ Σ kg. With no line tied: C's sales farm-wide from the first counted run's start to 14 days after the last one's end ("farm-wide sales", said in the note). None: the next source |
 | Block price | Batches: `batches.list()` rows of C on a counted run with a `pricePerBlock` | Σ (blocks × price) ÷ Σ blocks. Batches without a price are left out and named in the note ("2 batches without a price left out"); none priced: the next source |
-| Electricity per block | Energy: `roomDays(db, room, { cachedOnly: true, count })` (`server/usage.js`) for R, each day given to the run open on it (Costs' `runOn`) | Σ kWh of the counted runs' days ÷ Σ blocks of those runs (all their crops: the room's electricity serves every block in it). A run with a day before the energy kept (400 days) or with no kWh at all is left out; a day still being worked out (`pending`) leaves the figure "working out" until the Costs warm publishes `costs` |
+| Electricity per block | Energy: `roomDays(db, room, { cachedOnly: true, count })` (`server/usage.js`) for R, each day given to the run open on it (Costs' `runOn`) | Σ kWh of the counted runs' days ÷ Σ blocks of those runs (all their crops: the room's electricity serves every block in it). A run with a day before the energy kept (400 days) or with no kWh at all is left out; a day still being worked out (`pending`) leaves the figure to the next source with the note "Your runs: working out the energy…" until Harvest's own warm (started by `roomView`) publishes `harvest` |
 | Blocks in the room | The room's program (`db.getProgram(id).crops`, its Crop tab; all crops summed) | Its blocks now; an empty room: its latest run's blocks. This is the room's own number, so it counts as Your runs |
 
 ### 4.5 A source that can't be read
@@ -235,19 +238,22 @@ no clock. A month is 30.4 days.
 |---|---|
 | Button | On the **Electricity per block** row of Your container: "Work it out" (or "Work it out again"). `POST /api/economics/work-out` `{ room, crop }` |
 | What runs | One of the room's simulations, queued through `simulations.start(roomId, body)` (`server/simulations.js`) like Simulate's: it shows on the room's Simulation page with the others and keeps their limits (one runs at a time, at most 5 waiting per room) |
-| Body | `crops: [{ crop, blocks: yours.blocks }]`; `farmType: 'ready'`, `stage: 'fruiting'`, `start: 'band'`; `days` = Your container's block life, rounded, 1 to 90; the walls, weather and filter of the room's newest simulation (its `input.physics`), else Simulate's defaults (`PHYSICS_FIELDS` `def`: walls 80 W/K, sun 300 W, 33 / 25 °C, dew point 24 °C); the machines the room has on Setup (`roomMachines` in `web/simulate-math.js`: the aircon class from its rated input, the humidifier's output, a dehumidifier when fitted; the fan flow from the newest run, else 600 m³/h) |
+| Body | `crops: [{ crop, blocks: yours.blocks }]`; `farmType: 'ready'`, `stage: 'fruiting'`, `start: 'band'`; `days` = Your container's block life, rounded, 1 to 90 (a life that is not a number or is under 1 day runs 1 day); each wall, weather and filter field from the room's newest simulation (its `input.physics`), else the room's own on Setup, else Simulate's default (`PHYSICS_FIELDS` `def`: walls 80 W/K, sun 300 W, 33 / 25 °C, dew point 24 °C), as Simulate fills them; `filterUsedDays` counted from the room's last filter change (0 with none, at most 365), not the run's; `filterSensor` when the room has a filter pressure sensor; the machines the room has on Setup (`roomMachines` in `web/simulate-math.js`: the aircon class from its rated input, the humidifier's output, a dehumidifier when fitted; the fan flow from the newest run, else 600 m³/h) |
 | The figure | kWh per block = the run's `summary.energy.kWh` ÷ its blocks, to 3 places; saved in the simulator row with the run's kWh, blocks, days and the time it finished |
 | How long | Measured on the development desk: 2.3 s for 42 days and 3.9 s for 68 days of a 1,482-block 40 ft (one worker thread; it never holds up the farm app). The cloud VM is slower; a run queued behind others waits its turn |
 | Machines | None switched. `simulate.js` is pure (the device app's air model, the farm's control and program, ideal sensors, no Modbus, no clock), run in a worker thread; it never touches the live room, its machines or its program |
-| One at a time | One Work it out per room and crop: asking again while one works is refused (409) |
+| One at a time | One Work it out per room and crop: asking again while one works is refused (409). A row still working whose run has ended (its event missed) or gone (cancelled, deleted) is settled first, so the refusal never stands on a run that is over |
 
 ### 6.2 Settling the result
 
 | When | Then |
 |---|---|
-| The `simulation` event says the run is `done` | The row is done (`settleEconomicsSim`); `economics` is published |
+| The `simulation` event of the row's run (its id the row's `simId`) says `done` | The row is done (`settleEconomicsSim`); `economics` is published |
 | The run is `failed` | The row fails with the run's error; the value before it stays; `economics` is published |
-| The run is gone (deleted on the Simulation page while waiting or running) | Fails with "The simulation was deleted" |
+| The run is gone (deleted on the Simulation page while waiting or running, or cancelled) | Fails with "The simulation was deleted" |
+| The row's run id was reused (SQLite gives a deleted or cancelled run's id to the next run): the run with that id is in another room, or was made after the row started | The same: "The simulation was deleted" |
+| The run ended inside `simulations.start` (its worker could not spawn; its event came before the row) | Settled at once from the run. The reply is still 202: the page reads `view.sim.status`, never the HTTP status |
+| Any read of the view | The room and crop's working row is settled first when its run has ended or gone (an event missed) |
 | The farm app restarts mid-run | At start, every `'working'` row is settled from its run: Simulate's own restart failure ("Stopped by a restart of the farm app") |
 | The body is refused by the simulation's checks | The row fails at once with the check's words ("Aircon size must be a whole number from 0 to 200000 BTU/h"); the reply is 200 with that state |
 
@@ -255,12 +261,13 @@ no clock. A month is 30.4 days.
 
 | State | On the Electricity per block row |
 |---|---|
-| Never worked out | The Research note, then "Work it out runs Container 1's simulation with Lion's mane for one block life (42 days), with its machines from Setup. Nothing is switched." and **Work it out** |
+| Never worked out | The Research note, then "Work it out runs Container 1's simulation with Lion's mane for one block life (42 days), with its machines from Setup. Nothing is switched." and **Work it out**. The machines at Simulate's defaults are named before "Nothing is switched" (`machinesNote`); a life over 90 days reads "for one block life of 120 days (it runs 90 days and scales up)" |
 | Waiting | "Waiting for another simulation…" (the run is queued) |
 | Working | "Working it out · 40 %" (the `simulation` event's progress; a polite live line says "Working it out" once) |
 | Done | Tag Simulator; "Simulator, 6 Nov 14:02: 708.7 kWh over 42 days for 1,482 blocks." and **Work it out again** |
 | Failed | "Couldn't work it out: <the reason>. The figure before it stays." in the warning text tone, and **Try again** |
 | Your runs have it | Tag Your runs; the simulator's figure, when there is one, in the note ("Simulator, 6 Nov: 0.48 kWh"); **Work it out again** stays |
+| Work it out refused (409 "Already working it out…", the queue's limit, no answer) | Its words in the row in the warning text tone, said on the polite live line; gone once the run moves on (starts, ends, fails or is worked out again) |
 
 ## 7. API (`server/economics.js`, `server/economics-api.js`)
 
@@ -275,7 +282,7 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | Route | Reply |
 |---|---|
 | `GET /api/economics?room=<id>&crop=<key>` | 200 the view (7.2). No `room`: the first room. No `crop`: the room's main crop when one of the four, else `'lionsmane'`. A bad crop: 400 `{ error: 'Pick a crop', field: 'crop' }`; a room not there: 404 `{ error: 'Room not found' }` |
-| `PUT /api/economics/figures` | Body `{ room, crop, key, value }` → 200 the view. 400 `{ error, field: 'value' }` out of range (4.2's words); 400 `{ error: 'Unknown figure', field: 'key' }`; 400 `{ error: 'Electricity price is set in Settings', field: 'key' }` for `tariff`; 404 a room not there |
+| `PUT /api/economics/figures` | Body `{ room, crop, key, value }` → 200 the view. 400 `{ error, field: 'value' }` out of range (4.2's words); 400 `{ error: 'Unknown figure', field: 'key' }` (also a figure of a way not shown for the crop); 400 `{ error: 'Electricity price is set in Settings', field: 'key' }` for `tariff`; 404 a room not there |
 | `DELETE /api/economics/figures?room=&crop=&key=` | 200 the view (also when nothing was set) |
 | `POST /api/economics/work-out` | Body `{ room, crop }` → 202 the view, the simulator working; 409 `{ error: 'Already working it out for Container 1 and Lion's mane' }`; 409 the simulations' own "This room already has 5 simulations waiting or running"; 200 the view with the failure (6.2) when the simulation's checks refuse the body |
 | Any other method or path under `/api/economics` | 404 "Not found" |
@@ -289,15 +296,16 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | `crop` | `'oyster' \| 'pink' \| 'woodear' \| 'lionsmane'` | |
 | `ways` | `['yours', …]` | 4.1's order for the crop |
 | `left` | `[{ way, reason }]` | 4.1's not compared; `reason` a key the page words (`'too-cool'`, `'not-imported'`, `'warm-strain'`) |
-| `figures` | `[{ key, way, scope, value, source, at, real, research, runs, notes }]` | Every figure of 4.2 for the shown ways. `source` `'owner' \| 'runs' \| 'simulator' \| 'settings' \| 'research'`; `at` (ms) for an owner or simulator figure; `real`: the figure under an owner's, `{ value, source }` (runs, simulator or settings) or null; `research` `{ value, low, high, confidence }` (the room-size defaults worked out); `runs` `{ count, from, to, kg, blocks, total, batchesLeftOut, farmWide }` (what the note needs) or null; `notes`: keys (`'loss-in-yield'`, `'not-read:sales'`, `'pending'`) |
-| `sim` | `{ status, simId, progress, startedAt, at, kwh, blocks, days, error }` or null | The simulator row of the room and crop; `progress` while working (the run's) |
+| `figures` | `[{ key, way, scope, value, source, at, real, research, runs, notes }]` | Every figure of 4.2 for the shown ways. `source` `'owner' \| 'runs' \| 'simulator' \| 'settings' \| 'research'`; `at` (ms) for an owner or simulator figure; `real`: the figure under an owner's, `{ value, source }` (runs, simulator or settings) or null; `research` `{ value, low, high, confidence, sources, note }` (the room-size defaults worked out; null for none); `runs` (what the note needs) or null: the yield `{ count, from, to, kg, blocks }`, the price `{ count, from, to, kg, total, farmWide, until }` (`until` farm-wide only), the block price `{ count, blocks, batches, batchesLeftOut }`, the electricity `{ count, kWh, days, blocks }` (`{ count }` while pending), the loss `{ count, from, to }`, the blocks `{ from: 'crop' }` or `{ from: 'run', at }`; `notes`: keys (`'loss-in-yield'`, `'loss-twice'`, `'not-read:sales'`, `'pending'`) |
+| `sim` | `{ status, simId, progress, startedAt, at, value, kwh, blocks, days, error }` or null | The simulator row of the room and crop; `status` `'waiting'` while its run is queued (the row itself says `'working'`), `'working'`, `'done'` or `'failed'`; `progress` while working (the run's) |
+| `machinesNote` | text or null | `roomMachines`' note: the machines Work it out would take at Simulate's defaults (9.3) |
 | `errors` | `{ [part]: 'Something went wrong' }` | Parts `harvest`, `sales`, `batches`, `energy`; `{}` when every part was read (the Summary's rule) |
 
 ### 7.3 Events
 
 | Event | When |
 |---|---|
-| `economics` `{ roomId, crop }` | A figure set or cleared, a Work it out started, settled or failed. `'economics'` is added to `EVENT_TYPES` in `web/live.js` (one line) |
+| `economics` `{ roomId, crop }` | A figure set or cleared, a Work it out started, settled or failed. `'economics'` is added to `EVENT_TYPES` in `web/live.js` (one line). An owner's stream only (2) |
 | `simulation` (existing) | The page shows its run's progress from it without asking again |
 
 ## 8. The page (`web/economics-page.js` `mount(container, { room, crop })`)
@@ -307,33 +315,37 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | Part | Design |
 |---|---|
 | Head | "Economics", under it "What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in." Document title "Economics · Mushroom farm". Under the line two labelled selects (Calendar's): **Room** (each room's name) and **Crop** (Grey oyster, Pink oyster, Black jelly, Lion's mane); side by side, stacked under 600 px |
-| Headline card | No card title; the sentence of 8.2 in the lead size (`fs-lg`, 600), the second sentence under it in `fs-md` `ink-2`, then one muted `fs-sm` line on the figures' sources: "From your runs: yield, selling price · Simulator: electricity · You set: 2 · The rest is research." ("All research: set your own figures below." when none is real) |
+| Headline card | No card title; the sentence of 8.2 in the lead size (`fs-lg`, 600), the second sentence under it in `fs-md` `ink-2`, then one muted `fs-sm` line on the figures' sources: "From your runs: yield, selling price · Simulator: electricity · You set: 2 · The rest is research." ("All research: set your own figures below." when none is real). Your runs, the simulator and Settings list their figures in the order yield, selling price, block price, electricity; the blocks are not counted, so a new farm with a planted room still reads "All research" |
 | Compared | Card title "A month, each way". A table (caption the title): a column per shown way, headed "Your container" (with the room's name under it, muted), "Lowland shed", "Highland grower", "Import and resell", "Warm strain"; rows 8.3. Under it, muted `fs-sm` lines: the first fill (8.3), "Every way is sized to Container 1's 1,740 blocks; a shed or a highland house holds up to 2,000." and the not compared line (8.4) |
 | Figures | Card title "Figures", under it muted: "Change a figure and the page works it out again as you type; it is saved for every device when you leave the box." Folds (DESIGN's): **Shared by every way** and **Your container** open; then one per other shown way, closed, its head "Lowland shed · 13 figures · all research" ("· 2 you set"). A row per figure (8.5) |
 | Layout | One column at every width: Headline, Compared, Figures. The table's box scrolls sideways when it must (a region named by its caption, a Tab stop, as Runs) |
-| Phone (≤ 600 px) | Compared becomes one block per way, Your container first (the Runs table's blocks: ARIA `table`, `row`, `rowheader`, `cell`; each block's label `content: attr(data-label) / ""`), its head the way's name with Profit a month beside it. Every select, box, button and link reaches 44 px |
+| Phone (≤ 600 px) | Compared becomes one small table a way, Your container first (a real table each, its caption "Lowland shed: a month"; the desk table is hidden on a phone and the small ones on a desk): its head the way's name with "Profit a month" over its figure beside it, then a row a part. Every select, box, button and stand-alone link reaches 44 px. A link inside a note's sentence (a research note's sources, each one link of several) keeps its line, with no padding: padding made it overlap the next line's link (WCAG 2.5.8's inline exception). The lead's decision, the owner to confirm |
 | Shared look | `.bz-view` card titles (14 px); folds, chips, inputs and the quiet button (`bz-quiet`) as they are; the page's own CSS in the `.ec-` block |
 
-### 8.2 The headline (exact words; `headline(results, room, crop)` in `web/economics-math.js`)
+### 8.2 The headline (exact words; `headline(results, { room, crop, life })` in `web/economics-math.js`)
 
 | Case | Sentence 1 |
 |---|---|
 | A profit that pays back | "Lion's mane in Container 1: RM 3,003.16 a month, break-even RM 38.23 a kg, pays back in 13 months." |
 | A profit that doesn't pay back within the write-off | "Lion's mane in Container 1: RM 120.00 a month, break-even RM 49.10 a kg, but it doesn't pay back within the 60 months the equipment is written off over." |
 | A loss | "Grey oyster in Container 1: −RM 1,400.38 a month loss, break-even RM 18.68 a kg, never pays back." (only the figure in the critical text token) |
-| Nothing sold (yield, blocks or kg 0) | "Grey oyster in Container 1 sells nothing at these figures: −RM 2,083.00 a month loss." |
+| Nothing sold (the kg sold shows as 0.0 kg) | "Grey oyster in Container 1 sells nothing at these figures: −RM 2,083.00 a month loss."; not a loss: "Grey oyster in Container 1 sells nothing at these figures: RM 0.00 a month." |
+
+A loss is a profit that shows below RM 0.00 (its sign decided as `moneyText` decides it); a profit that shows as RM 0.00 is
+never a loss: yours reads "RM 0.00 a month", and the best other way at RM 0.00 "breaks even" in sentence 2. Ways are compared
+by their figures as shown (to the sen).
 
 | Case (the best other way: the shown way with the most profit, ties in column order) | Sentence 2 |
 |---|---|
-| It makes more than yours, at a profit | "A highland grower makes RM 3,152.92 on a quarter of the equipment." |
+| It makes more than yours, at a profit | "A highland grower makes RM 3,152.92 on a quarter of the equipment."; at RM 0.00: "A lowland shed breaks even on a tenth of the equipment." |
 | It loses less than yours | "A lowland shed loses less, −RM 814.18, on a tenth of the equipment." |
-| Yours makes the most, at a profit | "That is the most of the 4 ways; next, a highland grower makes RM 2,000.00." ("Every other way loses money at these figures." when they all lose) |
+| Yours makes the most, at a profit or RM 0.00 | "That is the most of the 4 ways; next, a highland grower makes RM 2,000.00." ("…; next, a lowland shed breaks even." at RM 0.00; "Every other way loses money at these figures." when they all lose) |
 | Yours loses, and every other way loses more | "Every other way loses more." |
 | Only one way shown | None |
 
 | Equipment words (the other way's equipment ÷ yours) | Words |
 |---|---|
-| Import (none) | "with no equipment" |
+| Import, or another way with equipment 0 | "with no equipment" |
 | Yours is 0 | "on RM 6,800.00 of equipment" |
 | Under 0.875 | "on <the nearest of a tenth, a fifth, a quarter, a third, half, two thirds, three quarters> of the equipment" (0.2306 → "a quarter") |
 | 0.875 to 1.15 | "on about the same equipment" |
@@ -386,14 +398,16 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 
 | Part | Design |
 |---|---|
-| Label | The figure's label (4.2), with its unit in the box's suffix ("g", "RM/kg", "%") |
-| Box | A number box (`inputmode="decimal"`, whole-number figures `numeric`), 9em, the value without grouping ("1740", "38.23"). Settings figures (Electricity price) show the value as text and a link "Change in Settings" (`#/settings`) instead |
-| Tag | A neutral chip: "You set", "Your runs · 4 runs" ("· 1 run"), "Simulator", "Settings", "Research". Never colour alone |
+| Label | The figure's label (4.2); its unit muted beside the box ("g", "RM/kg", "%"), the boxes in one column. On a phone the label goes over the box and tag |
+| Box | A number box (`inputmode="decimal"`, whole-number figures `numeric`), 9em, right-aligned, the value without grouping ("1740", "38.23"), on the shared field rules (DESIGN's Inputs: 40 px on a desk, 44 px on a phone). Settings figures (Electricity price) show the value as text and a link "Change in Settings" (`#/settings`) instead |
+| Tag | A neutral chip, the same for every source (the owner's "You set" too): "You set", "Your runs · 4 runs" ("· 1 run"; "Your runs" alone for the room's blocks), "Simulator", "Settings", "Research"; "Saving…" while a save is under way, "Not saved" after one got no answer. Never colour alone |
 | Note | Muted `fs-sm` under the row (8.6), with its actions |
 | Applies | Muted `fs-sm`: "Every room and crop" (farm), "Every room, Lion's mane" (crop), "Container 1, every crop" (room), "Container 1, Lion's mane" (room and crop) |
-| Type | On each `input` a valid number recalculates the headline and the table at once (the model in the browser); an invalid one keeps the last valid figure in them and shows the refusal under the box (`critical-text`, `aria-invalid`, `aria-describedby`), the page checking with 4.2's ranges and words before sending |
-| Save | On `change` (Enter, or leaving the box): `PUT`; the tag reads "Saving…", then "You set"; a polite live line "Saved: Selling price, RM 55.00 a kg, every room." A refusal from the server: its words under the box, nothing saved. No answer: "Couldn't save · Retry" under the box; the typed figure stays in the sums, marked "not saved" |
+| Type | On each `input` a valid number recalculates the headline and the table at once (the model in the browser); an invalid one keeps the last valid figure in them and shows the refusal under the box (`critical-text`, `aria-invalid`, `aria-describedby`), the page checking with 4.2's ranges and words before sending. A refused box (the page's check or the server's) keeps its text, its refusal and `aria-invalid` through repaints until it is changed |
+| Save | On `change` (Enter, or leaving the box): `PUT`; the tag reads "Saving…", then "You set"; a polite live line "Saved: Selling price, RM 55.00 a kg, every room." A refusal from the server (a 4xx): its words under the box and said, nothing saved, the sums back on the last valid figure. No answer or a server fault (a 5xx): the typed figure stays in the sums, the tag "Not saved", "Couldn't save · Retry" over the note, and "Selling price: couldn't save. Retry is under it." said. A save's reply drops only the value it saved: a figure typed in the box since stays |
 | Back to default | A quiet button (`bz-quiet`) on a You set figure: `DELETE`; the figure falls to its next source; the cursor stays on the row's box |
+| Room or crop changed | What was typed, refused or not saved is cleared: it belonged to the room and crop before |
+| Focus after a repaint | The cursor stays in its figure's row: a research note's source link gone (a save made the figure You set) puts it on Back to default, else on the box; Work it out's button gone (the run started) puts it on the run's line, never a box. A note's links are keyed by their row and line (one source is cited by many rows) |
 
 ### 8.6 The notes (exact words)
 
@@ -409,7 +423,7 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | Settings, price | "Your expected price in Settings → Yield." and the link "Settings" |
 | Settings, electricity | "Settings → Electricity price; Costs uses it too." and "Change in Settings" |
 | You set | "You set this on 6 Nov." and **Back to default**; over a real figure: "You set this on 6 Nov · Your runs: 227 g." |
-| A part not read | "Couldn't read Sales just now; using research." in the warning text tone |
+| A part not read | "Couldn't read Sales just now; using research." in the warning text tone (the source used named: research, the simulator, Settings, your figure) |
 | The simulator | 6.3 |
 
 ### 8.7 Numbers (the One Format Rule)
@@ -422,7 +436,8 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | Blocks, grouped | `grouped` | `web/overview-math.js` |
 | Months, g, kWh, %, days, min, hours | `monthsText`, `figureText(key, v)` ("250 g", "0.40 kWh", "10 %", "42 days", "2.52 min", "2 hours a day") | `web/economics-math.js` |
 | A crop's name | `cropShortName` ("Black jelly (wood ear)" in sentences; "Black jelly" in the select) | `web/crops.js` |
-| Dates | `dayMonth` ("6 Nov"), `formatDateTime` ("6 Nov 14:02") | `web/tasks-math.js`, `web/simulation-math.js` |
+| Dates | In farm time, as the other Business pages: `dayMonth(farmDate(ms))` ("6 Nov"), with `farmTime` ("6 Nov 14:02") | `web/tasks-math.js` |
+| Units together | `keepTogether(text)`: a no-break space joins a number to its unit and RM or USD to its number, and word joiners keep a range ("RM 3.00–10.00") whole at its dash on a phone; every research note, refusal and line goes through it or is written so (`tests/web-economics-units.test.js`) | `web/economics-defaults.js` |
 
 ## 9. Live updates, failures and edge cases
 
@@ -434,8 +449,8 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | `simulation` with the page's `sim.simId` | The progress words only; `done` or `failed` arrives as `economics` |
 | The stream back up | Read again |
 | Timer | 60 s (`fallbackMs`) |
-| A stale answer | Dropped (a mount token and a read sequence) |
-| A repaint | Keeps the cursor on the same box or button by its figure key; never rewrites a box the owner is typing in (its text and its unsaved figure stay); a reply equal to the last one painted paints nothing |
+| A stale answer | Dropped (a mount token and a read sequence): a read asked before a save, Back to default or Work it out; an action's reply older than one already painted; a reply for a room or crop no longer picked |
+| A repaint | Keeps the cursor on the same box or button by its figure key (8.5); never rewrites a box the owner is typing in, one holding a figure not yet saved, or a refused one; a reply equal to the last one painted paints nothing |
 
 ### 9.2 States
 
@@ -464,7 +479,7 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | Blocks 0, yield 0, price 0 | Blocks are at least 1; yield or price 0: income 0, "sells nothing" |
 | Equipment all 0 | Payback "under 1 month" when op > 0 (no equipment to pay back, the fill still counted) |
 | A Work it out with the room's machines not rated | Simulate's defaults fill in (as `roomMachines` says); the note names them |
-| The block life over 90 days (black jelly 85 is under) | The simulation runs 90 days and the kWh is scaled to the life: × life ÷ 90 (said in the note: "scaled from 90 days") |
+| The block life over 90 days (black jelly 85 is under) | The simulation runs 90 days and the kWh is scaled to the life: × life ÷ 90 (said in the note: "scaled from 90 days"). The life is kept in memory per room and crop with the run's id (a reused id never takes another run's life); after a restart the run's own days are used |
 | Two devices change the same figure | The last save wins; the other device repaints on the `economics` event (unless its box is being typed in) |
 | The room renamed | The words follow on the `room` event |
 
@@ -613,3 +628,29 @@ Test files use in-memory databases and servers on port 0; a look server uses a p
 | Months: one decimal under 9.95, whole above, "under 1 month", "never" | The model page's rule, so "6.2 months" and "13 months" read as the owner saw them |
 | The page and its routes are the owner's only | All of it is money; the login work closes any route not on its worker list |
 | The crops are the four the owner named | The other crops have no research; adding one is a defaults entry and a test |
+
+## 13. What shipped beyond this spec
+
+Built 2026-11-10 on `feat/economics`. The plan (`docs/superpowers/plans/2026-11-06-economics.md`) settled the first rows where
+the spec was open; the build's reviews settled the rest. The sections named are amended to match.
+
+| Part | What shipped |
+|---|---|
+| Database | Version 26 (the login took 25). Back up `data/v2.db` before the first start at 26 |
+| Server files | Your runs (`server/economics-runs.js`), Work it out's body and figure (`server/economics-sim.js`) and the routes (`server/economics-api.js`) beside the service (`server/economics.js`); the Figures card's words in `web/economics-figures.js` beside `web/economics-math.js` |
+| `settleEconomicsSim` (3) | Takes `{ roomId, crop, … }` and finds the row by room and crop, not by `simId`: a Work it out the simulation's checks refuse has no run and still fails its row. The service settles a row only from the event whose id is the row's `simId` |
+| A reused run id (6.2) | SQLite gives a deleted or cancelled run's id to the next run. A row whose run id now names a run of another room, or one made after the row started, settles as "The simulation was deleted". The block life used for scaling is kept per room and crop with its run's id |
+| Work it out's body (6.1) | Each wall, weather and filter field from the newest run, else the room's Setup, else Simulate's default, as Simulate fills them; `filterUsedDays` from the room's last filter change; a block life that is not a number or is under 1 day runs 1 day |
+| Settling (6.2) | Work it out settles a missed or cancelled run before saying "Already working it out"; a run that ends inside `start` is settled at once; the reply is 202 even then, and the page reads `view.sim.status` |
+| The view (7.2) | `sim.status` is `'waiting'` while the run is queued; `machinesNote` names the machines at Simulate's defaults; a figure's `research` carries its `sources` and `note`; the `runs` shapes and the `'loss-twice'` note |
+| Pending energy (4.4) | A day still being worked out leaves the electricity per block from the next source with the "working out the energy…" note; Harvest's own warm (started by `roomView`) publishes `harvest` when done, which the page hears |
+| Over 90 days (9.3) | The kWh is scaled by the block life the run was started for (kept in memory; after a restart, the run's own days) |
+| Research (4.2, 4.3) | The research electricity price is the app's 0.55 (its note works out 55.15 sen); the highland grower's and the warm strain's sources as appendix 1.6 and 1.7; `researchOf` is null for a figure the crop doesn't show; the research blocks capped at 100,000 |
+| A figure of a way not shown (7.1) | Refused as "Unknown figure" |
+| The owner's only (2, 7.3) | Every Economics route answers a worker 403; a worker's live stream never carries `economics` (`OWNER_EVENTS` in `server/live.js`) |
+| The sources line (8.1) | The blocks are not counted, so a new farm with a planted room still reads "All research"; the figures listed as yield, selling price, block price, electricity |
+| The phone's comparison (8.1) | One small table a way (its name, and "Profit a month" over its figure, as its head) instead of ARIA-roled blocks |
+| Links on a phone (8.1; DESIGN's 44 px Rule) | A link inside a sentence of several links (a research note's sources) keeps its line, without padding: padding overlapped the next line's link (WCAG 2.5.8's inline exception). Stand-alone links keep 44 px. The lead's decision, the owner to confirm |
+| The headline (8.2) | `headline(results, { room, crop, life })`; a profit that shows as RM 0.00 "breaks even" and is never a loss |
+| A figure's row (8.5, 9.1) | No answer or a 5xx keeps the typed figure, "Not saved" with Retry; only a 4xx is a refusal. A refused box keeps its text, its refusal and `aria-invalid`, the sums on the last valid figure. The You set tag is a neutral chip. The boxes on the shared field rules (40 px, 44 px on a phone). Another room or crop clears what was typed. A save's reply drops only the value it saved. Stale replies dropped: a read asked before an action, an older action's reply, a reply for a room or crop no longer picked. Focus after a repaint stays in its row (Back to default, else the box; Work it out's line when its button goes). Work it out's refusals show in its row in the warning tone and are said |
+| Numbers (8.7) | `keepTogether` joins a number to its unit and keeps a range whole on a phone; `tests/web-economics-units.test.js` guards it. Dates in farm time (`farmDate`, `farmTime`), as the other Business pages |
