@@ -122,3 +122,28 @@ test('every way of every crop gets finite inputs from the research defaults (a m
     }
   }
 });
+
+test('researchOf: racks fall back to the room\'s own blocks; blocks are capped at the figure\'s limit; copies; null for a way the crop does not show', () => {
+  assert.equal(researchOf('yours.racks', 'oyster', ROOM, undefined).value, 1037.4);
+  assert.equal(researchOf('yours.racks', 'oyster', ROOM, NaN).value, 1037.4);
+  const huge = researchOf('yours.blocks', 'oyster', { volume: 5000, humidifierLH: 2 }, null);
+  assert.deepEqual([huge.value, huge.low <= huge.value, huge.high], [100000, true, 100000]);
+  assert.equal(checkFigure('yours.blocks', huge.value), null);
+  const first = researchOf('price', 'oyster', ROOM, 1);
+  first.value = -1;
+  first.sources.push('X99');
+  const again = researchOf('price', 'oyster', ROOM, 1);
+  assert.deepEqual([again.value, again.sources.includes('X99')], [10, false]);
+  assert.equal(researchOf('import.rent', 'oyster', ROOM, 1), null);
+  assert.equal(researchOf('highland.flushes', 'oyster', ROOM, 1), null);
+});
+
+test('checkFigure: the edges of a range, and what is not a finite number', () => {
+  const priceError = 'Selling price must be a number from 0 to 1000 RM/kg';
+  for (const v of [NaN, null, undefined, Infinity, -Infinity]) assert.equal(checkFigure('price', v), priceError, String(v));
+  assert.equal(checkFigure('price', -0.01), priceError);
+  assert.equal(checkFigure('price', 0), null);
+  assert.equal(checkFigure('yours.turn', 0), null);
+  assert.equal(checkFigure('yours.blocks', 100000), null);
+  assert.equal(checkFigure('yours.blocks', 100001), 'Blocks in the room must be a whole number from 1 to 100000 blocks');
+});

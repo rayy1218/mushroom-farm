@@ -2,7 +2,7 @@
 // 2026-11-06-economics-defaults.md, section 1, gives every value, range, confidence and source). Pure: imported by the farm
 // server (which resolves each figure's source) and by the page (which checks a typed figure before it is sent).
 //   ECONOMICS_CROPS · WAYS · LEFT · WAY_NAMES · FIGURES · figureOf(key) · figuresFor(crop) · placeOf(key, roomId, crop)
-//   checkFigure(key, value) · researchOf(key, crop, room, blocks) · SOURCES
+//   checkFigure(key, value) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES
 
 // The crops the owner named (spec 1), in the Crop select's order.
 export const ECONOMICS_CROPS = ['oyster', 'pink', 'woodear', 'lionsmane'];
@@ -270,14 +270,15 @@ const RESEARCH = {
 };
 
 // The room-size defaults (appendix 1.4): over 40 m³ a 40 ft high cube, else a 20 ft.
-export const BLOCKS_PER_M3 = 22;
-export const BIG_ROOM_M3 = 40;
-export const HUMIDIFIER_LH = 6; // one humidifier per 6 L/h of the room's humidifier output, at least one
+const BLOCKS_PER_M3 = 22;
+const BIG_ROOM_M3 = 40;
+const HUMIDIFIER_LH = 6; // one humidifier per 6 L/h of the room's humidifier output, at least one
 export const sizeOf = (room) => (room.volume > BIG_ROOM_M3 ? '40 ft' : '20 ft');
 function roomResearch(key, room, blocks) {
   const big = room.volume > BIG_ROOM_M3;
   if (key === 'yours.blocks') {
-    return r(Math.max(1, Math.floor(room.volume * BLOCKS_PER_M3)), Math.floor(room.volume * 8.3), Math.floor(room.volume * 29), 'low', ['L38'],
+    const cap = (n) => Math.min(figureOf('yours.blocks').max, n); // a huge room's count stays a figure the page may save
+    return r(cap(Math.max(1, Math.floor(room.volume * BLOCKS_PER_M3))), cap(Math.floor(room.volume * 8.3)), cap(Math.floor(room.volume * 29)), 'low', ['L38'],
       '29 blocks a m³ of room at full racks, a container counting 75 % of its volume; the simulator\'s test load is 8.3');
   }
   if (key === 'yours.container') {
@@ -291,7 +292,8 @@ function roomResearch(key, room, blocks) {
     return r(1500 * units, 900 * units, 3000 * units, 'low', ['S42', 'L01'], `RM 1,500 a unit, ${units} for ${room.humidifierLH ?? 0} L/h`);
   }
   if (key === 'yours.racks') {
-    return r(Math.round(0.7 * blocks * 100) / 100, Math.round(0.2 * blocks * 100) / 100, Math.round(1.3 * blocks * 100) / 100, 'medium', ['G21', 'G25', 'G33'], 'RM 0.70 a block (0.20–1.30): an iron rack RM 250 for 350 blocks');
+    const n = Number.isFinite(blocks) ? blocks : roomResearch('yours.blocks', room).value;
+    return r(Math.round(0.7 * n * 100) / 100, Math.round(0.2 * n * 100) / 100, Math.round(1.3 * n * 100) / 100, 'medium', ['G21', 'G25', 'G33'], 'RM 0.70 a block (0.20–1.30): an iron rack RM 250 for 350 blocks');
   }
   return undefined;
 }
@@ -299,11 +301,10 @@ function roomResearch(key, room, blocks) {
 // A figure's research default for crop in room ({ volume, humidifierLH }), with blocks the room's blocks as the page uses
 // them (the racks follow them): { value, low, high, confidence, sources, note }, or null when the figure has none for crop.
 export function researchOf(key, crop, room, blocks) {
-  const sized = roomResearch(key, room, blocks);
-  if (sized !== undefined) return sized;
-  const entry = RESEARCH[key];
-  if (!entry) return null;
-  return entry.perCrop ? entry.perCrop[crop] ?? null : entry;
+  if (!figuresFor(crop).some((f) => f.key === key)) return null;
+  const entry = roomResearch(key, room, blocks) ?? RESEARCH[key];
+  const one = entry?.perCrop ? entry.perCrop[crop] : entry;
+  return one ? { ...one, sources: [...one.sources] } : null; // a copy: a caller changing it changes nothing for the next
 }
 
 // The sources of the defaults (appendix section 6): id → { title (short), url (null: this repository), year }.
