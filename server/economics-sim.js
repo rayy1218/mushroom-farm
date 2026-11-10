@@ -3,25 +3,28 @@
 // simulation and the figures, and queues the body through simulations.start (which never switches a machine).
 //   simBody({ room, lastRun, crop, blocks, life }) → { body, days, machinesNote } · simFigure(run, life) → the row's figure
 
-import { PHYSICS_FIELDS, FILTER_KEYS, roomMachines } from '../web/simulate-math.js';
+import { PHYSICS_FIELDS, MACHINE_KEYS, roomMachines } from '../web/simulate-math.js';
+import { calendarDays } from '../web/filter-math.js';
 
 export const MAX_SIM_DAYS = 90; // a simulation's longest run; a longer block life is scaled from it
 export const DELETED_TEXT = 'The simulation was deleted';
-const WEATHER = PHYSICS_FIELDS.filter((f) => f.group); // the walls, sun and weather: the building's, from the newest run
+const BUILDING = PHYSICS_FIELDS.filter((f) => !MACHINE_KEYS.includes(f.key)); // the walls, weather and filter: the building's
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
 const round = (n, places) => Math.round(n * 10 ** places) / 10 ** places;
 
 // room: the room row (its ratings on Setup); lastRun: its newest simulation or null; blocks: Your container's blocks; life:
-// the block life in days. The walls, weather and filter of the newest run (else Simulate's defaults), the room's machines
-// (roomMachines: Setup's, else the newest run's, else Simulate's), ready-to-fruit blocks fruiting from in band.
-export function simBody({ room, lastRun, crop, blocks, life }) {
+// the block life in days; now: the clock (the filter's days in use). Each wall, weather and filter number is the newest run's,
+// else the room's own on Setup, else Simulate's default, as Simulate's step 1 fills it (initialState); the filter's days in
+// use are the room's now, not the run's; the machines are the room's (roomMachines: Setup's, else the newest run's, else
+// Simulate's), ready-to-fruit blocks fruiting from in band.
+export function simBody({ room, lastRun, crop, blocks, life, now = Date.now() }) {
   const p = lastRun?.input?.physics ?? {};
-  const physics = Object.fromEntries(WEATHER.map((f) => [f.key, isNumber(p[f.key]) ? p[f.key] : f.def]));
-  if (FILTER_KEYS.some((k) => p[k] !== undefined)) {
-    for (const k of [...FILTER_KEYS, 'filterSensor']) if (p[k] !== undefined) physics[k] = p[k];
-  }
+  const physics = Object.fromEntries(BUILDING.map((f) => [f.key,
+    isNumber(p[f.key]) ? p[f.key] : f.room && isNumber(room?.[f.room]) ? room[f.room] : f.def]));
+  physics.filterUsedDays = isNumber(room?.filterChangedAt) ? Math.min(365, Math.max(0, calendarDays(room.filterChangedAt, now))) : 0;
+  physics.filterSensor = isNumber(room?.dpAddress); // the run changes its filter at the change pressure, as the room's sensor would
   const { machines, note } = roomMachines({ room, lastRun });
-  const days = Math.min(MAX_SIM_DAYS, Math.max(1, Math.round(life)));
+  const days = Math.min(MAX_SIM_DAYS, Math.max(1, Math.round(life) || 1));
   return {
     body: { physics: { ...physics, ...machines }, crops: [{ crop, blocks }], farmType: 'ready', stage: 'fruiting', start: 'band', days },
     days,
