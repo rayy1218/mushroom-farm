@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDb } from '../server/db.js';
@@ -24,7 +24,8 @@ const ROOM = { name: 'Container 1', length: 12, width: 2.3, height: 2.5, trhAddr
 // A farm on a database file (a partial run is made by hand): Container 1 with two finished runs of lion's mane (the first
 // mixed with grey oyster), an ended run of grey oyster only, an open run, and Container 2 with its own lion's mane run.
 function farm(t) {
-  const file = join(mkdtempSync('/tmp/economics/runs-'), 'farm.db');
+  const dir = mkdtempSync('/tmp/economics/runs-');
+  const file = join(dir, 'farm.db');
   let db = openDb(file);
   let clock = at('2026-08-01');
   const now = () => clock;
@@ -37,6 +38,7 @@ function farm(t) {
     s.harvests.stop();
     await s.harvests.warmed();
     db.close();
+    rmSync(dir, { recursive: true, force: true });
   });
   const one = db.createRoom(ROOM, clock).id;
   const two = db.createRoom({ ...ROOM, name: 'Container 2', trhAddress: 2 }, clock).id;
@@ -173,4 +175,15 @@ test('a part that throws is logged and named; its figures are left to the next s
   const noHarvest = read(f, 'lionsmane', { harvests: { roomView() { throw new Error('x'); } }, log: () => {} });
   assert.deepEqual(noHarvest.errors, { harvest: PART_FAILED });
   assert.deepEqual(Object.keys(noHarvest.figures), ['yours.blocks']);
+});
+
+test('the room\'s runs that cannot be read: named under harvest, the price and electricity left out, the rest still read', (t) => {
+  const f = farm(t);
+  const db = Object.create(f.db, { cropRuns: { value() { throw new Error('nope'); } } });
+  const out = read(f, 'lionsmane', { db, log: () => {} });
+  assert.deepEqual(out.errors, { harvest: PART_FAILED });
+  assert.equal(out.figures['yours.yieldG'].value, 225);
+  assert.equal(out.figures.blockPrice.value, 5.63);
+  assert.equal(out.figures.price, undefined);
+  assert.equal(out.figures['yours.kwhBlock'], undefined);
 });

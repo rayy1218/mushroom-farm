@@ -47,18 +47,23 @@ export function yourRuns({ db, harvests, batches, days, room, crop, today, zone,
     figures['yours.loss'] = { value: 0, runs: span }; // counted in the yield (spec 4.4)
   }
 
-  // Costs' runs of the room (its runOn rule ties a day to the run open on it)
-  const roomRuns = db.cropRuns(room.id).map((r) => ({
+  // Costs' runs of the room (its runOn rule ties a day to the run open on it); without them the price and the electricity
+  // cannot be tied to a run, and are left to the next source
+  const roomRuns = read('harvest', () => db.cropRuns(room.id).map((r) => ({
     id: r.id, roomId: room.id, startDate: zone.label(r.startedAt), endDate: r.endedAt === null ? null : zone.label(r.endedAt),
     blocks: total(r.crops, (c) => c.blocks),
-  }));
+  })));
   const ids = new Set(counted.map((r) => r.id));
-  const price = read('sales', () => salesPrice(db, { room, crop, roomRuns, ids, span, today, zone }));
-  if (price) figures.price = price;
+  if (roomRuns) {
+    const price = read('sales', () => salesPrice(db, { room, crop, roomRuns, ids, span, today, zone }));
+    if (price) figures.price = price;
+  }
   const blockPrice = read('batches', () => batchPrice(batches, { crop, ids, count: span.count }));
   if (blockPrice) figures.blockPrice = blockPrice;
-  const kwh = read('energy', () => energy({ days, room, counted, roomRuns, today, zone }));
-  if (kwh) figures['yours.kwhBlock'] = kwh;
+  if (roomRuns) {
+    const kwh = read('energy', () => energy({ days, room, counted, roomRuns, today, zone }));
+    if (kwh) figures['yours.kwhBlock'] = kwh;
+  }
   return { figures, errors };
 }
 
@@ -89,7 +94,7 @@ function salesPrice(db, { room, crop, roomRuns, ids, span, today, zone }) {
 
 // Σ (blocks × price) ÷ Σ blocks of the crop's batches on a counted run with a price; the ones without left out (counted).
 function batchPrice(batches, { crop, ids, count }) {
-  const own = batches.list().batches.filter((b) => b.crop === crop && ids.has(b.runId));
+  const own = [...ids].flatMap((id) => batches.list({ run: id }).batches).filter((b) => b.crop === crop);
   const priced = own.filter((b) => b.pricePerBlock !== null && b.pricePerBlock !== undefined);
   const blocks = total(priced, (b) => b.blocks);
   if (!(blocks > 0)) return null;
