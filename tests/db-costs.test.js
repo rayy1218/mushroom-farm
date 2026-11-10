@@ -15,7 +15,7 @@ const ROOM = { name: 'Container 1', length: 6, width: 2.4, height: 2.4, trhAddre
 const ONE = { date: '2026-11-03', category: 'repairs', amount: 120.5, roomId: null, runId: null, note: 'Fan belt' };
 const RENT = { date: '2026-08-31', category: 'rent', amount: 1500, note: 'Shop lot', repeat: 'monthly' };
 
-test('a new database is at version 25 with a STRICT costs table', () => {
+test('a new database is at the current version with a STRICT costs table', () => {
   const file = fileOf();
   openDb(file).close();
   const raw = new DatabaseSync(file);
@@ -108,7 +108,7 @@ test('deleting only a run drops the cost\'s run and keeps its room', () => {
   db.close();
 });
 
-test('a version 25 file re-opens unchanged with its rows', () => {
+test('a file at the current version re-opens unchanged with its rows', () => {
   const file = fileOf();
   const db = openDb(file);
   const cost = db.insertCost(ONE, 1000);
