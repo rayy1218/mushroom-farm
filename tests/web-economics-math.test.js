@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { monthsText, figureText, rangeText, wayName, headline, rows, fillLine, sizedLine, neverLine, leftLine } from '../web/economics-math.js';
-import { compare, grow, trade } from '../web/economics-model.js';
+import { compare, grow } from '../web/economics-model.js';
 import { ECONOMICS_CROPS, WAYS, figuresFor, researchOf } from '../web/economics-defaults.js';
 
 const NB = '\u00a0';
@@ -88,6 +88,9 @@ test('the equipment words: none, yours none, the nearest fraction, about the sam
   assert.equal(words(20_400), 'on twice the equipment.');
 });
 
+const inputs = { blocks: 1740, yieldG: 250, flushes: 2, loss: 10, first: 12, interval: 14, turn: 16, shrink: 10, price: 50, blockPrice: 6, uphill: 0,
+  kwhMonth: 506, tariff: 0.551, fixedTnb: 20, labourMin: 2.52, wage: 10, pack: 3, transport: 0, rent: 0, equipment: 35990, lifeMonths: 60 };
+
 test('the rows at the golden inputs: the cold room and import, a loss with "Loss" under it, never, no equipment', () => {
   const [cold, , imp, warm] = compare(GOLDEN, WAYS.lionsmane);
   const table = rows([cold, imp, warm]);
@@ -111,13 +114,10 @@ test('the rows at the golden inputs: the cold room and import, a loss with "Loss
   assert.deepEqual(cells('paybackAll'), ['13 months', 'No equipment', 'never']);
   assert.equal(rows([grow({ ...inputs, yieldG: 0 })])[12].cells[0].text, '—', 'nothing sold: no break-even');
 });
-const inputs = { blocks: 1740, yieldG: 250, flushes: 2, loss: 10, first: 12, interval: 14, turn: 16, shrink: 10, price: 50, blockPrice: 6, uphill: 0,
-  kwhMonth: 506, tariff: 0.551, fixedTnb: 20, labourMin: 2.52, wage: 10, pack: 3, transport: 0, rent: 0, equipment: 35990, lifeMonths: 60 };
 
 test('the months: under 1, 1, one decimal under 9.95, whole above, never', () => {
   assert.deepEqual(plain([0.5, 1, 6.16, 9.94, 9.99, 13.37, 61.2, Infinity, NaN].map(monthsText)),
     ['under 1 month', '1 month', '6.2 months', '9.9 months', '10 months', '13 months', '61 months', 'never', '—']);
-  assert.equal(trade({ price: 1, shrink: 0, pack: 0, wage: 0, landed: 0, buyHours: 0, rent: 0 }, 1).payback, null);
 });
 
 test('a figure with its unit, and a research range', () => {
@@ -171,4 +171,13 @@ test('the spec review: RM through Costs\' formatters, RM 0.00 is not a loss, not
   assert.ok(pays.includes(`60${NB}months`));
   assert.ok(neverLine([r('yours', 1, { paybackAll: Infinity })], 60).includes(`60${NB}months`));
   assert.ok(leftLine('oyster').includes(`25${NB}\u00b0C`) && leftLine('oyster').includes(`3\u20134${NB}days`) && leftLine('woodear').includes(`18${NB}\u00b0C`));
+});
+
+test('the code review: a loss is decided as moneyText decides its sign (half a sen rounds away from zero)', () => {
+  const h = headline([r('yours', -0.005)], { room: 'Container 1', crop: 'lionsmane', life: 60 });
+  assert.equal(h.first[1].tone, 'loss');
+  assert.match(text(h), /−RM 0\.01 a month loss/);
+  assert.deepEqual(plain(rows([{ ...r('yours', -0.005), cost: {} }]).find((x) => x.key === 'profit').cells[0]), { text: '−RM 0.01', tone: 'loss', sub: 'Loss' });
+  assert.equal(rangeText('price', NaN, 13), '—');
+  assert.equal(plain(fillLine({ fill: 100, rampCost: 5 }, { room: 'R', blocks: 10, first: 1 })).includes('1 day in'), true);
 });

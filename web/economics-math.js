@@ -13,7 +13,8 @@ import { HOUSE_BLOCKS } from './economics-model.js';
 const NB = '\u00a0'; // a number keeps its unit at a wrap (the Units Rule)
 const DASH = '—';
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
-const cents = (v) => Math.round(v * 100); // a figure as it shows: a loss under half a sen is none
+const cents = (v) => Math.sign(v) * Math.round(Math.abs(v) * 100); // a figure as it shows, its sign decided as moneyText decides it
+const beText = (v) => `${perKgText(v)} a${NB}kg`;
 const upTo = (v, places) => v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: places });
 
 // A payback: "under 1 month", "1 month", one decimal under 9.95 ("6.2 months"), else whole ("13 months"), "never".
@@ -58,6 +59,7 @@ export function figureText(key, v) {
 }
 // A research range: "150–400 g", "RM 8.00–13.00 a kg".
 export function rangeText(key, low, high) {
+  if (!finite(low) || !finite(high)) return DASH;
   const [before, a, after] = parts(key, low);
   return `${before}${a}–${parts(key, high)[1]}${after}`;
 }
@@ -81,6 +83,8 @@ function equipmentWords(other, yours) {
   return `on ${upTo(ratio, 1)} times the equipment`;
 }
 
+const within = (life) => `within the ${life}${NB}months the equipment is written off over`;
+
 // The headline (spec 8.2): { first: [text or { text, tone: 'loss' }], second: text or null }. results: compare's, Your
 // container first; room: its name; crop: its key; life: the months the equipment is written off over.
 export function headline(results, { room, crop, life }) {
@@ -93,33 +97,25 @@ export function headline(results, { room, crop, life }) {
       ? [`${name} sells nothing at these figures: `, loss(yours.profit), ` a${NB}month loss.`]
       : [`${name} sells nothing at these figures: ${moneyText(yours.profit)} a${NB}month.`];
   } else if (cents(yours.profit) < 0) {
-    first = [`${name}: `, loss(yours.profit), ` a${NB}month loss, break-even ${perKgText(yours.be)} a${NB}kg, never pays back.`];
+    first = [`${name}: `, loss(yours.profit), ` a${NB}month loss, break-even ${beText(yours.be)}, never pays back.`];
   } else {
     const pays = yours.paybackAll === Infinity
-      ? `but it doesn't pay back within the ${life}${NB}months the equipment is written off over.`
+      ? `but it doesn't pay back ${within(life)}.`
       : `pays back in ${monthsText(yours.paybackAll)}.`;
-    first = [`${name}: ${moneyText(yours.profit)} a${NB}month, break-even ${perKgText(yours.be)} a${NB}kg, ${pays}`];
+    first = [`${name}: ${moneyText(yours.profit)} a${NB}month, break-even ${beText(yours.be)}, ${pays}`];
   }
   if (!others.length) return { first, second: null };
   const best = others.reduce((a, b) => (cents(b.profit) > cents(a.profit) ? b : a));
   // A profit that shows as RM 0.00 is not a loss: the other way "breaks even", and yours at zero is not beaten by a loss.
-  const nextWay = `${wayName(best.way, { sentence: true, lower: true })}`;
+  const did = (o) => (o > 0 ? `makes ${moneyText(best.profit)}` : 'breaks even');
+  const nextWay = wayName(best.way, { sentence: true, lower: true });
   const sentence = wayName(best.way, { sentence: true });
   const [y, o] = [cents(yours.profit), cents(best.profit)];
   let second;
-  if (o > y) {
-    second = o > 0 ? `${sentence} makes ${moneyText(best.profit)} ${equipmentWords(best, yours)}.`
-      : o === 0 ? `${sentence} breaks even ${equipmentWords(best, yours)}.`
-        : `${sentence} loses less, ${moneyText(best.profit)}, ${equipmentWords(best, yours)}.`;
-  } else if (y < 0) {
-    second = 'Every other way loses more.';
-  } else if (o > 0) {
-    second = `That is the most of the ${results.length} ways; next, ${nextWay} makes ${moneyText(best.profit)}.`;
-  } else if (o === 0) {
-    second = `That is the most of the ${results.length} ways; next, ${nextWay} breaks even.`;
-  } else {
-    second = 'Every other way loses money at these figures.';
-  }
+  if (o > y) second = o < 0 ? `${sentence} loses less, ${moneyText(best.profit)}, ${equipmentWords(best, yours)}.` : `${sentence} ${did(o)} ${equipmentWords(best, yours)}.`;
+  else if (y < 0) second = 'Every other way loses more.';
+  else if (o < 0) second = 'Every other way loses money at these figures.';
+  else second = `That is the most of the ${results.length} ways; next, ${nextWay} ${did(o)}.`;
   return { first, second };
 }
 
@@ -139,7 +135,7 @@ export const ROWS = [
   { key: 'writeOff', label: 'Equipment written off', cell: (r) => money(r.cost.writeOff) },
   { key: 'costs', label: 'Costs', cell: (r) => money(r.costs) },
   { key: 'profit', label: 'Profit a month', cell: (r) => (cents(r.profit) < 0 ? { text: moneyText(r.profit), tone: 'loss', sub: 'Loss' } : money(r.profit)) },
-  { key: 'be', label: 'Break-even', cell: (r) => ({ text: r.be === null ? DASH : `${perKgText(r.be)} a${NB}kg` }) },
+  { key: 'be', label: 'Break-even', cell: (r) => ({ text: !finite(r.be) ? DASH : beText(r.be) }) },
   { key: 'equipment', label: 'Equipment', cell: growOr((r) => money(r.equipment), () => ({ text: 'None' })) },
   { key: 'payback', label: 'Pays back, equipment only', cell: growOr((r) => ({ text: monthsText(r.payback) }), () => ({ text: 'No equipment' })) },
   { key: 'paybackAll', label: 'Pays back, with the first fill', cell: growOr((r) => ({ text: monthsText(r.paybackAll) }), () => ({ text: 'No equipment' })) },
@@ -153,7 +149,7 @@ export const fillLine = (yours, { room, blocks, first }) => `With the first fill
 export const sizedLine = (room, blocks) => `Every way is sized to ${room}'s ${grouped(blocks, 0)}${NB}blocks; a shed or a highland house holds up to ${grouped(HOUSE_BLOCKS, 0)}.`;
 // When any growing way never pays back.
 export const neverLine = (results, life) => (results.some((r) => r.kind === 'grow' && (r.payback === Infinity || r.paybackAll === Infinity))
-  ? `Never: not within the ${life}${NB}months the equipment is written off over.` : null);
+  ? `Never: not ${within(life)}.` : null);
 // The ways not compared for the crop (spec 8.4).
 const LEFT_WORDS = {
   oyster: `Not compared: a highland grower (grey oyster isn't grown commercially there; it fruits best at 25${NB}°C and Cameron Highlands averages 17.9${NB}°C) and importing (fresh grey oyster keeps 3–4${NB}days and Malaysia grows its own).`,
