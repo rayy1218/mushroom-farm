@@ -11,6 +11,8 @@ export const MAX_PER_PERSON = 6; // nor one person over several sign-ins (each s
 export const OWNER_RESERVE = 4; // the last places are an owner's: workers together cannot shut the owner out
 export const MAX_BACKLOG = 64 * 1024; // bytes waiting for a client that does not read: it is dropped (the browser reconnects)
 const KEEPALIVE_MS = 30_000;
+// ---- Economics ---- the events only an owner's stream carries (a signed-in worker's never does): the owner's planning figures.
+export const OWNER_EVENTS = new Set(['economics']);
 
 // The farm's active alarms nobody has acknowledged: the number on the nav badge.
 export function alarmCount(db) {
@@ -32,7 +34,8 @@ const json = (res, status, data) => {
 // the stream, so a sign-in that ended is noticed up to one ping late (25 s). The browser's reconnect then meets the gate's
 // 401. With sign-in on, the gate's req.who counts the streams of each sign-in (sessionId) and person (id), and keeps
 // OWNER_RESERVE places from anyone not an owner; the 429s come before the 503. Without sign-in (no check, no req.who)
-// none of it applies. pingMs and maxClients are only replaced by tests.
+// none of it applies. A stream that is not an owner's (req.who a worker) never carries the events in OWNER_EVENTS; without
+// sign-in every stream is the owner's. pingMs and maxClients are only replaced by tests.
 export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, check = null, now = Date.now, log = console.error }) {
   const open = new Set(); // { res, off, ping, session, person }
   const perSession = new Map(); // session id → its open streams
@@ -75,7 +78,10 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
       if (res.writableLength > MAX_BACKLOG) res.destroy(); // a client that does not read must not fill the memory
     };
     write(`event: hello\ndata: ${JSON.stringify({ at: now() })}\n\n`);
-    client.off = events.subscribe((type, data) => write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
+    const owner = !req.who || req.who.role === 'owner'; // without sign-in (no req.who) every stream is the owner's
+    client.off = events.subscribe((type, data) => {
+      if (owner || !OWNER_EVENTS.has(type)) write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); // ---- Economics ----
+    });
     client.ping = setInterval(() => {
       let holds = true;
       try {

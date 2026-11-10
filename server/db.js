@@ -8,7 +8,7 @@ import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 import { readSources } from './costs-sources.js'; // ---- Costs ----
 
-const VERSION = 25;
+const VERSION = 26;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -458,6 +458,38 @@ CREATE TABLE IF NOT EXISTS sessions (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS sessions_by_worker ON sessions (worker_id);`;
 
+// ---- Economics ---- (spec 2026-11-06-economics-design.md 3): the owner's figures and the simulator's, one row per room,
+// crop, key and source; room_id 0 and crop '' mean "every" (a farm or crop figure; a room figure), so the unique index has
+// no NULL in it. Room ids are reused: the trigger deletes a deleted room's rows (deleteRoom is untouched).
+const ECONOMICS = `
+CREATE TABLE IF NOT EXISTS economics_figures (
+  id         INTEGER PRIMARY KEY,
+  room_id    INTEGER NOT NULL DEFAULT 0,
+  crop       TEXT    NOT NULL DEFAULT '',
+  key        TEXT    NOT NULL,
+  source     TEXT    NOT NULL CHECK (source IN ('owner', 'simulator')),
+  value      REAL,
+  at         INTEGER,
+  status     TEXT    CHECK (status IN ('working', 'done', 'failed')),
+  sim_id     INTEGER,
+  started_at INTEGER,
+  error      TEXT,
+  kwh        REAL,
+  blocks     INTEGER,
+  days       INTEGER
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS economics_figure ON economics_figures (room_id, crop, key, source);
+CREATE TRIGGER IF NOT EXISTS economics_room_gone AFTER DELETE ON rooms BEGIN
+  DELETE FROM economics_figures WHERE room_id = OLD.id;
+END;`;
+// The simulator's figure: the room's electricity per block with a crop.
+export const SIM_KEY = 'yours.kwhBlock';
+const economicsRow = (r) => ({
+  id: r.id, roomId: r.room_id, crop: r.crop, key: r.key, source: r.source, value: r.value, at: r.at, status: r.status,
+  simId: r.sim_id, startedAt: r.started_at, error: r.error, kwh: r.kwh, blocks: r.blocks, days: r.days,
+});
+// ---- end Economics ----
+
 const accountRow = (r) => ({
   id: r.id, name: r.name, active: r.active === 1, role: r.role, secretHash: r.secret_hash, failedTries: r.failed_tries,
   lockedUntil: r.locked_until,
@@ -816,6 +848,7 @@ function migrate(db) {
       if (!db.prepare('PRAGMA table_info(workers)').all().some((c) => c.name === 'role')) db.exec(LOGIN_COLUMNS);
       db.exec(LOGIN);
     }
+    if (version < 26) db.exec(ECONOMICS); // ---- Economics ---- (spec 2026-11-06-economics-design.md 3)
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -1246,6 +1279,24 @@ export function openDb(path, { log = console.error } = {}) {
     until: db.prepare('UPDATE costs SET repeat_until = ? WHERE id = ?'),
     delete: db.prepare('DELETE FROM costs WHERE id = ?'),
   };
+
+  // ---- Economics ---- (spec 2026-11-06-economics-design.md 3): the economics_figures statements.
+  const econQ = {
+    of: db.prepare(`SELECT * FROM economics_figures WHERE room_id IN (0, ?) AND crop IN ('', ?) ORDER BY id`),
+    get: db.prepare('SELECT * FROM economics_figures WHERE room_id = ? AND crop = ? AND key = ? AND source = ?'),
+    setOwner: db.prepare(`INSERT INTO economics_figures (room_id, crop, key, source, value, at) VALUES (?, ?, ?, 'owner', ?, ?)
+                          ON CONFLICT (room_id, crop, key, source) DO UPDATE SET value = excluded.value, at = excluded.at`),
+    clearOwner: db.prepare("DELETE FROM economics_figures WHERE room_id = ? AND crop = ? AND key = ? AND source = 'owner'"),
+    startSim: db.prepare(`INSERT INTO economics_figures (room_id, crop, key, source, status, sim_id, started_at) VALUES (?, ?, ?, 'simulator', 'working', ?, ?)
+                          ON CONFLICT (room_id, crop, key, source) DO UPDATE SET status = 'working', sim_id = excluded.sim_id,
+                          started_at = excluded.started_at, error = NULL`),
+    simDone: db.prepare(`UPDATE economics_figures SET status = 'done', value = ?, at = ?, kwh = ?, blocks = ?, days = ?, error = NULL
+                         WHERE room_id = ? AND crop = ? AND key = ? AND source = 'simulator'`),
+    simFailed: db.prepare(`UPDATE economics_figures SET status = 'failed', error = ?
+                           WHERE room_id = ? AND crop = ? AND key = ? AND source = 'simulator'`),
+    working: db.prepare("SELECT * FROM economics_figures WHERE source = 'simulator' AND status = 'working' ORDER BY id"),
+  };
+  // ---- end Economics ----
 
   // Runs fn in one transaction: all of its writes or none.
   function inTransaction(fn) {
@@ -2665,6 +2716,49 @@ export function openDb(path, { log = console.error } = {}) {
                          ORDER BY r.started_at DESC, r.id DESC`).all().map((r) => ({ ...runOf(r), roomName: r.room_name ?? null }));
     },
     // ---- end Runs ----
+
+    // ---- Economics ---- (spec 2026-11-06-economics-design.md 3). A figure row is economicsRow's; roomId 0 and crop '' are
+    // "every" (economics-defaults.js placeOf says which a key takes).
+
+    // Every row a room and crop read: room 0 or roomId, crop '' or crop.
+    economicsFigures(roomId, crop) {
+      return econQ.of.all(roomId, crop).map(economicsRow);
+    },
+
+    // The owner's figure set at `at` (ms). → the row.
+    setEconomicsFigure({ roomId, crop, key, value, at }) {
+      econQ.setOwner.run(roomId, crop, key, value, at);
+      return economicsRow(econQ.get.get(roomId, crop, key, 'owner'));
+    },
+
+    // The owner's figure gone (the simulator's stays). → true when a row went.
+    clearEconomicsFigure({ roomId, crop, key }) {
+      return econQ.clearOwner.run(roomId, crop, key).changes > 0;
+    },
+
+    // A Work it out started: the simulator row of the room and crop working on simulation simId; the figure before it kept.
+    // → the row.
+    startEconomicsSim({ roomId, crop, simId, at }) {
+      econQ.startSim.run(roomId, crop, SIM_KEY, simId, at);
+      return economicsRow(econQ.get.get(roomId, crop, SIM_KEY, 'simulator'));
+    },
+
+    // A Work it out settled: done with its figure ({ value, at, kwh, blocks, days }) or failed ({ error }: the figure before
+    // it kept). → the row, or null when the room and crop have none. One with neither a value nor an error throws (as a done
+    // it would wipe the figure).
+    settleEconomicsSim({ roomId, crop, error = null, value = null, at = null, kwh = null, blocks = null, days = null }) {
+      if (error === null && value === null) throw new Error('settleEconomicsSim: a value or an error');
+      if (error !== null) econQ.simFailed.run(error, roomId, crop, SIM_KEY);
+      else econQ.simDone.run(value, at, kwh, blocks, days, roomId, crop, SIM_KEY);
+      const r = econQ.get.get(roomId, crop, SIM_KEY, 'simulator');
+      return r ? economicsRow(r) : null;
+    },
+
+    // The simulator rows still working (settled when the farm app starts).
+    economicsSimsWorking() {
+      return econQ.working.all().map(economicsRow);
+    },
+    // ---- end Economics ----
 
     close() {
       db.close();

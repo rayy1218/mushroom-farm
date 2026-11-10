@@ -73,6 +73,28 @@ test('a repaint that removes the focused Retry (its part read this time) puts th
   assert.equal(doc.activeElement, null);
 });
 
+// ---- Economics (the audit, 2026-11-10, #11) ---- a page may name where the cursor goes when its element is gone
+test('keepFocus: a fallback instead of the title, when the page gives one; the title by default, as before', () => {
+  const doc = { activeElement: null };
+  const box = fakeContainer(doc);
+  const back = fakeNode(doc, { key: 'back:price', tag: 'button' });
+  box.nodes = [fakeNode(doc, { key: 'note:price:0:1' })];
+  box.nodes[0].focus();
+  const seen = [];
+  const watch = (n) => { const f = n.focus; n.focus = function () { seen.push(this.tag); f.call(this); }; return n; };
+  watch(box.h1);
+  keepFocus(box, () => { box.nodes = [watch(back)]; }, doc, () => back);
+  assert.equal(doc.activeElement, back);
+  assert.deepEqual(seen, ['button'], 'the title is never focused on the way');
+  box.nodes[0].focus();
+  keepFocus(box, () => { box.nodes = []; }, doc, () => null);
+  assert.equal(doc.activeElement, box.h1, 'a fallback with nothing: the title');
+  box.nodes = [fakeNode(doc, { key: 'x', tag: 'button' })];
+  box.nodes[0].focus();
+  keepFocus(box, () => { box.nodes = []; }, doc);
+  assert.equal(doc.activeElement, box.h1, 'no fallback: the title, as every other page');
+});
+
 // The reads with a stubbed request and timer: each read a promise the test answers.
 function reads(t, { alive = () => true } = {}) {
   const asked = [];

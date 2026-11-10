@@ -76,6 +76,7 @@ const OWNER_ONLY = [
   ['settings-page.js', 'Settings', OWNER_PAGE], ['simulation-page.js', 'a simulation run', OWNER_PAGE],
   ['suggest-page.js', 'Suggest machines', OWNER_PAGE], ['sales-page.js', 'Sales', OWNER_PAGE], ['costs-page.js', 'Costs', OWNER_PAGE],
   ['runs-page.js', 'Runs and a run', OWNER_PAGE], ['business-page.js', 'the Business summary', OWNER_PAGE],
+  ['economics-page.js', 'Economics', OWNER_PAGE], // ---- Economics ----
   ['batches-sheet.js', "Batches' myGAP sheet", OWNER_PAGE], ['task-sheet.js', "a room's month sheet", OWNER_PAGE],
   ['inventory-sheet.js', "Inventory's myGAP sheet", OWNER_PAGE],
   ['batches-page.js', 'Batches; on Today its Blocks waiting card, made for an owner only',

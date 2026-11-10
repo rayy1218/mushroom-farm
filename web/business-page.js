@@ -36,13 +36,15 @@ const link = (text, href) => {
 // After a repaint the cursor goes back to the same link or button: its focus key (a need's kind, a use-by's item, a run, a
 // Retry's part), else its address and words (the card heads' links), as the run page's. One that is gone (a Retry whose part
 // was read this time, a need fixed) leaves it on the page's title, never on the body. doc: the document (tests pass theirs).
+// fallback (Economics, the audit's #11): () → where the cursor goes instead of the title (null: the title), worked out after
+// the repaint, so the title is never focused on the way.
 export const keyOf = (node) => node?.dataset?.focusKey ?? (node?.getAttribute?.('href') ? `${node.getAttribute('href')}|${node.textContent}` : null);
-export function keepFocus(container, repaint, doc = document) {
+export function keepFocus(container, repaint, doc = document, fallback = null) {
   const before = container.contains(doc.activeElement) ? keyOf(doc.activeElement) : null;
   repaint();
   if (!before || container.contains(doc.activeElement)) return;
   const again = [...container.querySelectorAll('a[href], [data-focus-key]')].find((n) => keyOf(n) === before);
-  (again ?? container.querySelector('h1'))?.focus({ preventScroll: true });
+  (again ?? fallback?.() ?? container.querySelector('h1'))?.focus({ preventScroll: true });
 }
 
 // The reads: an answer older than the last asked is dropped, the next asked on a timer after each; an older farm app (the
