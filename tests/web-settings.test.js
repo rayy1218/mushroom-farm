@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody, accountLine, secretAction, accountActions, otherOwnerCanSignIn, roleConfirm, signOutConfirm, removeConfirm, accountDone, isNameField } from '../web/settings-math.js';
+import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody, accountLine, secretAction, accountActions, otherOwnerCanSignIn, roleConfirm, signOutConfirm, removeConfirm, accountDone, isNameField, nextLockEnd } from '../web/settings-math.js';
 import { LOCKED_UNTIL_UNLOCKED } from '../server/auth.js';
 import { readFileSync } from 'node:fs';
 import { parseRoute, isCanonical } from '../web/route.js';
@@ -161,7 +161,12 @@ test("a worker's sign-in line on Settings → Workers", () => {
   assert.equal(accountLine({ role: 'worker', hasSecret: false, lockedUntil: null, sessions: 0 }, at), 'Worker · no PIN yet: cannot sign in');
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: null, sessions: 2 }, at), 'Worker · signed in on 2 devices');
   assert.equal(accountLine({ role: 'owner', hasSecret: true, lockedUntil: null, sessions: 1 }, at), 'Owner · signed in on 1 device');
-  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 600_000, sessions: 0 }, at), 'Worker · locked until 10:10');
+  // locked for one address (server/auth.js addressLocks: in memory, 15 minutes), the latest such lock
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: null, lockedHereUntil: at + 900_000, sessions: 2 }, at), 'Worker · locked on one device until 10:15');
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: null, lockedHereUntil: at, sessions: 2 }, at), 'Worker · signed in on 2 devices', 'ended');
+  assert.equal(accountLine({ role: 'owner', hasSecret: true, lockedUntil: null, lockedHereUntil: at + 60_000, sessions: 0 }, at), 'Owner · locked on one device until 10:01');
+  // a stored lock is the daily cap's only (the 15-minute ones are per address, in memory): it lasts until the owner's Unlock
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 600_000, lockedHereUntil: at + 900_000, sessions: 0 }, at), 'Worker · locked: unlock to let them sign in');
   // the daily cap's lock (server/auth.js LOCKED_UNTIL_UNLOCKED): it lasts until the owner's Unlock
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: LOCKED_UNTIL_UNLOCKED, sessions: 1 }, at), 'Worker · locked: unlock to let them sign in');
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 400 * 86_400_000, sessions: 0 }, at), 'Worker · locked: unlock to let them sign in');
@@ -188,6 +193,19 @@ test("a row's sign-in buttons: none of your own secret or Remove; Make worker on
   assert.equal(accountActions({ ...worker, lockedUntil: now + 1 }, { self: false, otherOwner: false, now }).unlock, true);
   assert.equal(accountActions({ ...worker, lockedUntil: now }, { self: false, otherOwner: false, now }).unlock, false, 'the lock ran out');
   assert.equal(accountActions({ ...worker, sessions: 2 }, { self: false, otherOwner: false, now }).signOut, true);
+  assert.equal(accountActions({ ...worker, lockedHereUntil: now + 1 }, { self: false, otherOwner: false, now }).unlock, true, 'locked on one device');
+  assert.equal(accountActions({ ...worker, lockedHereUntil: now }, { self: false, otherOwner: false, now }).unlock, false);
+});
+
+test("the Workers card repaints when the earliest shown lock ends (not the daily cap's: it waits for Unlock)", () => {
+  const now = Date.UTC(2026, 10, 6, 2);
+  const a = (lockedUntil, lockedHereUntil) => ({ role: 'worker', hasSecret: true, lockedUntil, lockedHereUntil, sessions: 0 });
+  assert.equal(nextLockEnd([], now), null);
+  assert.equal(nextLockEnd([a(null, null), a(null, now)], now), null, 'none live');
+  assert.equal(nextLockEnd([a(null, now + 900_000), a(null, now + 60_000), a(LOCKED_UNTIL_UNLOCKED, null)], now), now + 60_000);
+  assert.equal(nextLockEnd([a(now + 120_000, now + 300_000)], now), now + 120_000);
+  assert.equal(nextLockEnd([a(LOCKED_UNTIL_UNLOCKED, null)], now), null);
+  assert.equal(nextLockEnd(null, now), null, 'the accounts failed to load');
 });
 
 test('another owner who can sign in: active, an owner, a password set, not this one', () => {
@@ -212,15 +230,20 @@ test("the confirms' words: a role, Sign out everywhere, removing an owner; your 
   assert.equal(signOutConfirm('Ali', false), null, "another's: at once");
   assert.match(signOutConfirm('Ray', true).text, /sign-in view/);
   assert.equal(signOutConfirm('Ray', true).go, 'Sign out');
-  assert.equal(removeConfirm('Ali', { role: 'worker' }), null, 'a worker: at once, as before');
-  assert.deepEqual(removeConfirm('Ali', { role: 'owner' }), { title: 'Remove Ali', text: 'Ali is an owner: removing them signs them out everywhere.', go: 'Remove' });
+  assert.equal(removeConfirm('Ali', { role: 'worker', hasSecret: false, sessions: 0 }), null, 'a worker who cannot sign in: at once');
+  const worker = { title: 'Remove Ali?', text: 'They can no longer sign in, and bringing them back needs a new PIN.', go: 'Remove', danger: true };
+  assert.deepEqual(removeConfirm('Ali', { role: 'worker', hasSecret: true, sessions: 0 }), worker, 'a PIN');
+  assert.deepEqual(removeConfirm('Ali', { role: 'worker', hasSecret: false, sessions: 1 }), worker, 'signed in somewhere');
+  assert.equal(removeConfirm('Ali', null), null, 'the accounts failed to load');
+  assert.deepEqual(removeConfirm('Ali', { role: 'owner' }), { title: 'Remove Ali', text: 'Ali is an owner: removing them signs them out everywhere, and their password goes; bringing them back needs a new one.', go: 'Remove', danger: true });
 });
 
 test("the Workers card's line after a sign-in change", () => {
   assert.equal(accountDone('Ali', 'unlock'), 'Ali is unlocked');
   assert.equal(accountDone('Ali', 'sign-out'), 'Ali is signed out everywhere');
-  assert.equal(accountDone('Ali', 'role', 'owner'), 'Ali is an owner now — set their password');
-  assert.equal(accountDone('Ray', 'role', 'worker'), 'Ray is a worker now — set their PIN');
+  assert.equal(accountDone('Ali', 'role', 'owner'), 'Ali is an owner now: set their password');
+  assert.equal(accountDone('Ray', 'role', 'worker'), 'Ray is a worker now: set their PIN');
+  assert.equal(accountDone('Ali', 'remove'), 'Ali removed');
   assert.equal(accountDone('Ali', 'secret', 'worker'), 'Ali signs in with a PIN now');
   assert.equal(accountDone('Ali', 'secret', 'owner'), 'Ali signs in with a password now');
 });

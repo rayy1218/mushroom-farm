@@ -214,19 +214,27 @@ export function yieldBody(rows) {
 
 // ---- Login ---- Settings → Workers' sign-in state (spec 2026-11-06-login-design.md 5)
 const farmClock = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(11, 16); // the farm's UTC+8, no summer time
-// The daily cap's lock lasts until the owner's Unlock: stored as server/auth.js LOCKED_UNTIL_UNLOCKED (far in the future);
-// any lock more than a year ahead reads so.
+// The daily cap's lock lasts until the owner's Unlock: stored as server/auth.js LOCKED_UNTIL_UNLOCKED (far in the future).
+// The stored lock is that one only (the 15-minute locks are per address, in the server's memory: lockedHereUntil); a lock
+// more than a year ahead is never repainted for.
 const UNTIL_UNLOCKED_FROM_MS = 366 * 86_400_000;
+const live = (until, now) => until != null && until > now;
 
-// "Worker · signed in on 2 devices", "Owner · no password yet: cannot sign in", "Worker · locked until 10:10", "Worker ·
-// locked: unlock to let them sign in".
+// "Worker · signed in on 2 devices", "Owner · no password yet: cannot sign in", "Worker · locked: unlock to let them sign
+// in" (the daily cap), "Worker · locked on one device until 12:18" (an address's wrong tries; the latest such lock).
 export function accountLine(a, now) {
   const role = a.role === 'owner' ? 'Owner' : 'Worker';
   if (!a.hasSecret) return `${role} · no ${a.role === 'owner' ? 'password' : 'PIN'} yet: cannot sign in`;
-  if (a.lockedUntil !== null && a.lockedUntil - now > UNTIL_UNLOCKED_FROM_MS) return `${role} · locked: unlock to let them sign in`;
-  if (a.lockedUntil !== null && a.lockedUntil > now) return `${role} · locked until ${farmClock(a.lockedUntil)}`;
+  if (live(a.lockedUntil, now)) return `${role} · locked: unlock to let them sign in`;
+  if (live(a.lockedHereUntil, now)) return `${role} · locked on one device until ${farmClock(a.lockedHereUntil)}`;
   if (a.sessions > 0) return `${role} · signed in on ${a.sessions} ${a.sessions === 1 ? 'device' : 'devices'}`;
   return role;
+}
+
+// When the Workers card repaints: the earliest end of a lock it shows (not the daily cap's), or null. list: the accounts.
+export function nextLockEnd(list, now) {
+  const ends = (list ?? []).flatMap((a) => [a.lockedUntil, a.lockedHereUntil]).filter((t) => live(t, now) && t - now <= UNTIL_UNLOCKED_FROM_MS);
+  return ends.length ? Math.min(...ends) : null;
 }
 
 // The row's button for the secret and its dialog's box.
@@ -247,7 +255,7 @@ export function accountActions(a, { self, otherOwner, now }) {
   return {
     secret: self ? null : secretAction(a),
     role: a.role === 'worker' ? { to: 'owner', label: 'Make owner' } : !self || otherOwner ? { to: 'worker', label: 'Make worker' } : null,
-    unlock: a.lockedUntil !== null && a.lockedUntil > now,
+    unlock: live(a.lockedUntil, now) || live(a.lockedHereUntil, now),
     signOut: a.sessions > 0,
     remove: !self,
   };
@@ -268,17 +276,23 @@ export const signOutConfirm = (name, self) => (self
   ? { title: 'Sign out everywhere', text: 'You are signed out on every device, this one too. This page goes to the sign-in view.', go: 'Sign out' }
   : null);
 
-// Removing an owner asks first (a worker goes at once, as before). → the words, or null.
-export const removeConfirm = (name, a) => (a?.role === 'owner'
-  ? { title: `Remove ${name}`, text: `${name} is an owner: removing them signs them out everywhere.`, go: 'Remove' }
-  : null);
+// Removing an owner, or a worker with a PIN or signed in somewhere, asks first (the server clears a removed one's secret);
+// a worker who cannot sign in goes at once. → the words (danger: the go button is the red one), or null.
+export function removeConfirm(name, a) {
+  if (a?.role === 'owner') return { title: `Remove ${name}`, text: `${name} is an owner: removing them signs them out everywhere, and their password goes; bringing them back needs a new one.`, go: 'Remove', danger: true };
+  if (a?.hasSecret || a?.sessions > 0) {
+    return { title: `Remove ${name}?`, text: 'They can no longer sign in, and bringing them back needs a new PIN.', go: 'Remove', danger: true };
+  }
+  return null;
+}
 
-// The Workers card's line once a sign-in change is saved. what: unlock, sign-out, role (role: the new one) or secret (role:
-// the account's).
+// The Workers card's line once a sign-in change is saved. what: unlock, sign-out, remove, role (role: the new one) or secret
+// (role: the account's).
 export function accountDone(name, what, role) {
   if (what === 'unlock') return `${name} is unlocked`;
+  if (what === 'remove') return `${name} removed`;
   if (what === 'sign-out') return `${name} is signed out everywhere`;
-  if (what === 'role') return role === 'owner' ? `${name} is an owner now — set their password` : `${name} is a worker now — set their PIN`;
+  if (what === 'role') return role === 'owner' ? `${name} is an owner now: set their password` : `${name} is a worker now: set their PIN`;
   return `${name} signs in with ${role === 'owner' ? 'a password' : 'a PIN'} now`;
 }
 

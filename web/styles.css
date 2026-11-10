@@ -1268,6 +1268,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
 .now-bare { grid-column: 1 / -1; max-width: 60ch; }
 .now-bare h2 { margin: 0 0 6px; font-size: var(--fs-lg); }
 .now-bare p { margin: 0 0 14px; color: var(--ink-2); }
+html[data-role="worker"] .now-bare p { margin-bottom: 0; } /* ---- Login ---- no Set up the equipment under it */
 /* Offline (critique 2026-10-28): the last readings stay, greyed, and their state pills stop claiming OK */
 .ov-stale { margin: 0 0 12px; color: var(--warning-text); font-size: var(--fs-sm); font-weight: 600; }
 [data-stale] .ov-value-now, [data-stale] .ov-status-text { color: var(--muted); }
@@ -2886,7 +2887,12 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
 /* ---- end Summary ---- */
 
 /* ---- Login ---- the sign-in view (spec 2026-11-06-login-design.md 6); the top bar's links wait until someone is signed in */
-html[data-signin] .top-link, html[data-signin] .top-alarm, html[data-signin] .theme-btn, html[data-signin] .live-mark, html[data-signin] [data-signout] { display: none; }
+html[data-signin] .top-link, html[data-signin] .top-alarm, html[data-signin] .live-mark, html[data-signin] [data-signout] { display: none; }
+/* while the app's files load (index.html starts so, app.js ends it): no links yet, so no "Business" or nameless Sign out flashes
+   before the role is applied; they keep their room, so nothing moves when they show */
+html[data-booting] .top-link { visibility: hidden; }
+/* while signed out the brand is not a link (boot.js takes its address away) */
+.topbar .brand-top:not([href]) { cursor: default; }
 html[data-role="worker"] [data-owner-only] { display: none !important; }
 /* Sign out: a top link that is a button (no button frame or fill; .top-link gives its size, padding, colour and focus ring) */
 .top-signout { border: 0; background: none; transition: none; }
@@ -2894,19 +2900,65 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
    28 px at 390 px with or without the alarm button; narrower, it goes when there is no room for it whole (the rules above) */
 @media (max-width: 399px) { .top-link { min-width: 36px; } .topbar .theme-btn { width: 36px; min-width: 36px; } }
 .login { max-width: 416px; margin: 32px auto; }
+.login-lead { margin: 8px 0 0; }
+/* the command as code, kept on one line (audit M8: "(npm / run owner)") */
+.login-command { white-space: nowrap; font-size: .92em; padding: 1px 5px; border-radius: 4px; background: var(--band); }
+/* the names: whole-width buttons, each with the list links' › at its right and a fill on hover (audit M4) */
 .login-names { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; }
-.login-name { width: 100%; min-height: 44px; text-align: left; font-size: var(--fs-lg); }
+.login-names:empty { display: none; } /* no names: no gap at the card's foot */
+.login-name { width: 100%; min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left;
+  font-size: var(--fs-lg); }
+.login-name::after { content: '\203A' / ''; color: var(--muted); font-size: 1.25em; line-height: 1; }
+.login-name:hover { background: color-mix(in srgb, var(--ink) 9%, var(--raised)); border-color: var(--border-strong); }
+.login-name:hover::after { color: var(--ink); }
+.login-load-error, .login-opening { margin: 0; } /* empty, they take no room (live regions, always there) */
+.login-load-error:not(:empty) { margin-top: 12px; }
+.login-opening:not(:empty) { margin-top: 16px; color: var(--muted); }
+.login-secret { margin-top: 16px; }
 .login-secret .field input { max-width: 224px; font-size: var(--fs-xl); letter-spacing: .15em; }
+.login-secret .field { margin-bottom: 0; }
+.login-hint { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
 .login-actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 16px; }
 .login-actions button { min-height: 44px; }
-/* Settings → Workers: the name with its sign-in line on top, the row's buttons under it (up to six: they wrap), the quiet
-   ones pulled left so their words line up with the name */
+@media (max-width: 600px) {
+  .login { margin-top: 16px; }
+  .login-secret .field input { max-width: none; } /* the whole width on a phone (audit M2) */
+}
+/* Sign out's name (audit I2): the full name on a desk; below 1100 px, where the links are their icons, the first name beside
+   the icon, cut at 8 ch; on an owner's bar under 431 px (seven icons) its initial. Each 44 px tall, and no wider than the bar has. */
+.top-signout .top-me-short, .top-signout .top-me-initial { display: none; }
+@media (max-width: 1099px) {
+  .top-link.top-signout > span.top-me-short { display: inline-block; max-width: 8ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--fs-sm); }
+  .top-link.top-signout { gap: 4px; padding-inline: 6px; flex: 0 1 auto; min-width: 44px; } /* a long name gives way: never past the bar's edge */
+}
+@media (max-width: 430px) {
+  html[data-role="owner"] .top-link.top-signout > span.top-me-short { display: none; }
+  html[data-role="owner"] .top-link.top-signout > span.top-me-initial { display: inline-block; font-size: var(--fs-sm); }
+  .top-link.top-signout { gap: 2px; padding-inline: 4px; }
+  /* an owner's: icon and initial in the other icons' width (38 px, 36 under 400 px), so the bar is no wider than before the name */
+  html[data-role="owner"] .top-link.top-signout { min-width: 36px; padding-inline: 2px; }
+  html[data-role="worker"] .topbar .brand-top { min-width: 36px; } /* the mark keeps its 28 px; the name is cut first */
+}
+/* a Sign out that failed: the line under the top bar (app.js), the app's error tone */
+.top-note { width: 100%; max-width: 1400px; margin: 0 auto; padding: 0 14px; }
+.top-note:empty { padding: 0; }
+.top-note-line { margin: 12px 0 0; }
+/* a worker's "Who picked it": their name as words, not a one-name list (audit M5) */
+.tk-fixed-label { font-size: 0.9rem; font-weight: 600; }
+.tk-fixed-value { margin: 0; min-height: 24px; }
+/* Settings → Workers: the name with its sign-in line on top, the row's buttons under it (up to six: they wrap). The buttons'
+   box is pulled left by a quiet button's padding, so a quiet button's words line up with the name on every line it wraps
+   to; a framed first button (Set PIN while they cannot sign in) is pushed back, its frame on the name's edge */
 .tk-workers-list li { display: grid; gap: 4px; }
 .tk-worker-who { display: grid; min-width: 0; }
 .tk-worker-account { font-size: var(--fs-sm); }
-.tk-worker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.tk-worker-actions > .tk-quiet:first-child { margin-left: -8px; }
-@media (max-width: 600px) { .tk-worker-actions > .tk-quiet:first-child { margin-left: -10px; } }
+.tk-worker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-left: -8px; }
+.tk-worker-actions > :not(.tk-quiet):first-child { margin-left: 8px; }
+@media (max-width: 600px) {
+  .tk-worker-actions { margin-left: -10px; }
+  .tk-worker-actions > :not(.tk-quiet):first-child { margin-left: 10px; }
+}
 /* Your password: a password is longer than the 160 px number boxes */
 .settings.s-password .field input { max-width: 320px; }
 /* ---- end Login ---- */

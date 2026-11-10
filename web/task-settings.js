@@ -11,6 +11,7 @@ import { ruleLine, customLine, taskParts, SLOT_LABELS } from './tasks-math.js';
 import {
   parseWorkerName, workersAfter, parseEveryDays, parseCustomRule, rulesBody, customAfter, ruleForm, idAfter, WORKER_MAX,
   accountLine, secretAction, accountActions, otherOwnerCanSignIn, roleConfirm, signOutConfirm, removeConfirm, accountDone, isNameField,
+  nextLockEnd,
 } from './settings-math.js';
 import { el, keepFocus } from './task-list.js';
 import { openForm as openDialog, closeTaskDialog } from './task-dialogs.js';
@@ -128,6 +129,7 @@ export function mountTaskSettings(container) {
   let accounts = new Map(); // GET /api/workers/accounts by id: role, secret set, lock, sessions (null when it failed)
   let accountsSeq = 0; // each read of the accounts; an older reply that comes last is dropped
   let secretForm = null; // the Set PIN or password dialog's handle (openForm's), closed with the page
+  let lockTimer = null; // repaints the rows when the earliest lock they show ends
   let renaming = null; // the name being renamed: { id, value, error }, kept through a repaint
   let rules = null; // GET /api/task-rules
   let rooms = []; // GET /api/rooms, for the own rules' room names
@@ -164,6 +166,10 @@ export function mountTaskSettings(container) {
         ? active.map((x) => (renaming?.id === x.id ? renameItem(x) : workerItem(x)))
         : [el('li', 'muted', 'No names yet. Add the people who do the rounds.')]));
     });
+    // a lock's line ("locked on one device until 12:18") and its Unlock go when it ends
+    clearTimeout(lockTimer);
+    const end = nextLockEnd(accounts && active.map((x) => accounts.get(x.id)).filter(Boolean), Date.now());
+    lockTimer = end === null ? null : setTimeout(() => { if (alive) paintWorkers(); }, end - Date.now() + 250);
   }
 
   // One change: the whole list. → true once saved (the caller paints and places the cursor).
@@ -191,13 +197,13 @@ export function mountTaskSettings(container) {
 
   function workerItem(x) {
     const li = el('li');
-    const rename = button('Rename');
+    const rename = button('Rename', 'tk-quiet');
     rename.setAttribute('aria-label', `Rename ${x.name}`);
     rename.dataset.focusKey = `rename-${x.id}`;
     const self = x.id === me()?.id;
     const account = accounts?.get(x.id) ?? (accounts ? NO_ACCOUNT : null); // a name just added has no account row yet
     const acts = account && accountActions(account, { self, otherOwner: otherOwnerCanSignIn([...accounts.values()], x.id), now: Date.now() });
-    const remove = button('Remove', 'danger-text');
+    const remove = button('Remove', 'tk-quiet danger-text'); // red words, no frame: not the row's loudest button
     remove.setAttribute('aria-label', `Remove ${x.name}`);
     remove.dataset.focusKey = `remove-${x.id}`;
     rename.addEventListener('click', () => {
@@ -207,10 +213,11 @@ export function mountTaskSettings(container) {
     });
     remove.addEventListener('click', async () => {
       const next = idAfter(workers.filter((y) => y.active).map((y) => y.id), x.id);
-      const ask = removeConfirm(x.name, account); // an owner: their sessions go with them
+      const ask = removeConfirm(x.name, account); // one who can sign in: their sessions and PIN or password go with them
       if (ask && !(await confirmFirst(ask, `remove-${x.id}`))) return;
       if (await putWorkers(workersAfter(workers, { remove: x.id }))) {
         paintWorkers();
+        said(accountDone(x.name, 'remove'));
         focusTo(next === null ? null : `rename-${next}`, w.input);
       }
     });
@@ -226,7 +233,7 @@ export function mountTaskSettings(container) {
 
   // ---- Workers: signing in ----
 
-  const NO_ACCOUNT = { role: 'worker', hasSecret: false, lockedUntil: null, sessions: 0 };
+  const NO_ACCOUNT = { role: 'worker', hasSecret: false, lockedUntil: null, lockedHereUntil: null, sessions: 0 };
 
   // The sign-in state of everyone, read again after each change. A failure leaves the rows without it (null), said once.
   async function loadAccounts() {
@@ -257,19 +264,21 @@ export function mountTaskSettings(container) {
     w.saved.hidden = false;
   }
 
-  // A quiet button of a worker's row: label, its focus key, the words a screen reader says.
-  function quiet(label, key, aria, onClick) {
-    const b = button(label, 'tk-quiet');
+  // A button of a worker's row (quiet, or the app's framed one: className ''): label, its focus key, the words a screen
+  // reader says.
+  function quiet(label, key, aria, onClick, className = 'tk-quiet') {
+    const b = button(label, className);
     b.setAttribute('aria-label', aria);
     b.dataset.focusKey = key;
     b.addEventListener('click', onClick);
     return b;
   }
 
-  // The buttons accountActions shows: the secret, the role, Unlock, Sign out everywhere.
+  // The buttons accountActions shows: the secret (the row's main button while they cannot sign in: Set PIN or Set
+  // password), the role, Unlock, Sign out everywhere.
   function accountButtons(x, a, acts) {
     const out = [];
-    if (acts.secret) out.push(quiet(acts.secret.label, `secret-${x.id}`, `${acts.secret.label} for ${x.name}`, () => openSecret(x, a)));
+    if (acts.secret) out.push(quiet(acts.secret.label, `secret-${x.id}`, `${acts.secret.label} for ${x.name}`, () => openSecret(x, a), a.hasSecret ? 'tk-quiet' : ''));
     if (acts.role) out.push(quiet(acts.role.label, `role-${x.id}`, `${acts.role.label}: ${x.name}`, () => changeRole(x, acts.role.to)));
     if (acts.unlock) out.push(quiet('Unlock', `unlock-${x.id}`, `Unlock ${x.name}`, () => accountChange(x, 'POST', 'unlock')));
     if (acts.signOut) out.push(quiet('Sign out everywhere', `sign-out-${x.id}`, `Sign out everywhere: ${x.name}`, () => signOut(x)));
@@ -303,13 +312,14 @@ export function mountTaskSettings(container) {
     }
   }
 
-  // The card's confirm on ask ({ title, text, go }: settings-math.js) → true when go was chosen; false on Cancel, Esc or the
+  // The card's confirm on ask ({ title, text, go, danger? }: settings-math.js) → true when go was chosen; false on Cancel, Esc or the
   // page left, the cursor back on the button of focus key `key`. None opens while a change is on its way.
   async function confirmFirst(ask, key) {
     if (workersBusy) { w.error.textContent = STILL_SAVING; return false; }
     w.dialogTitle.textContent = ask.title;
     w.dialogText.textContent = ask.text;
     w.dialogGo.textContent = ask.go;
+    w.dialogGo.className = ask.danger ? 'danger' : 'primary'; // a Remove's go is the red one
     w.dialog.returnValue = '';
     w.dialog.showModal();
     await new Promise((resolve) => w.dialog.addEventListener('close', resolve, { once: true }));
@@ -371,8 +381,12 @@ export function mountTaskSettings(container) {
     });
     secretForm = form;
     const box = form.input('secret');
-    box.type = 'password';
-    box.autocomplete = action.kind === 'pin' ? 'off' : 'new-password'; // a PIN box: no "suggest strong password"
+    if (action.kind === 'pin') {
+      // plain digits: the owner sees the PIN they pass on, and no browser offers a saved password here
+      Object.assign(box, { type: 'text', inputMode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', maxLength: 6 });
+    } else {
+      Object.assign(box, { type: 'password', autocomplete: 'new-password' });
+    }
     form.closed.then(() => { if (alive) focusTo(key, q(`[data-focus-key="rename-${x.id}"]`) || w.input); });
   }
 
@@ -720,6 +734,7 @@ export function mountTaskSettings(container) {
   load();
   return function unmount() {
     alive = false;
+    clearTimeout(lockTimer);
     removing = null;
     if (r.removeDialog.open) r.removeDialog.close();
     if (w.dialog.open) w.dialog.close();

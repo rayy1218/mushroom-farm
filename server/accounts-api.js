@@ -7,15 +7,20 @@ import { hashSecret, pinError, passwordError, clearCookie, viaProxy } from './au
 const ONE = /^\/api\/workers\/([1-9][0-9]{0,14})\/(secret|role|unlock|sign-out)$/;
 
 // onUnlock(id): the sign-in's counts of the account start again (auth.unlocked): after an Unlock, a new secret or a new
-// role (each clears the stored lock). → async (req, res, path, { send, readJson, HttpError }) that answers true when the
+// role (each clears the stored lock). addressLocks(): the accounts locked for an address now (auth.addressLocks: id → the
+// latest end), shown as each account's lockedHereUntil (null: none). → async (req, res, path, { send, readJson, HttpError }) that answers true when the
 // path is one of its routes.
-export function createAccountRoutes({ db, now = Date.now, onUnlock = () => {} }) {
-  const accountOf = (id) => db.accounts(now()).find((a) => a.id === id);
+export function createAccountRoutes({ db, now = Date.now, onUnlock = () => {}, addressLocks = () => new Map() }) {
+  const list = () => {
+    const here = addressLocks();
+    return db.accounts(now()).map(({ sessions, ...a }) => ({ ...a, lockedHereUntil: here.get(a.id) ?? null, sessions }));
+  };
+  const accountOf = (id) => list().find((a) => a.id === id);
 
   return async function accountRoutes(req, res, path, { send, readJson, HttpError }) {
     if (path === '/api/workers/accounts') {
       if (req.method !== 'GET') throw new HttpError(404, 'Not found');
-      send(res, 200, { accounts: db.accounts(now()) });
+      send(res, 200, { accounts: list() });
       return true;
     }
     const match = ONE.exec(path);

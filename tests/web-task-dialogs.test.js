@@ -121,7 +121,7 @@ test('the workers could not be read: the page says so, no dialog says "No names 
   const actions = createTaskActions({ onChanged: () => {}, onError: (text) => errors.push(text) });
   await actions.done(ROW);
   await actions.skip(ROW);
-  assert.deepEqual(errors, ["Couldn't reach the farm server. Try again.", "Couldn't reach the farm server. Try again."]);
+  assert.deepEqual(errors, ["Couldn't reach the farm app. Try again.", "Couldn't reach the farm app. Try again."]);
   assert.deepEqual(calls, ['GET /api/workers', 'GET /api/workers'], 'a failed read is not kept; nothing was posted');
 });
 
@@ -178,7 +178,7 @@ test('a row stays held until its request is answered, even when a second Esc clo
 // ---- C13 live check ----
 
 test('the Skip dialog asks "Who is skipping it"; Done keeps "Who did it"', () => {
-  has("const workerField = (list, label = 'Who did it') => ({");
+  has("export const workerField = (list, label = 'Who did it') => (isOwner() ? {");
   has("fields: [workerField(list, 'Who is skipping it'), { name: 'reason', label: 'Why', kind: 'text', value: '' }],");
   assert.equal(dialogs.split("workerField(list, 'Who is skipping it')").length, 2, 'Skip alone');
 });

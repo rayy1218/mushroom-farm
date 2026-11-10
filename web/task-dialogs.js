@@ -68,11 +68,12 @@ export async function loadWorkers() {
   return activeWorkers();
 }
 
-// The dialog's "Who did it" box: the names loadWorkers gives, the one signed in picked.
-export const workerField = (list, label = 'Who did it') => ({
+// The dialog's "Who did it" box: the names loadWorkers gives, the one signed in picked. A worker's is their name in words,
+// not a list of one (audit M5; the server records them whatever is sent).
+export const workerField = (list, label = 'Who did it') => (isOwner() ? {
   name: 'worker', label, kind: 'select', value: list.includes(getWorker()) ? getWorker() : '',
   options: [['', 'Pick a name'], ...list.map((n) => [n, n])],
-});
+} : { name: 'worker', label, kind: 'fixed', value: getWorker() ?? '' });
 
 // ---- the dialog ----
 
@@ -149,6 +150,19 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     const id = `tk-f-${f.name}`;
     const wrap = el('div', f.kind === 'check' ? 'field tk-check' : 'field');
     let input;
+    if (f.kind === 'fixed') { // a value shown as words, sent as it is: its label, the words, a hidden input
+      input = el('input');
+      input.type = 'hidden';
+      input.name = f.name;
+      input.value = f.value ?? '';
+      const err = el('p', 'field-error');
+      err.setAttribute('aria-live', 'polite');
+      wrap.append(el('span', 'tk-fixed-label', f.label), el('p', 'tk-fixed-value', f.value ?? ''), input, err);
+      inputs.set(f.name, input);
+      errors.set(f.name, err);
+      parent.append(wrap);
+      return;
+    }
     if (f.kind === 'select') {
       input = el('select');
       fillOptions(input, f.options, f.value);
@@ -243,8 +257,12 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
         if (p.warn) input.dataset.warn = '';
         else input.setAttribute('aria-invalid', 'true');
       }
-      inputs.get(boxed[0].field).focus();
-      return;
+      const first = inputs.get(boxed[0].field);
+      if (first.type !== 'hidden') {
+        first.focus();
+        return;
+      }
+      // a fixed value's words (no box to put the cursor in) are said in the form's line too
     }
     const [one] = list;
     if (one.content) formError.replaceChildren(...one.content);
@@ -295,7 +313,7 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
     d.addEventListener('close', onClose);
   }).then(() => sending);
   d.showModal();
-  (inputs.size ? inputs.values().next().value : heading).focus();
+  ([...inputs.values()].find((i) => i.type !== 'hidden') ?? heading).focus();
   const handle = { input: (name) => inputs.get(name), button: (value) => sends.find((b) => b.value === value), alive: () => alive() && d.open, closed };
   return handle;
 }
@@ -375,7 +393,7 @@ export function createTaskActions({ onChanged, onError }) {
     window.dispatchEvent(new CustomEvent('farm:worker'));
     if (!form) return;
     const list = await workers();
-    if (list && form.alive()) fillOptions(form.input('worker'), workerField(list).options, '');
+    if (list && form.alive() && isOwner()) fillOptions(form.input('worker'), workerField(list).options, '');
   }
 
   // done, skip and cancel once at a time per row: a double tap of one-tap Done would otherwise send twice, and the second's

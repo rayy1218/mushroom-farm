@@ -1,6 +1,6 @@
 // The first owner, and a lost owner password (spec 2026-11-06-login-design.md 5): npm run owner -- "<name>" asks for the
 // password twice without showing it and makes the worker of that name (any case; added when missing) an active owner with
-// it, signed out everywhere. Run it on the farm computer as the app's user with the app's FARM_DB. From a pipe it reads the
+// it, signed out everywhere. Run it on the server as the app's user with the app's FARM_DB. From a pipe it reads the
 // two lines as they come (tests).
 
 import { readFileSync } from 'node:fs';

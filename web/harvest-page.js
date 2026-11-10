@@ -12,6 +12,7 @@ import { missingLine, tileNodes, figureName } from './harvest-card.js';
 import { mainCrop } from './room-card-math.js';
 import { sheetWithSales, sheetTotals } from './sales-math.js'; // Sales: the sheet's sale rows (spec 2026-11-05-sales-design.md 6)
 import { picture, emptyPicture } from './pictures.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import {
   pageTiles, pricesNote, harvestBars, barTip, harvestTicks, rangeText, emptyText, periodWords, roomRows, roomColumns, cropRows,
   cropColumns, hasMoney, chartTitle, chartLabel, SHEET_TITLE, SHEET_COLUMNS,
@@ -19,12 +20,13 @@ import {
 
 const REFRESH_MS = 60_000;
 const DAYS = [7, 30, 90, 365];
+const WORKER_SUB = 'What the rooms picked, by room and crop.'; // ---- Login ---- no value or energy per kg for a worker
 
 const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Harvest</h1>
-      <p class="page-sub">What the rooms picked, its value and its energy per kg.</p>
+      <p class="page-sub" data-page-sub>What the rooms picked, its value and its energy per kg.</p>
     </div>
     <div class="hv-tools">
       <div class="range-bar" role="group" aria-label="Period" data-range></div>
@@ -125,6 +127,7 @@ export function mount(container, { days = 30 } = {}) {
   const me = ++mountSeq;
   const alive = () => me === mountSeq;
   container.innerHTML = TEMPLATE;
+  if (!isOwner()) container.querySelector('[data-page-sub]').textContent = WORKER_SUB; // ---- Login ---- a worker sees no money
   const q = (sel) => container.querySelector(sel);
   const els = {
     range: q('[data-range]'), csv: q('[data-csv]'), sheet: q('[data-sheet]'), banner: q('.banner'),

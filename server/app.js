@@ -43,7 +43,9 @@ export function createApp(db, {
   gateway = DEFAULT_GATEWAY, tasks = null, login = true, loginNotify = createLoginNotify({ db }),
 } = {}) {
   const auth = login ? createAuth({ db, notify: loginNotify }) : null;
-  const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks, { onUnlock: (id) => auth?.unlocked(id) });
+  const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks, {
+    onUnlock: (id) => auth?.unlocked(id), addressLocks: () => auth?.addressLocks() ?? new Map(),
+  });
   // the stream ends once its sign-in has ended or its role is no longer the one it opened with
   const sse = events && createSse({ events, pingMs: ssePingMs, check: auth && ((req) => auth.alive(req) === req.who.role) });
   const files = createStatic(webDir);

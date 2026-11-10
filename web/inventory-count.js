@@ -12,6 +12,7 @@ import { loadWorkers, getWorker, errorText } from './task-dialogs.js';
 import { groupItems, qtyText, countBody, countDiff, doneText, keptCounts, leaveText, WHOLE_UNITS } from './inventory-math.js';
 import { DOT } from './text-math.js';
 import { keepFlash } from './inventory-done.js';
+import { isOwner } from './session.js'; // ---- Login ----
 
 const COMMAND_TIMEOUT = 15000;
 const KEPT_KEY = 'farm.inventory.count'; // { itemId: text }: the typed boxes, until a save
@@ -85,6 +86,13 @@ export function mount(container) {
   q('[data-back]').href = INVENTORY_HASH;
   q('[data-empty-back]').href = INVENTORY_HASH;
   document.title = 'Count stock · Inventory · Mushroom farm';
+  // ---- Login ---- a worker's "Who counted" is their name in words (the server records them whatever is sent); the hidden
+  // box keeps it for the count's body
+  if (!isOwner()) {
+    els.worker.closest('.field').querySelector('label').replaceWith(el('span', 'tk-fixed-label', 'Who counted'));
+    els.worker.hidden = true;
+    els.worker.after(el('p', 'tk-fixed-value', getWorker() ?? ''));
+  }
 
   const rows = new Map(); // itemId → { item, input, error, records }
   let busy = false;
@@ -116,9 +124,11 @@ export function mount(container) {
     els.lead.replaceChildren();
     if (!names.length) {
       const p = el('p', 'muted iv-count-lead');
-      const a = el('a', '', 'Settings');
-      a.href = '#/settings';
-      p.append("No names yet: add the workers' names in ", a, ' first.');
+      if (isOwner()) {
+        const a = el('a', '', 'Settings');
+        a.href = '#/settings';
+        p.append("No names yet: add the workers' names in ", a, ' first.');
+      } else p.append("No names yet: the owner adds the workers' names in Settings first."); // ---- Login ---- Settings is the owner's
       els.lead.append(p);
     }
   }
@@ -242,7 +252,7 @@ export function mount(container) {
   }
 
   function fieldError(field, message) {
-    if (field === 'worker') {
+    if (field === 'worker' && isOwner()) { // a worker's has no box: the words go above Save
       els.workerError.textContent = message;
       els.worker.setAttribute('aria-invalid', 'true');
       els.worker.focus();

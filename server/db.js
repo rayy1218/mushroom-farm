@@ -1156,6 +1156,7 @@ export function openDb(path, { log = console.error } = {}) {
     deleteSession: db.prepare('DELETE FROM sessions WHERE id = ?'),
     deleteSessionsOf: db.prepare('DELETE FROM sessions WHERE worker_id = ?'),
     deleteSessionsOfInactive: db.prepare('DELETE FROM sessions WHERE worker_id IN (SELECT id FROM workers WHERE active = 0)'),
+    resetSecretsOfInactive: db.prepare('UPDATE workers SET secret_hash = NULL, failed_tries = 0, locked_until = NULL WHERE active = 0 AND (secret_hash IS NOT NULL OR locked_until IS NOT NULL)'),
     pruneSessions: db.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
     sessionCounts: db.prepare('SELECT worker_id, COUNT(*) AS n FROM sessions WHERE expires_at > ? GROUP BY worker_id'),
     ruleSettings: db.prepare('SELECT * FROM task_rule_settings ORDER BY key'),
@@ -2167,7 +2168,7 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // Replaces the list: a worker with a known id is updated (a rename), one without is added, one left out is removed (the
-    // tasks keep the name as text). → the new list.
+    // tasks keep the name as text). One made inactive is signed out and loses their secret. → the new list.
     setWorkers(list) {
       inTransaction(() => {
         replaceRows(q.workers, q.deleteWorker, list, (w) => q.updateWorker.run(w.name, w.active ? 1 : 0, w.id),
@@ -2175,6 +2176,7 @@ export function openDb(path, { log = console.error } = {}) {
           // Parked names start with \u0001, not \u0000: NOCASE stops comparing at a NUL, so every \u0000 name would be the same.
           (kept) => { for (const id of kept) q.parkWorker.run(`\u0001${id}`, id); });
         q.deleteSessionsOfInactive.run(); // ---- Login ---- a worker made inactive is signed out (a removed one's went with the row)
+        q.resetSecretsOfInactive.run(); // and loses their PIN or password: bringing them back needs a new one
       });
       return this.listWorkers();
     },

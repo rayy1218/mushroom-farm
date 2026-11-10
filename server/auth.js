@@ -56,7 +56,7 @@ function commonPin(pin) {
 // A worker's PIN: exactly 6 digits, not a common one. → the error, or null.
 export function pinError(pin) {
   if (typeof pin !== 'string' || !/^[0-9]{6}$/.test(pin)) return 'The PIN must be 6 digits';
-  if (commonPin(pin)) return 'Pick a PIN that is harder to guess';
+  if (commonPin(pin)) return 'Pick a PIN that is harder to guess: no repeats, runs, keypad lines or dates';
   return null;
 }
 
@@ -132,6 +132,7 @@ export function fromTailnet(req) {
 // out). ADDRESS_LIMIT: an address's tries at any accounts. INTERNET: the tries from the internet (not fromTailnet) at all
 // accounts, checked, in 15 minutes, and the scrypt checks they may hold at once (the rest of MAX_CHECKING is the tailnet's).
 export const LOCK = { tries: 5, ms: 15 * 60_000 };
+const WARN_FROM = 3; // from the 3rd wrong try in a row from an address, the 401 says how many are left before the lock
 export const DAILY = { tries: 20, warn: 10, ms: DAY_MS };
 export const ADDRESS_LIMIT = { tries: 20, ms: 15 * 60_000 };
 export const INTERNET = { tries: 600, ms: 15 * 60_000, checking: 12 };
@@ -167,7 +168,7 @@ export function addressKey(address) {
 // db: the farm database. log(line): one line per sign-in try (never the secret; refused ones at most a line a minute per
 // kind). notify(text): a note for the owner (a Telegram message: server/login-alerts.js) when an address locks an account,
 // or a worker reaches the daily warning or cap; not awaited, its failure only logged. check: checkSecret (tests make the slow check's wait their own). → { names(), login(req, body),
-// who(req, res), logout(req), changePassword(req, me, body), unlocked(id), prune(), close() }. login and changePassword →
+// who(req, res), logout(req), changePassword(req, me, body), unlocked(id), addressLocks(), prune(), close() }. login and changePassword →
 // { status, body, cookie? }.
 export function createAuth({ db, now = Date.now, log = (line) => console.log(line), notify = () => {}, check = checkSecret }) {
   // All the counts are in memory: a restart starts them again (a restart is rare, and an attacker cannot cause one).
@@ -190,8 +191,21 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
   let internetChecking = 0;
   const iso = (t) => new Date(t).toISOString();
 
-  const wrong = (role) => ({ status: 401, body: { error: role === 'owner' ? 'That password is not right' : 'That PIN is not right', field: 'secret' } });
-  const lockedReply = (until) => ({ status: 429, body: { error: `Too many tries. Try again at ${localTime(until)}` } });
+  // A wrong secret; left: the tries this address has before its lock, said from the 3rd wrong one in a row (null: not said).
+  const wrong = (role, left = null) => {
+    const what = role === 'owner' ? 'That password is not right' : 'That PIN is not right';
+    const more = left ? `. ${left} more ${left === 1 ? 'try' : 'tries'}, then a ${LOCK.ms / 60_000}-minute wait` : '';
+    return { status: 401, body: { error: what + more, field: 'secret' } };
+  };
+  // retryAt (ms): when the sign-in view may let the person try again; retryInMs: how long from now, by this server's clock
+  // (the view waits that long, so a phone whose clock is off neither holds too long nor lets go early).
+  const lockedReply = (until, role) => ({
+    status: 429,
+    body: {
+      error: `Too many tries. Try again at ${localTime(until)}${role === 'owner' ? '' : ', or ask the owner to unlock you'}`,
+      retryAt: until, retryInMs: Math.max(0, until - now()),
+    },
+  });
   const lockedTodayReply = () => ({ status: 429, body: { error: 'Locked: ask the owner to unlock you' } });
   const accountExpired = (e, t) => (e.lockedUntil ?? e.seen + DAY_MS) <= t;
 
@@ -270,7 +284,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
         day.locked = true;
       }
     }
-    return { entry, addressLock, day };
+    return { entry, count: entry.count, addressLock, day };
   }
 
   function startSession(req, account, t) {
@@ -309,8 +323,9 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
       refused(kind, () => note(kind), t);
       return reply;
     };
-    const fromHere = { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes' } };
-    if (overLimit(address, t)) return refuse('address-limited', fromHere);
+    if (overLimit(address, t)) {
+      return refuse('address-limited', { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes', retryAt: tries.get(address).until, retryInMs: tries.get(address).until - t } });
+    }
     if (checking >= MAX_CHECKING || (internet && internetChecking >= INTERNET.checking)) {
       return refuse('busy', { status: 503, body: { error: 'The farm app is busy. Try again in a moment' } });
     }
@@ -318,15 +333,15 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     const usable = Boolean(account?.active && account.secretHash !== null);
     if (usable && account.lockedUntil !== null && account.lockedUntil > t) {
       // (a 15-minute lock stored before the locks were per address runs out as it was)
-      return refuse('locked', account.lockedUntil >= LOCKED_UNTIL_UNLOCKED ? lockedTodayReply() : lockedReply(account.lockedUntil));
+      return refuse('locked', account.lockedUntil >= LOCKED_UNTIL_UNLOCKED ? lockedTodayReply() : lockedReply(account.lockedUntil, account.role));
     }
     const key = usable ? `${account.id} ${address}` : null;
     const held = key && accountTries.get(key);
-    if (held && held.lockedUntil !== null && held.lockedUntil > t) return refuse('locked-here', lockedReply(held.lockedUntil));
+    if (held && held.lockedUntil !== null && held.lockedUntil > t) return refuse('locked-here', lockedReply(held.lockedUntil, account.role));
     if (internet) {
       if (budget.until <= t) budget = { count: 0, until: t + INTERNET.ms };
       if (budget.count >= INTERNET.tries) {
-        return refuse('budget', { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes' } });
+        return refuse('budget', { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes', retryAt: budget.until, retryInMs: budget.until - t } });
       }
       budget.count += 1;
     }
@@ -345,7 +360,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
       note('unknown');
       return wrong(account?.role);
     }
-    const { entry, addressLock, day } = counted;
+    const { entry, count, addressLock, day } = counted;
     // (an Unlock while the check ran cleared the counts: what they said then no longer holds)
     const today = day !== null && daily.get(account.id) === day;
     if (!right) {
@@ -363,11 +378,14 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
       }
       if (addressLock === null || accountTries.get(key) !== entry) {
         note('wrong');
-        return wrong(account.role);
+        // (the tries left are said while the counts stand, and only when the daily cap is not nearer)
+        const left = LOCK.tries - count;
+        const said = accountTries.get(key) === entry && count >= WARN_FROM && (!today || left < DAILY.tries - day.count);
+        return wrong(account.role, said ? left : null);
       }
       note('wrong-locked');
       addressLocked(account, raw, addressLock, t);
-      return lockedReply(addressLock);
+      return lockedReply(addressLock, account.role);
     }
     // The right secret: not a wrong try. This address's count starts again; the daily count drops it, and the lock when the
     // tries left no longer reach the cap.
@@ -391,6 +409,18 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     }
     note('right');
     return { status: 200, body: { id: fresh.id, name: fresh.name, role: fresh.role }, cookie: startSession(req, fresh, t) };
+  }
+
+  // The accounts locked for an address now (Settings → Workers): account id → the latest end of their address locks.
+  function lockedHere() {
+    const t = now();
+    const out = new Map();
+    for (const [key, entry] of accountTries) {
+      if (entry.lockedUntil === null || entry.lockedUntil <= t) continue;
+      const id = Number(key.slice(0, key.indexOf(' ')));
+      if (!(out.get(id) >= entry.lockedUntil)) out.set(id, entry.lockedUntil);
+    }
+    return out;
   }
 
   // The owner unlocked the account, or set its secret or role (accounts-api.js): its counts start again.
@@ -470,5 +500,5 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
   prune();
   const timer = setInterval(() => { try { prune(); } catch (err) { log(`login prune failed: ${err.message}`); } }, TOUCH_MS);
   timer.unref();
-  return { names: () => db.loginNames(), login, who, alive, logout, changePassword, unlocked, prune, close: () => clearInterval(timer) };
+  return { names: () => db.loginNames(), login, who, alive, logout, changePassword, unlocked, addressLocks: lockedHere, prune, close: () => clearInterval(timer) };
 }

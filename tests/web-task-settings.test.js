@@ -116,7 +116,9 @@ test("Workers: the accounts are read with the names, again after each change, an
 test('Workers: the secret dialog keeps a 400 under its box; the role changed meanwhile (409) leaves only Cancel; the page closes it', () => {
   const submit = cards.slice(cards.indexOf("await request('POST', `/api/workers/${x.id}/secret`, { secret }, COMMAND_TIMEOUT);"));
   assert.match(submit, /^[^]*?if \(err\.status === 400\) return \{ field: 'secret', message: err\.message \};\s*if \(err\.status === 409\) \{[^]*?return \{ message: err\.message, final: true \};/);
-  assert.ok(cards.includes("box.autocomplete = action.kind === 'pin' ? 'off' : 'new-password';"));
+  // a PIN box is plain digits (the owner sees what they pass on; no saved password offered); a password box stays hidden
+  assert.ok(cards.includes("Object.assign(box, { type: 'text', inputMode: 'numeric', pattern: '[0-9]*', autocomplete: 'off', maxLength: 6 });"));
+  assert.ok(cards.includes("Object.assign(box, { type: 'password', autocomplete: 'new-password' });"));
   assert.ok(cards.slice(cards.indexOf('return function unmount()')).includes('if (secretForm?.alive()) closeTaskDialog();'));
 });
 
@@ -128,4 +130,32 @@ test("Workers: the row's buttons are accountActions'; no Remove on your own row;
   assert.match(confirm, /^async function confirmFirst\(ask, key\) \{\s*if \(workersBusy\) \{ w\.error\.textContent = STILL_SAVING; return false; \}/);
   assert.ok(cards.includes('if (err.status === 400 && onField && isNameField(err.field)) onField(err.message);'));
   assert.ok(cards.includes('if (x.id === me()?.id) renamedMe(p.value);'));
+});
+
+// Impeccable audit 2026-11-10 (I1, I3, I5): the row's button weight, the lock's repaint, the line after Remove.
+test("Workers: Set PIN or Set password is the row's main (framed) button while they cannot sign in; Rename and the rest are quiet", () => {
+  assert.ok(cards.includes("const rename = button('Rename', 'tk-quiet');"));
+  assert.ok(cards.includes("() => openSecret(x, a), a.hasSecret ? 'tk-quiet' : ''));"));
+  assert.ok(cards.includes("const remove = button('Remove', 'tk-quiet danger-text');"));
+  for (const label of ["quiet(acts.role.label", "quiet('Unlock'", "quiet('Sign out everywhere'"]) {
+    const line = cards.slice(cards.indexOf(label)).split('\n')[0];
+    assert.ok(!/'tk-quiet' : ''/.test(line), label);
+  }
+});
+
+test('Workers: the rows repaint when the earliest lock they show ends; the timer goes with the page', () => {
+  assert.ok(cards.includes('const end = nextLockEnd(accounts && active.map((x) => accounts.get(x.id)).filter(Boolean), Date.now());'));
+  assert.ok(cards.includes('lockTimer = end === null ? null : setTimeout(() => { if (alive) paintWorkers(); }, end - Date.now() + 250);'));
+  assert.ok(cards.slice(cards.indexOf('return function unmount()')).includes('clearTimeout(lockTimer);'));
+});
+
+test("Workers: after a Remove the card's line says who went; a Remove's confirm has the red go button", () => {
+  assert.ok(cards.includes("w.dialogGo.className = ask.danger ? 'danger' : 'primary';"));
+  const removed = cards.slice(cards.indexOf('if (await putWorkers(workersAfter(workers, { remove: x.id }))) {'));
+  assert.match(removed, /^[^]*?paintWorkers\(\);\s*said\(accountDone\(x\.name, 'remove'\)\);/);
+});
+
+test('Settings: Your password comes after the Workers and Task rules cards', () => {
+  assert.ok(page.indexOf('<div class="tk-settings" data-task-settings></div>') < page.indexOf('<form class="card settings s-password" data-password novalidate>'));
+  assert.ok(page.indexOf('data-password') > page.indexOf('data-inventory-settings'));
 });

@@ -31,7 +31,7 @@ test('a PIN is 6 digits, and not a common one: one digit, pairs and triples, run
     dates: ['250390', '311299', '010100', '900325', '991231', '032590', '123199'], // DDMMYY, YYMMDD, MMDDYY
   };
   for (const [family, pins] of Object.entries(families)) {
-    for (const pin of pins) assert.equal(pinError(pin), 'Pick a PIN that is harder to guess', `${family} ${pin}`);
+    for (const pin of pins) assert.equal(pinError(pin), 'Pick a PIN that is harder to guess: no repeats, runs, keypad lines or dates', `${family} ${pin}`);
   }
 });
 

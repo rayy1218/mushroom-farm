@@ -51,6 +51,7 @@ import { readingIcon } from './icons.js';
 const RELAY_KEY = { intake: 'intake', circ: 'circulation', lights: 'lights', hu: 'humidifier', dh: 'dehumidifier', exhaust: 'exhaust' };
 const clockOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const TREND_MS = 10 * 60_000; // a reading near an edge of its band: rising or falling over the last 10 min
+const BARE_WORKER = "The owner wires this room's sensors and machines."; // ---- Login ---- the Nothing wired yet card, a worker's
 
 // "10:12" today, "27 Oct 10:12" before.
 function manualSince(d, now) {
@@ -90,8 +91,8 @@ const TEMPLATE = `
       <div class="now" data-panel="now">
         <section class="card now-bare" data-bare hidden>
           <h2>Nothing wired yet</h2>
-          <p>Give the room's T/RH probe, CO₂ sensor and relay module their addresses on the Setup tab. The readings, the drawing and the machines show here once they answer.</p>
-          <button type="button" class="primary" data-bare-setup>Set up the equipment</button>
+          <p data-bare-text>Give the room's T/RH probe, CO₂ sensor and relay module their addresses on the Setup tab. The readings, the drawing and the machines show here once they answer.</p>
+          <button type="button" class="primary" data-bare-setup data-owner-only>Set up the equipment</button>
         </section>
         <div class="now-main">
           <div data-readings></div>
@@ -781,6 +782,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
 
   els.retry.addEventListener('click', load);
   container.querySelector('[data-bare-setup]').addEventListener('click', () => editEquipment('trhAddress'));
+  // ---- Login ---- a worker has no Setup tab: the card says who wires the room
+  if (!isOwner()) container.querySelector('[data-bare-text]').textContent = BARE_WORKER;
 
   // The Setup tab's section links: scroll there without changing the address (a hash would leave the room page).
   container.addEventListener('click', (event) => {
