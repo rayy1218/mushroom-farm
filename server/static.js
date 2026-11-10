@@ -2,7 +2,7 @@
 // Each file is read once per version (mtime + size), kept in memory with its ETag and a gzipped copy,
 // and sent with an ETag so a reload over a slow link is a 304 instead of 2 MB.
 
-import { readFile, stat } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
@@ -28,15 +28,23 @@ function notFound(res) {
 
 const etagOf = (bytes, suffix = '') => `"${createHash('sha1').update(bytes).digest('base64')}${suffix}"`;
 
-// Accept-Encoding lists gzip with q > 0 (or no q).
+// Accept-Encoding lists gzip (or x-gzip) with q > 0; a malformed q is not acceptable.
+// Without a gzip entry, a * entry decides.
 function acceptsGzip(header) {
+  let star;
   for (const part of String(header ?? '').split(',')) {
     const [coding, ...params] = part.trim().split(';');
-    if (coding.trim().toLowerCase() !== 'gzip') continue;
-    const q = params.map((p) => /^\s*q\s*=\s*([\d.]+)\s*$/i.exec(p)?.[1]).find((v) => v !== undefined);
-    return q === undefined || Number(q) > 0;
+    const name = coding.trim().toLowerCase();
+    if (name !== 'gzip' && name !== 'x-gzip' && name !== '*') continue;
+    let ok = true;
+    for (const p of params) {
+      const m = /^\s*q\s*=\s*(.*?)\s*$/i.exec(p);
+      if (m) ok = /^(0(\.\d{0,3})?|1(\.0{0,3})?)$/.test(m[1]) && Number(m[1]) > 0;
+    }
+    if (name === '*') star = ok;
+    else return ok;
   }
-  return false;
+  return star === true;
 }
 
 // If-None-Match: a list of entity tags (weak ones compare equal here) or *.
@@ -49,21 +57,27 @@ function matches(header, etag) {
 }
 
 export function createStatic(dir) {
-  const cache = new Map(); // name -> { mtimeMs, size, plain: {data, etag}, gzip: {data, etag} | null }
+  const cache = new Map(); // name -> { key (mtime:size:inode:ctime), plain: {data, etag}, gzip: {data, etag} | null }
 
   async function load(name, ext) {
-    const path = join(dir, name);
-    const st = await stat(path);
-    const hit = cache.get(name);
-    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit;
-    const data = await readFile(path);
-    const entry = { mtimeMs: st.mtimeMs, size: st.size, plain: { data, etag: etagOf(data) }, gzip: null };
-    if (COMPRESSIBLE.has(ext)) {
-      const zipped = gzipSync(data, { level: 9 });
-      entry.gzip = { data: zipped, etag: etagOf(zipped, '-gzip') };
+    const file = await open(join(dir, name));
+    try {
+      const st = await file.stat();
+      if (!st.isFile()) return null;
+      const key = `${st.mtimeMs}:${st.size}:${st.ino}:${st.ctimeMs}`;
+      const hit = cache.get(name);
+      if (hit && hit.key === key) return hit;
+      const data = await file.readFile();
+      const entry = { key, plain: { data, etag: etagOf(data) }, gzip: null };
+      if (COMPRESSIBLE.has(ext)) {
+        const zipped = gzipSync(data, { level: 9 });
+        entry.gzip = { data: zipped, etag: etagOf(zipped, '-gzip') };
+      }
+      cache.set(name, entry);
+      return entry;
+    } finally {
+      await file.close();
     }
-    cache.set(name, entry);
-    return entry;
   }
 
   return async function serve(req, res, url) {
@@ -77,12 +91,14 @@ export function createStatic(dir) {
       if (err.code === 'ENOENT' || err.code === 'EISDIR') return notFound(res);
       throw err;
     }
+    if (!entry) return notFound(res);
     const gz = entry.gzip && acceptsGzip(req.headers['accept-encoding']);
     const body = gz ? entry.gzip : entry.plain;
     const headers = { ...SECURITY, 'content-type': TYPES[ext], 'cache-control': 'no-cache', etag: body.etag };
     if (entry.gzip) headers.vary = 'accept-encoding';
     if (gz) headers['content-encoding'] = 'gzip';
     if (matches(req.headers['if-none-match'], body.etag)) {
+      delete headers['content-encoding'];
       res.writeHead(304, headers);
       return res.end();
     }

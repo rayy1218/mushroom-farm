@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtempSync, writeFileSync, utimesSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, utimesSync, rmSync, renameSync, statSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
@@ -103,4 +103,46 @@ test('HEAD has the GET headers and no body', () => withServer(async ({ get }) =>
   assert.equal(h.body.length, 0);
   for (const k of ['etag', 'content-type', 'content-encoding', 'content-length', 'vary', 'cache-control']) assert.equal(h.headers[k], g.headers[k], k);
   assert.equal((await get('/app.js', {}, 'POST')).status, 404);
+}));
+
+test('a same-size rewrite with the old mtime (new inode) is picked up', () => withServer(async ({ dir, get }) => {
+  const path = join(dir, 'app.js');
+  const old = statSync(path);
+  const before = await get('/app.js');
+  const same = Buffer.alloc(old.size, 'a');
+  writeFileSync(join(dir, 'tmp.part'), same);
+  utimesSync(join(dir, 'tmp.part'), old.atime, old.mtime);
+  renameSync(join(dir, 'tmp.part'), path);
+  const after = await get('/app.js');
+  assert.deepEqual(after.body, same);
+  assert.notEqual(after.headers.etag, before.headers.etag);
+}));
+
+test('a 304 has no content-encoding', () => withServer(async ({ get }) => {
+  const g = await get('/app.js', { 'accept-encoding': 'gzip' });
+  const r = await get('/app.js', { 'accept-encoding': 'gzip', 'if-none-match': g.headers.etag });
+  assert.equal(r.status, 304);
+  assert.equal(r.headers['content-encoding'], undefined);
+  assert.equal(r.headers['content-length'], undefined);
+}));
+
+test('gzip;q=0 and *;q=0 give identity; a malformed q is not acceptable', () => withServer(async ({ get }) => {
+  for (const ae of ['gzip;q=0', '*;q=0', 'gzip;q=abc', 'gzip;q=0.0']) {
+    assert.equal((await get('/app.js', { 'accept-encoding': ae })).headers['content-encoding'], undefined, ae);
+  }
+  assert.equal((await get('/app.js', { 'accept-encoding': 'x-gzip' })).headers['content-encoding'], 'gzip');
+}));
+
+test('a gzip ETag without gzip in Accept-Encoding gets a 200 plain body', () => withServer(async ({ get }) => {
+  const g = await get('/app.js', { 'accept-encoding': 'gzip' });
+  const r = await get('/app.js', { 'if-none-match': g.headers.etag });
+  assert.equal(r.status, 200);
+  assert.equal(r.headers['content-encoding'], undefined);
+}));
+
+test('a directory named x.js is a 404', () => withServer(async ({ dir, get }) => {
+  mkdirSync(join(dir, 'x.js'));
+  const r = await get('/x.js');
+  assert.equal(r.status, 404);
+  assert.equal(r.headers['x-frame-options'], 'DENY');
 }));
