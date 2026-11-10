@@ -5,8 +5,9 @@
 
 import { PHYSICS_FIELDS, MACHINE_KEYS, roomMachines } from '../web/simulate-math.js';
 import { calendarDays } from '../web/filter-math.js';
+import { MAX_SIM_DAYS } from '../web/economics-defaults.js'; // the page's words say it too
 
-export const MAX_SIM_DAYS = 90; // a simulation's longest run; a longer block life is scaled from it
+export { MAX_SIM_DAYS };
 export const DELETED_TEXT = 'The simulation was deleted';
 const BUILDING = PHYSICS_FIELDS.filter((f) => !MACHINE_KEYS.includes(f.key)); // the walls, weather and filter: the building's
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);

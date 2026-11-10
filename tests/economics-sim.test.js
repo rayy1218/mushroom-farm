@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { validateSimulation } from '../server/simulations.js';
 import { simBody, simFigure, MAX_SIM_DAYS } from '../server/economics-sim.js';
+import { readFileSync } from 'node:fs';
+import { MAX_SIM_DAYS as WEB_MAX_SIM_DAYS } from '../web/economics-defaults.js';
 
 const T = Date.UTC(2026, 10, 6, 6);
 const ROOM = { name: 'Container 1', length: 12, width: 2.3, height: 2.5, trhAddress: 1 };
@@ -93,4 +95,12 @@ test('edges: a life that is not a number or below one day is one day; simFigure 
   for (const life of [NaN, -5, 0]) assert.equal(simBody({ room, lastRun: null, crop: 'oyster', blocks: 5, life }).days, 1, String(life));
   assert.equal(simFigure({ input: { days: 42, crops: [] }, summary: { energy: { kWh: 10 } } }, 42), null);
   assert.equal(simFigure({ input: { crops: [{ crop: 'oyster', blocks: 5 }] }, summary: { energy: { kWh: 10 } } }, 42), null);
+});
+
+test('one longest run for the server and the page (web/economics-defaults.js)', () => {
+  assert.equal(MAX_SIM_DAYS, WEB_MAX_SIM_DAYS);
+  assert.equal(WEB_MAX_SIM_DAYS, 90);
+  const src = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+  assert.ok(src('../server/economics-sim.js').includes("import { MAX_SIM_DAYS } from '../web/economics-defaults.js';"));
+  assert.doesNotMatch(src('../web/economics-figures.js'), /\b90\b/, 'the page\'s words take MAX_SIM_DAYS');
 });

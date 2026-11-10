@@ -1,7 +1,7 @@
 // Hash router: which page does a location hash mean? Anything unknown means the Overview.
 
 import { CROP_KEYS } from './crops.js'; // ---- Runs ----
-import { ECONOMICS_CROPS } from './economics-defaults.js'; // ---- Economics ----
+import { ECONOMICS_CROPS } from './economics-crops.js'; // ---- Economics ----
 
 // The room page's tabs (redesign 2026-10-28: for the three jobs check, act and set up; Tasks 2026-10-30, spec
 // 2026-10-30-tasks-design.md 7.1); the first has no name in the address (#/rooms/7), the others do (#/rooms/7/history).

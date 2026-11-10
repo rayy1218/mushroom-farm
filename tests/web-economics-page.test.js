@@ -17,7 +17,7 @@ test('the router mounts it under the strip with the address\'s room and crop; it
   assert.ok(app.includes("import * as economics from './economics-page.js'; // ---- Economics ----"));
   assert.ok(app.includes(": route.name === 'economics' ? economics.mount(page, { room: route.room, crop: route.crop }) // ---- Economics ----"));
   assert.ok(page.includes('<h1 class="page-title" tabindex="-1">Economics</h1>'));
-  assert.ok(page.includes('What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in.'));
+  assert.ok(page.includes("<p class=\"page-sub\">One room's month with a crop, against the other ways to grow or buy it.</p>"), 'one line at 1440 (the finish review)');
   assert.ok(page.includes("document.title = 'Economics · Mushroom farm';"));
 });
 
@@ -227,4 +227,15 @@ test('the audit\'s styles: fold heads at card size, the measure, the empty card,
   assert.ok(ecCss.includes('.ec-note > .ec-note-line { flex-basis: 100%; }'));
   // a phone: the tag beside the label, the box and its unit a row of their own (at 360 px "a kg" fell under the box)
   assert.ok(ecCss.includes('.ec-fig-label { grid-column: 1; grid-row: 1; }\n  .ec-tag { grid-column: 2; grid-row: 1; }\n  .ec-fig-field { grid-column: 1 / -1; grid-row: 2; }'));
+});
+
+test('the final review: the page asks with economicsHash\'s query; the route reads the crops from a light module; the strip stops measuring once placed', () => {
+  assert.ok(page.includes("const path = () => `/api/economics${economicsHash(want).slice(ECONOMICS_HASH.length)}`;"));
+  const route = src('route.js');
+  assert.ok(route.includes("import { ECONOMICS_CROPS } from './economics-crops.js'; // ---- Economics ----"));
+  assert.ok(src('economics-crops.js').includes("export const ECONOMICS_CROPS = ['oyster', 'pink', 'woodear', 'lionsmane'];"));
+  assert.ok(src('economics-defaults.js').includes("export { ECONOMICS_CROPS } from './economics-crops.js';"));
+  const tabs = src('business-tabs.js');
+  assert.ok(tabs.includes('const placer = new ResizeObserver(place);'));
+  assert.ok(tabs.includes('observer.disconnect(); // placed once: no more measuring'));
 });

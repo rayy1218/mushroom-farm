@@ -3,6 +3,7 @@
 // server (which resolves each figure's source) and by the page (which checks a typed figure before it is sent).
 //   ECONOMICS_CROPS · WAYS · LEFT · WAY_NAMES · FIGURES · figureOf(key) · figuresFor(crop) · placeOf(key, roomId, crop)
 //   checkFigure(key, value) · unitParts(unit) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES · keepTogether(text)
+//   · MAX_SIM_DAYS
 
 // A number keeps its unit at a wrap and RM or USD its number (a no-break space), and a range of numbers never breaks at its
 // dash (word joiners around it): the Units Rule, as text-math.js's keepUnits does for the climate's units. Every research
@@ -12,8 +13,11 @@ const UNIT_AFTER = /(?<=\d) (?=(?:°C|%|kWh|kg|g|m³|L\/h|W|hp|h|ft|sen|days?|mo
 const MONEY_BEFORE = /(?<=\b(?:RM|USD)) (?=[\d−-])/g;
 export const keepTogether = (text) => text.replace(UNIT_AFTER, NB).replace(MONEY_BEFORE, NB).replace(/(?<=\d)–(?=\d)/g, '\u2060–\u2060');
 
-// The crops the owner named (spec 1), in the Crop select's order.
-export const ECONOMICS_CROPS = ['oyster', 'pink', 'woodear', 'lionsmane'];
+// The crops the owner named (spec 1), in the Crop select's order: in a module of their own, so the router reads them light.
+export { ECONOMICS_CROPS } from './economics-crops.js';
+
+// A simulation's longest run (Work it out); a longer block life is scaled from it. The server's body and the page's words.
+export const MAX_SIM_DAYS = 90;
 
 // The ways compared per crop, Your container first (spec 4.1), and the ways left out with the reason the page words.
 export const WAYS = {

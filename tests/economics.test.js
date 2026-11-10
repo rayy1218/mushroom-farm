@@ -92,6 +92,9 @@ test('no rooms: no room, no figures', (t) => {
     rooms: [], room: null, crop: 'lionsmane', ways: ['yours', 'highland', 'import', 'warm'], left: [{ way: 'shed', reason: 'warm-strain' }],
     figures: [], sim: null, machinesNote: null, errors: {},
   });
+  // a room asked for that is not there is a 404 (spec 7.1), with no rooms too: the page then asks without it
+  assert.throws(() => s.econ.view({ room: 1 }), (e) => e instanceof EconomicsError && e.status === 404 && e.message === 'Room not found');
+  assert.equal(s.econ.view({ crop: 'oyster' }).room, null);
 });
 
 test('the sources in order: You set over Your runs (kept beside it), Your runs, Settings\' expected price, Research', (t) => {

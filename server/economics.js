@@ -170,6 +170,7 @@ export function createEconomics({
     if (crop !== null) cropCheck(crop);
     const rooms = db.listRooms();
     if (!rooms.length) {
+      if (room !== null) throw new EconomicsError(404, 'Room not found'); // spec 7.1, with no rooms too: the page asks again without it
       const c = crop ?? DEFAULT_CROP;
       return { rooms: [], room: null, crop: c, ways: WAYS[c], left: LEFT[c], figures: [], sim: null, machinesNote: null, errors: {} };
     }

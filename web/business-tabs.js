@@ -33,13 +33,15 @@ export function businessTabs(current) {
   if (typeof ResizeObserver === 'function') new ResizeObserver(edges).observe(nav);
   // ---- Economics (the audit, #4) ---- on its first measure a phone's strip scrolls its current tab into view (the strip
   // alone: the page never moves); its scroll event then fades the edges
-  let placed = false;
-  const place = () => {
-    if (placed || !nav.clientWidth) return;
-    placed = true;
+  const place = (entries, observer) => {
+    if (!nav.clientWidth) return; // not shown yet
+    observer.disconnect(); // placed once: no more measuring
     const cur = nav.querySelector('[aria-current="page"]');
     if (cur) nav.scrollLeft = tabInView(cur.offsetLeft, cur.offsetWidth, nav.clientWidth);
   };
-  if (typeof ResizeObserver === 'function') new ResizeObserver(place).observe(nav);
+  if (typeof ResizeObserver === 'function') {
+    const placer = new ResizeObserver(place);
+    placer.observe(nav);
+  }
   return nav;
 }

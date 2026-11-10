@@ -7,7 +7,7 @@
 // reads.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { economicsHash } from './route.js';
+import { economicsHash, ECONOMICS_HASH } from './route.js';
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { keepFocus, createReader } from './business-page.js';
@@ -50,7 +50,7 @@ const PAGE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Economics</h1>
-      <p class="page-sub">What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in.</p>
+      <p class="page-sub">One room's month with a crop, against the other ways to grow or buy it.</p>
     </div>
     <div class="ec-picks" data-picks hidden>
       <div class="field ec-pick"><label for="ec-room">Room</label><select id="ec-room" data-room></select></div>
@@ -592,7 +592,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     els.banner.hidden = false;
   }
 
-  const path = () => `/api/economics${want.room || want.crop ? `?${[want.room ? `room=${want.room}` : '', want.crop ? `crop=${want.crop}` : ''].filter(Boolean).join('&')}` : ''}`;
+  const path = () => `/api/economics${economicsHash(want).slice(ECONOMICS_HASH.length)}`; // the address's query, as economicsHash builds it
   const reader = createReader({
     read: async () => { const asked = replies.asked(); return { next: await request('GET', path()), asked }; },
     done: ({ next, asked }) => show(next, { asked }),

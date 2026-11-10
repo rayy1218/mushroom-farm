@@ -58,6 +58,14 @@ test('GET /api/economics: the first room and its crop without a query; the room 
   assert.deepEqual(await call('GET', '/api/economics/figures'), { status: 404, body: { error: 'Not found' } });
 });
 
+test('GET /api/economics after the last room is deleted: the room asked for is a 404; without it the empty view', async (t) => {
+  const { call, db, room } = await app(t);
+  db.deleteRoom(room);
+  assert.deepEqual(await call('GET', `/api/economics?room=${room}&crop=oyster`), { status: 404, body: { error: 'Room not found' } });
+  const empty = await call('GET', '/api/economics?crop=oyster');
+  assert.deepEqual([empty.status, empty.body.rooms, empty.body.room, empty.body.crop], [200, [], null, 'oyster']);
+});
+
 test('PUT and DELETE /api/economics/figures: saved, told, cleared; refusals in their words', async (t) => {
   const { call, room, seen } = await app(t);
   const put = await call('PUT', '/api/economics/figures', { room, crop: 'lionsmane', key: 'price', value: 55 });

@@ -5,7 +5,7 @@
 //   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint · likely
 //   · sourceItems
 
-import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts } from './economics-defaults.js';
+import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts, MAX_SIM_DAYS } from './economics-defaults.js';
 import { compare } from './economics-model.js';
 import { figureText, rangeText } from './economics-math.js';
 import { moneyText, perKgText, amountBox, amountOf } from './costs-math.js';
@@ -119,8 +119,8 @@ export function noteParts(f, ctx) {
 // view's; f: the kwhBlock figure; ctx: { room, crop, life (days), machinesNote }.
 export function simText(sim, f, { room, crop, life, machinesNote }) {
   const wanted = Math.max(1, Math.round(life) || 1);
-  const days = Math.min(90, wanted);
-  const lifeText = wanted > 90 ? `of ${plural(wanted, 'day', 'days')} (it runs ${plural(90, 'day', 'days')} and scales up)` : `(${plural(days, 'day', 'days')})`;
+  const days = Math.min(MAX_SIM_DAYS, wanted);
+  const lifeText = wanted > MAX_SIM_DAYS ? `of ${plural(wanted, 'day', 'days')} (it runs ${plural(MAX_SIM_DAYS, 'day', 'days')} and scales up)` : `(${plural(days, 'day', 'days')})`;
   const intro = `Work it out runs ${room}'s simulation with ${cropShortName(crop)} for one block life ${lifeText}, `
     + `with its machines from Setup.${machinesNote ? ` ${machinesNote}.` : ''} Nothing is switched.`;
   if (!sim) return { text: intro, action: 'Work it out' };
@@ -130,7 +130,7 @@ export function simText(sim, f, { room, crop, life, machinesNote }) {
   if (f.source !== 'simulator') {
     return { text: `Simulator, ${dateText(sim.at)}: ${figureText('yours.kwhBlock', sim.value)}.`, action: 'Work it out again' };
   }
-  const scaled = sim.days > 90 ? ` (scaled from ${plural(90, 'day', 'days')})` : '';
+  const scaled = sim.days > MAX_SIM_DAYS ? ` (scaled from ${plural(MAX_SIM_DAYS, 'day', 'days')})` : '';
   return {
     text: `Simulator, ${dateText(sim.at)} ${farmTime(sim.at)}: ${grouped(sim.kwh, 1)}${NB}kWh over ${plural(sim.days, 'day', 'days')}${scaled} for ${plural(sim.blocks, 'block', 'blocks')}.`,
     action: 'Work it out again',
