@@ -4,7 +4,8 @@
 // blocks go through Batches), Edit and Archive or Bring back.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { INVENTORY_HASH, BATCHES_HASH } from './route.js';
+import { INVENTORY_HASH, BATCHES_HASH, parseRoute, workerHash } from './route.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { DOT } from './text-math.js';
@@ -76,9 +77,11 @@ function el(tag, className, content) {
   return node;
 }
 
-// A link in the line's words (.iv-ref: ink with a muted underline, as Batches' names), or the words alone.
+// A link in the line's words (.iv-ref: ink with a muted underline, as Batches' names), or the words alone: no address, or one
+// a worker may not open (a batch: Batches is the owner's; a room's page is theirs too).
+const mayOpen = (href) => isOwner() || !workerHash(parseRoute(href)); // ---- Login ----
 function linkOr(text, href) {
-  if (!href) return document.createTextNode(text);
+  if (!href || !mayOpen(href)) return document.createTextNode(text);
   const a = el('a', 'iv-ref', text);
   a.href = href;
   return a;
@@ -105,7 +108,7 @@ export function mount(container, { id }) {
     all: q('[data-all]'), gone: q('[data-gone]'), archivedNote: q('[data-archived-note]'), batchNote: q('[data-batch-note]'),
     blocksNote: q('[data-blocks-note]'),
   };
-  for (const a of container.querySelectorAll('[data-batches-link]')) a.href = BATCHES_HASH;
+  for (const a of container.querySelectorAll('[data-batches-link]')) a.replaceWith(linkOr(a.textContent, BATCHES_HASH)); // a worker's: the word
   q('[data-back]').href = INVENTORY_HASH;
   q('[data-gone-back]').href = INVENTORY_HASH;
   document.title = 'Inventory · Mushroom farm';

@@ -55,3 +55,10 @@ test('a 401 once the app runs reloads the page and never settles; on the sign-in
   }
   assert.equal(calls, 1, 'no reload from the sign-in routes');
 });
+
+test("a lock's reply keeps its retryAt (ms), for the sign-in view to wait until then", async (t) => {
+  stub(t, () => new Response('{"error":"Too many tries. Try again at 14:05","retryAt":1762790700000}', { status: 429 }));
+  await assert.rejects(request('POST', '/api/login', {}), (e) => e.status === 429 && e.retryAt === 1762790700000);
+  stub(t, () => new Response('{"error":"No"}', { status: 400 }));
+  await assert.rejects(request('POST', '/x', {}), (e) => e.retryAt === undefined);
+});

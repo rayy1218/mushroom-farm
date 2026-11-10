@@ -1,4 +1,4 @@
-// The shell: theme, hash router, and mounting pages into <main id="view">.
+// The shell: hash router, and mounting pages into <main id="view">.
 // A page is { mount(container, params) → unmount() }.
 
 import { parseRoute, isCanonical, canonicalHash, businessTabOf, businessStrip, workerHash } from './route.js';
@@ -26,9 +26,11 @@ import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
 import { fallbackMs, liveMark } from './live-math.js';
-import { request, OFFLINE } from './api.js';
+import { request } from './api.js';
 import { me, isOwner } from './session.js'; // ---- Login ----
+import { firstName, initialOf, signOutLabel, signOutFailText } from './login-math.js';
 import { todayCount, todayLinkLabel, countText } from './tasks-math.js';
+import './theme.js';
 
 const view = document.getElementById('view');
 const menuLinks = {
@@ -122,39 +124,7 @@ function show(before = '') {
   window.scrollTo(0, 0);
 }
 
-// Theme: dark by default; the choice is kept in this browser. index.html applies it before first paint.
-const THEME_COLOURS = { dark: '#15181c', light: '#ffffff' }; // each theme's --surface
-// The button shows the theme it switches to: a sun to go light, a moon to go dark (its name says it for screen readers).
-const THEME_ICONS = {
-  light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  dark: '<path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/>',
-};
-const themeButtons = document.querySelectorAll('.theme-btn');
-
-function currentTheme() {
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
-}
-
-function showTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const next = theme === 'dark' ? 'light' : 'dark';
-  for (const b of themeButtons) {
-    b.innerHTML = `<svg class="ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${THEME_ICONS[next]}</svg>`;
-    b.setAttribute('aria-label', `Switch to ${next} mode`);
-    b.title = `Switch to ${next} mode`;
-  }
-  document.querySelector('meta[name="theme-color"]').setAttribute('content', THEME_COLOURS[theme]);
-}
-
-for (const b of themeButtons) {
-  b.addEventListener('click', () => {
-    const theme = currentTheme() === 'dark' ? 'light' : 'dark';
-    showTheme(theme);
-    try { localStorage.setItem('farm.theme', theme); } catch { /* not kept */ }
-  });
-}
-
-showTheme(currentTheme());
+// The theme button: web/theme.js (boot.js wires it as the page starts, the sign-in view's too).
 
 // "Skip to content" must not change the hash (the router would redirect to the list).
 document.querySelector('[data-skip]').addEventListener('click', (e) => {
@@ -265,32 +235,52 @@ window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknow
 // On the Today page the page asks for its own data; the tasks event keeps the count current.
 // (a hashchange made by a script may have no oldURL)
 window.addEventListener('hashchange', (e) => { show(e.oldURL ? new URL(e.oldURL).hash : ''); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
-// ---- Login ---- the name signed in and Sign out; a worker's Business link is their Inventory (spec 2026-11-06-login-design.md 5, 6)
+// ---- Login ---- the name signed in and Sign out; a worker's Business link is their Inventory, with a box for its icon
+// (spec 2026-11-06-login-design.md 5, 6)
 for (const el of document.querySelectorAll('[data-me-name]')) el.textContent = me()?.name ?? '';
+for (const el of document.querySelectorAll('[data-me-first]')) el.textContent = firstName(me()?.name);
+for (const el of document.querySelectorAll('[data-me-initial]')) el.textContent = initialOf(me()?.name);
+const INVENTORY_ICON = '<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5L12 12l8.5-4.5M12 12v9"/>';
 if (!isOwner()) {
   for (const a of menuLinks.business) {
     a.href = '#/business/inventory';
     a.setAttribute('aria-label', 'Inventory');
     a.querySelector('span').textContent = 'Inventory';
+    a.querySelector('svg').innerHTML = INVENTORY_ICON;
   }
 }
 // Signed out: the page starts again at the sign-in view. A 401 (the session had ended already) reloads in request() itself;
-// any other failure leaves the person signed in, so it is said and the page stays.
+// any other failure leaves the person signed in, so a line under the top bar says it (read out: its box is a live region)
+// until the next try or a minute on.
+const signOutNote = document.querySelector('[data-signout-note]');
+const NOTE_MS = 60_000;
+let noteTimer = null;
+function showSignOutNote(text) {
+  clearTimeout(noteTimer);
+  if (!text) return signOutNote.replaceChildren();
+  const line = document.createElement('p');
+  line.className = 'banner top-note-line';
+  line.textContent = text;
+  signOutNote.replaceChildren(line);
+  noteTimer = setTimeout(() => signOutNote.replaceChildren(), NOTE_MS);
+}
 async function signOut() {
+  showSignOutNote(null);
   try {
     await request('POST', '/api/logout');
   } catch (err) {
-    alert(`Not signed out: ${err.status === 0 ? OFFLINE : err.message}. Try again.`);
+    showSignOutNote(signOutFailText(err.status, err.message));
     return;
   }
   history.replaceState(null, '', '#/');
   location.reload();
 }
 for (const b of document.querySelectorAll('[data-signout]')) {
-  b.setAttribute('aria-label', me() ? `${me().name}: Sign out` : 'Sign out');
+  b.setAttribute('aria-label', signOutLabel(me()?.name));
   b.addEventListener('click', signOut);
 }
 show();
 refreshBadge();
 refreshToday();
+delete document.documentElement.dataset.booting; // ---- Login ---- the top bar's links show, the role's own (index.html hides them till now)
 window.farmReady = true; // the page loaded: index.html's "Couldn't load" never shows

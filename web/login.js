@@ -1,30 +1,38 @@
 // The sign-in view (spec 2026-11-06-login-design.md 6): the names as buttons, then the PIN or password box.
-//   mount(container, { onSignedIn(me) }) → unmount()
+//   mount(container, { onSignedIn(me) }) → unmount(); unmount.opening(): the view says the app is opening (boot.js, once
+//   signed in: app.js replaces it when it is up)
 
 import { request } from './api.js';
-import { SECRET, secretProblem, failText } from './login-math.js';
+import { SECRET, secretProblem, failText, pinComplete, keepsSecret, lockedUntil, NO_ACCOUNTS, OPENING } from './login-math.js';
 
+// The hidden username box is for password managers only: out of reach (no Tab, not read out), but not readonly (some managers
+// skip a readonly box). The lead describes the heading, so "Nobody can sign in yet" is read with "Sign in".
 const TEMPLATE = `
 <section class="card login" aria-labelledby="login-title">
-  <h1 id="login-title" class="page-title" tabindex="-1">Sign in</h1>
+  <h1 id="login-title" class="page-title" tabindex="-1" aria-describedby="login-lead">Sign in</h1>
   <p class="login-lead" id="login-lead" data-lead>Who are you?</p>
   <ul class="login-names" data-names></ul>
-  <p class="field-error" role="status" data-load-error></p>
+  <p class="field-error login-load-error" role="status" data-load-error></p>
   <button type="button" data-retry hidden>Try again</button>
   <form class="login-secret" data-form novalidate hidden>
-    <input class="sr-only" type="text" name="username" autocomplete="username" readonly tabindex="-1" aria-hidden="true" data-username>
+    <input class="sr-only" type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" data-username>
     <div class="field">
       <label for="login-secret" data-label>PIN</label>
-      <input id="login-secret" name="secret" type="password" aria-describedby="login-lead login-hint login-error" required>
-      <p class="hint" id="login-hint" data-hint></p>
+      <input id="login-secret" name="secret" type="password" aria-describedby="login-lead login-error login-hint" required>
       <p class="field-error" id="login-error" aria-live="polite" data-error></p>
+      <p class="c-hint login-hint" id="login-hint" data-hint></p>
     </div>
     <div class="login-actions">
       <button type="button" data-back>Not you?</button>
       <button type="submit" class="primary" data-submit>Sign in</button>
     </div>
   </form>
+  <p class="login-opening" role="status" data-opening></p>
 </section>`;
+
+// After the focus has moved to the box, its error is read through aria-describedby; the live region waits this long before
+// it listens again, so the error is not said twice (audit 2026-11-10).
+const LIVE_BACK_MS = 150;
 
 export function mount(container, { onSignedIn }) {
   container.innerHTML = TEMPLATE;
@@ -32,11 +40,13 @@ export function mount(container, { onSignedIn }) {
   const els = {
     lead: q('[data-lead]'), names: q('[data-names]'), loadError: q('[data-load-error]'), retry: q('[data-retry]'), form: q('[data-form]'),
     label: q('[data-label]'), input: q('#login-secret'), hint: q('[data-hint]'), error: q('[data-error]'), back: q('[data-back]'),
-    submit: q('[data-submit]'), username: q('[data-username]'), title: q('#login-title'),
+    submit: q('[data-submit]'), username: q('[data-username]'), title: q('#login-title'), opening: q('[data-opening]'),
   };
   let alive = true;
   let picked = null;
   let busy = false;
+  let held = null; // { until, timer }: a lock's reply said when tries come back; Sign in waits until then
+  let liveTimer = null;
   document.title = 'Sign in · Mushroom farm';
 
   function nameButton(n) {
@@ -50,6 +60,14 @@ export function mount(container, { onSignedIn }) {
     return li;
   }
 
+  function noAccounts() {
+    const [before, command, after] = NO_ACCOUNTS;
+    const code = document.createElement('code');
+    code.className = 'login-command';
+    code.textContent = command;
+    els.lead.replaceChildren(before, code, after);
+  }
+
   async function loadNames() {
     els.loadError.textContent = '';
     els.retry.hidden = true;
@@ -57,7 +75,8 @@ export function mount(container, { onSignedIn }) {
       const { names } = await request('GET', '/api/login/names');
       if (!alive) return;
       els.names.replaceChildren(...names.map(nameButton));
-      els.lead.textContent = names.length ? 'Who are you?' : 'Nobody can sign in yet: the owner sets the first password on the farm computer (npm run owner).';
+      if (names.length) els.lead.textContent = 'Who are you?';
+      else noAccounts();
     } catch (err) {
       if (!alive) return;
       els.loadError.textContent = failText(err.status, err.message);
@@ -65,13 +84,36 @@ export function mount(container, { onSignedIn }) {
     }
   }
 
+  // The error under the box. When the focus must move there (a click on Sign in), the words are set with the live region
+  // quiet: the box's description reads them as it gets the focus. Already in the box (Enter, the 6th digit), the live region says them.
   function showError(text) {
+    const moving = document.activeElement !== els.input;
+    clearTimeout(liveTimer);
+    if (moving) els.error.removeAttribute('aria-live');
     els.error.textContent = text;
     els.input.setAttribute('aria-invalid', 'true');
-    if (document.activeElement !== els.input) els.input.focus();
+    if (moving) {
+      els.input.focus();
+      liveTimer = setTimeout(() => els.error.setAttribute('aria-live', 'polite'), LIVE_BACK_MS);
+    }
+  }
+
+  function release() {
+    if (!held) return;
+    clearTimeout(held.timer);
+    held = null;
+    if (alive && !busy) els.submit.disabled = false;
+  }
+
+  // A lock that says when it ends: Sign in stays off (the server's words under the box) until then; Not you? still works.
+  function hold(until) {
+    release();
+    els.submit.disabled = true;
+    held = { until, timer: setTimeout(() => { release(); if (alive) els.error.textContent = ''; }, until - Date.now()) };
   }
 
   function pick(n) {
+    release();
     picked = n;
     const box = SECRET[n.kind];
     els.lead.textContent = `Signing in as ${n.name}`;
@@ -93,6 +135,7 @@ export function mount(container, { onSignedIn }) {
   }
 
   els.back.addEventListener('click', () => {
+    release();
     picked = null;
     els.form.hidden = true;
     els.names.hidden = false;
@@ -100,19 +143,27 @@ export function mount(container, { onSignedIn }) {
     els.names.querySelector('button')?.focus();
   });
   els.input.addEventListener('input', () => {
+    if (held) return; // the lock's words stay until it ends
     els.error.textContent = '';
     els.input.removeAttribute('aria-invalid');
+    // a PIN sends itself at its 6th digit (a phone's number pad has no Enter)
+    if (picked && pinComplete(picked.kind, els.input.value, busy)) els.form.requestSubmit();
   });
   els.retry.addEventListener('click', loadNames);
   els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (busy || !picked) return;
+    if (busy || held || !picked) return;
     const secret = els.input.value;
     const problem = secretProblem(picked.kind, secret);
     if (problem) return showError(problem);
     busy = true;
     els.submit.disabled = true;
     els.back.disabled = true;
+    // a wrong password stays in its box, selected, to retype; a PIN is cleared
+    const afterFail = () => {
+      if (keepsSecret(picked.kind)) els.input.select();
+      else els.input.value = '';
+    };
     try {
       const who = await request('POST', '/api/login', { id: picked.id, secret });
       // onSignedIn may answer with words to show (the browser did not keep the sign-in)
@@ -123,13 +174,15 @@ export function mount(container, { onSignedIn }) {
       }
     } catch (err) {
       if (alive) {
-        els.input.value = '';
+        const until = lockedUntil(err.status, err.retryAt, Date.now());
+        if (until) hold(until);
         showError(failText(err.status, err.message));
+        afterFail();
       }
     } finally {
       busy = false;
       if (alive) {
-        els.submit.disabled = false;
+        els.submit.disabled = Boolean(held);
         els.back.disabled = false;
       }
     }
@@ -137,8 +190,20 @@ export function mount(container, { onSignedIn }) {
 
   loadNames();
   els.title.focus();
-  return function unmount() {
+  function unmount() {
     alive = false;
+    release();
+    clearTimeout(liveTimer);
     container.replaceChildren();
+  }
+  // Signed in: the box and its buttons go, and the view says the app is opening (its own live region, there from the start).
+  unmount.opening = () => {
+    alive = false;
+    release();
+    els.form.hidden = true;
+    els.names.hidden = true;
+    els.retry.hidden = true;
+    els.opening.textContent = OPENING;
   };
+  return unmount;
 }

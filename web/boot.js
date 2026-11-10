@@ -8,6 +8,7 @@ import { request, routeMissing, OUTDATED } from './api.js';
 import { setMe } from './session.js';
 import * as login from './login.js';
 import { landing, failText, NOT_KEPT } from './login-math.js';
+import './theme.js'; // the theme button works on the sign-in view too
 
 const root = document.documentElement;
 const SLOW_MS = 90_000; // the app not up after this long: say so (an import that never settles)
@@ -21,9 +22,22 @@ function showLoadFail(text) {
   document.getElementById('load-fail-reload').addEventListener('click', () => location.reload(), { once: true });
 }
 
+// While signed out the brand is not a link (its Overview is not there yet): no address, no name of its own, out of the Tab order.
+const brand = document.querySelector('.brand-top');
+const brandLink = { href: brand?.getAttribute('href'), label: brand?.getAttribute('aria-label') };
+function brandIsLink(on) {
+  if (!brand) return;
+  for (const [attr, value] of [['href', brandLink.href], ['aria-label', brandLink.label]]) {
+    if (on && value) brand.setAttribute(attr, value);
+    else brand.removeAttribute(attr);
+  }
+}
+
 async function open(who) {
   setMe(who);
+  root.dataset.booting = ''; // the top bar's links stay hidden until app.js has made them the role's (index.html starts so)
   delete root.dataset.signin;
+  brandIsLink(true);
   const slow = setTimeout(() => { if (!window.farmReady) showLoadFail(); }, SLOW_MS);
   try {
     await import('./app.js'); // app.js sets window.farmReady itself when it is up
@@ -41,6 +55,8 @@ async function start() {
   }
   if (who) return open(who).catch(() => showLoadFail());
   root.dataset.signin = '';
+  delete root.dataset.booting;
+  brandIsLink(false);
   const wanted = location.hash;
   const unmount = login.mount(document.getElementById('view'), {
     // → words to show on the view when the app must not open yet, else nothing
@@ -51,7 +67,7 @@ async function start() {
       } catch (err) {
         return err.status === 401 ? NOT_KEPT : failText(err.status, err.message);
       }
-      unmount();
+      unmount.opening(); // "Opening the farm app…" in the view (app.js replaces it) rather than a blank page
       history.replaceState(null, '', landing(wanted, signedIn.role));
       open(signedIn).catch(() => showLoadFail());
     },

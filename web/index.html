@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-booting>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -27,9 +27,13 @@
     <a class="top-link" href="#/business" data-nav="business" aria-label="Business"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5.5A1.5 1.5 0 0110.5 4h3A1.5 1.5 0 0115 5.5V7"/><path d="M3 12.5h18"/><path d="M10.5 12.5v2h3v-2"/></svg><span>Business</span></a>
     <a class="top-link" href="#/overview" data-nav="overview" aria-label="Overview"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span></a>
     <a class="top-link" href="#/settings" data-nav="settings" aria-label="Settings" data-owner-only><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Settings</span></a>
-    <!-- ---- Login ---- the name signed in and Sign out (spec 2026-11-06-login-design.md 5); its icon alone where the links are theirs -->
-    <button type="button" class="top-link top-signout" data-signout aria-label="Sign out"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span data-me-name></span><span class="sr-only">: </span><span>Sign out</span></button>
+    <!-- ---- Login ---- the name signed in and Sign out (spec 2026-11-06-login-design.md 5): the full name on a desk, the first name
+         (cut at 8 ch) beside the icon below 1100 px, its initial where even that has no room (styles.css) -->
+    <button type="button" class="top-link top-signout" data-signout aria-label="Sign out"><svg class="ico" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span class="top-me" data-me-name></span><span class="top-me-short" data-me-first></span><span class="top-me-initial" data-me-initial></span><span class="sr-only">: </span><span class="top-signout-word">Sign out</span></button>
   </header>
+  <!-- ---- Login ---- a Sign out that failed: a line under the bar (app.js puts it in), not an alert; the live region is always
+       there, empty and taking no room, so its words are read out -->
+  <div class="top-note" role="status" data-signout-note></div>
   <main id="view" tabindex="-1"></main>
 </div>
 

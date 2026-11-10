@@ -241,3 +241,61 @@ test('no route is asked for but through api.js and live.js; none is written in d
     assert.ok(!text.includes('"/api/'), `${file}: "/api/ in double quotes`);
   }
 });
+
+// ---- Login polish (audit 2026-11-10) ----
+
+test("a worker's \"Who did it\" is their name in words, not a list of one; an owner's is the list, theirs picked", async (t) => {
+  const { setMe } = await import('../web/session.js');
+  const { workerField } = await import('../web/task-dialogs.js');
+  t.after(() => setMe(null));
+  setMe({ id: 2, name: 'Ali', role: 'worker' });
+  assert.deepEqual(workerField(['Ali'], 'Who picked it'), { name: 'worker', label: 'Who picked it', kind: 'fixed', value: 'Ali' });
+  setMe({ id: 1, name: 'Ray', role: 'owner' });
+  const owner = workerField(['Ali', 'Ray'], 'Who picked it');
+  assert.equal(owner.kind, 'select');
+  assert.equal(owner.value, 'Ray');
+  // the dialog shows a fixed value as words with a hidden input (sent as it is), and puts the cursor in the first real box
+  const dialogs = src('task-dialogs.js');
+  assert.ok(dialogs.includes("if (f.kind === 'fixed') {") && dialogs.includes("input.type = 'hidden';"));
+  assert.ok(dialogs.includes("([...inputs.values()].find((i) => i.type !== 'hidden') ?? heading).focus();"));
+  // Count stock: a worker's "Who counted" is their name in words too
+  const count = src('inventory-count.js');
+  assert.ok(count.includes("el('span', 'tk-fixed-label', 'Who counted')") && count.includes("els.worker.after(el('p', 'tk-fixed-value', getWorker() ?? ''));"));
+});
+
+test("a worker's pages have no dead ends to the owner's pages", () => {
+  // the room's Nothing wired yet card: no Set up the equipment, and who wires it said
+  const room = src('room-detail.js');
+  assert.match(room, /data-bare-setup data-owner-only>Set up the equipment</);
+  assert.ok(room.includes("const BARE_WORKER = \"The owner wires this room's sensors and machines.\";"));
+  assert.ok(room.includes("if (!isOwner()) container.querySelector('[data-bare-text]').textContent = BARE_WORKER;"));
+  // the Overview's Set up the room and set one on Settings: the owner's links; a worker's words
+  const overview = src('overview.js');
+  assert.ok(overview.includes("} else line.append('The owner wires them.');"));
+  assert.ok(overview.includes("} else p.append('the owner sets one on Settings.');"));
+  assert.ok(overview.indexOf("if (isOwner()) {\n          const setup = node('a', '', 'Set up the room');") > 0);
+  assert.ok(overview.indexOf("if (isOwner()) {\n        const link = node('a', '', 'set one on Settings');") > 0);
+  // an item's Batches links (its notes, a batch's lot and history line): words for a worker
+  const item = src('inventory-item.js');
+  assert.ok(item.includes('const mayOpen = (href) => isOwner() || !workerHash(parseRoute(href));'));
+  assert.ok(item.includes('if (!href || !mayOpen(href)) return document.createTextNode(text);'));
+  assert.ok(item.includes("a.replaceWith(linkOr(a.textContent, BATCHES_HASH))"));
+  // Count stock with no names: the owner's link to Settings; a worker's words
+  assert.ok(src('inventory-count.js').includes(`} else p.append("No names yet: the owner adds the workers' names in Settings first.");`));
+  // the room's Crop card with no crop: a worker does not start one
+  assert.ok(src('room-card.js').includes("isOwner() ? 'No crop set. Add one on the Crop tab.' : 'No crop set: the owner starts one on the Crop tab.'"));
+  assert.ok(src('styles.css').includes('html[data-role="worker"] .now-bare p { margin-bottom: 0; }'));
+  // Harvest's sub-line: no value or energy for a worker
+  const harvest = src('harvest-page.js');
+  assert.ok(harvest.includes("const WORKER_SUB = 'What the rooms picked, by room and crop.';"));
+  assert.ok(harvest.includes("if (!isOwner()) container.querySelector('[data-page-sub]').textContent = WORKER_SUB;"));
+});
+
+test("a worker's Inventory link has a box for its icon; the links wait (hidden, keeping their room) until app.js applied the role", () => {
+  const app = src('app.js');
+  assert.ok(app.includes("a.querySelector('svg').innerHTML = INVENTORY_ICON;"));
+  assert.ok(src('index.html').includes('<html lang="en" data-booting>'));
+  assert.ok(src('styles.css').includes('html[data-booting] .top-link { visibility: hidden; }'));
+  assert.ok(src('boot.js').includes("root.dataset.booting = '';"));
+  assert.ok(app.indexOf('delete document.documentElement.dataset.booting;') > app.indexOf("a.querySelector('svg').innerHTML = INVENTORY_ICON;"));
+});

@@ -1,6 +1,6 @@
 // Talking to the farm server: one request() for every page.
 
-export const OFFLINE = "Couldn't reach the farm server";
+export const OFFLINE = "Couldn't reach the farm app"; // the sign-in view's words too
 export const GONE = 'That room no longer exists';
 // The page files are read from disk, so after an update the page can be newer than the running farm app.
 export const OUTDATED = 'The farm app is older than this page: restart the farm app (npm start) to use this';
@@ -13,6 +13,7 @@ export class ApiError extends Error {
     super(data?.error ?? OFFLINE);
     this.status = status; // 0 when the server could not be reached
     this.field = data?.field;
+    this.retryAt = data?.retryAt; // a lock's end (ms), on a sign-in's 429
   }
 }
 

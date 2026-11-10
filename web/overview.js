@@ -241,9 +241,11 @@ export function mount(container) {
       if (c.unwired) { // nothing wired yet: one line and the way to wire it
         card.classList.add('ov-room-bare');
         const line = node('p', 'ov-bare', 'No sensors or machines wired yet. ');
-        const setup = node('a', '', 'Set up the room');
-        setup.href = c.setupHref;
-        line.append(setup);
+        if (isOwner()) {
+          const setup = node('a', '', 'Set up the room');
+          setup.href = c.setupHref;
+          line.append(setup);
+        } else line.append('The owner wires them.'); // ---- Login ---- a worker has no Setup tab
         card.append(line);
         return card;
       }
@@ -280,9 +282,11 @@ export function mount(container) {
     card.append(head);
     if (!o.set) {
       const p = node('p', 'muted', 'No outdoor sensor: ');
-      const link = node('a', '', 'set one on Settings');
-      link.href = '#/settings';
-      p.append(link);
+      if (isOwner()) {
+        const link = node('a', '', 'set one on Settings');
+        link.href = '#/settings';
+        p.append(link);
+      } else p.append('the owner sets one on Settings.'); // ---- Login ---- Settings is the owner's
       card.append(p);
       return card;
     }
