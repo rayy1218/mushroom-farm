@@ -43,3 +43,9 @@ test('a sign-in the browser did not keep (plain http) has its words; a failed ap
   assert.ok(boot.includes('routeMissing(err) ? OUTDATED'));
   assert.ok(boot.indexOf('window.farmReady = true') > boot.indexOf('login.mount'), 'ready only once the sign-in view is up');
 });
+
+test("the page's 8 s \"Couldn't load\" stands down once boot.js runs (a slow link may need longer); boot shows a real failure", () => {
+  assert.ok(src('index.html').includes('if(window.farmReady||window.farmBooting)return;'));
+  assert.ok(src('boot.js').includes('window.farmBooting = true;'));
+  assert.match(src('boot.js'), /setTimeout\(\(\) => \{ if \(!window\.farmReady\) showLoadFail\(\); \}, SLOW_MS\)/);
+});

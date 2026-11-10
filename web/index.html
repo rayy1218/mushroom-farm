@@ -62,6 +62,6 @@
   <p>Couldn't load the farm app. Check the connection to the farm computer.</p>
   <button type="button" class="primary" id="load-fail-reload">Reload</button>
 </div>
-<script>setTimeout(function(){if(window.farmReady)return;var f=document.getElementById('load-fail');f.hidden=false;document.getElementById('load-fail-reload').addEventListener('click',function(){location.reload();});},8000);</script>
+<script>setTimeout(function(){if(window.farmReady||window.farmBooting)return;var f=document.getElementById('load-fail');f.hidden=false;document.getElementById('load-fail-reload').addEventListener('click',function(){location.reload();});},8000);</script>
 </body>
 </html>

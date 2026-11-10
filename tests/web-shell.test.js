@@ -37,7 +37,7 @@ test("the page says it couldn't load when its modules never ran (a blank page un
   const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
   assert.match(html, /<div class="load-fail" id="load-fail" role="alert" hidden>/);
-  assert.match(html, /setTimeout\(function\(\)\{if\(window\.farmReady\)return;/);
+  assert.match(html, /setTimeout\(function\(\)\{if\(window\.farmReady\|\|window\.farmBooting\)return;/);
   assert.match(app, /window\.farmReady = true;/);
 });
 
