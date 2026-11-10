@@ -101,6 +101,7 @@ test('the simulator\'s line: never, waiting, working, done (scaled past 90 days)
   assert.deepEqual(line({ status: 'working', progress: 0.4 }), { text: 'Working it out · 40 %', action: null });
   const done = { status: 'done', at: at('2026-11-06', 14) + 2 * 60_000, value: 0.478, kwh: 708.7, blocks: 1482, days: 42 };
   assert.deepEqual(line(done, { ...kwh, source: 'simulator' }), { text: 'Simulator, 6 Nov 14:02: 708.7 kWh over 42 days for 1,482 blocks.', action: 'Work it out again' });
+  assert.ok(simText({ ...done, days: 120 }, { ...kwh, source: 'simulator' }, { ...ctx, life: 42, machinesNote: null }).text.includes('scaled from 90\u00a0days'), 'the unit stays with its number');
   assert.equal(line({ ...done, days: 120, kwh: 800 }, { ...kwh, source: 'simulator' }).text, 'Simulator, 6 Nov 14:02: 800.0 kWh over 120 days (scaled from 90 days) for 1,482 blocks.');
   assert.deepEqual(line({ status: 'failed', error: 'Stopped by a restart of the farm app' }),
     { text: "Couldn't work it out: Stopped by a restart of the farm app. The figure before it stays.", tone: 'warn', action: 'Try again' });
@@ -110,11 +111,12 @@ test('the simulator\'s line: never, waiting, working, done (scaled past 90 days)
 test('the sources line: what is real named, the owner\'s counted; all research', () => {
   const list = figures();
   assert.equal(sourcesLine(list.map((f) => (f.key === 'tariff' ? { ...f, source: 'settings' } : f))), 'All research: set your own figures below.');
+  assert.equal(sourcesLine(list.map((f) => (f.key === 'yours.blocks' ? { ...f, source: 'runs' } : f))), 'All research: set your own figures below.', 'planted blocks are not a real figure');
   const mixed = list.map((f) => ({
     ...f,
     source: { 'yours.yieldG': 'runs', price: 'runs', 'yours.kwhBlock': 'simulator', wage: 'owner', 'yours.rent': 'owner', tariff: 'settings' }[f.key] ?? 'research',
   }));
-  assert.equal(plain(sourcesLine(mixed)), 'From your runs: selling price, yield · Simulator: electricity · You set: 2 · The rest is research.');
+  assert.equal(plain(sourcesLine(mixed)), 'From your runs: yield, selling price · Simulator: electricity · You set: 2 · The rest is research.');
 });
 
 test('a typed figure: checked as the server checks it; the values with the typed ones over the saved', () => {
@@ -133,6 +135,7 @@ test('the saved line, and the line of a part not read', () => {
   assert.equal(plain(savedText('yours.rent', 300, 'Container 1', 'lionsmane')), 'Saved: Rent, RM 300.00 a month, Container 1, every crop.');
   assert.equal(plain(savedText('yours.yieldG', 230, 'Container 1', 'lionsmane')), "Saved: Yield per good block, all flushes, 230 g, Container 1 and Lion's mane.");
   assert.equal(plain(partsLine({ sales: 'Something went wrong', energy: 'Something went wrong' })), "Couldn't read Sales and the energy just now · trying again every minute");
+  assert.equal(plain(partsLine({ sales: 'x', batches: 'x', energy: 'x' })), "Couldn't read Sales, Batches and the energy just now · trying again every minute");
   assert.equal(partsLine({}), null);
 });
 

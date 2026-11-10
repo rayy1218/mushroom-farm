@@ -122,7 +122,7 @@ export function simText(sim, f, { room, crop, life, machinesNote }) {
   if (f.source !== 'simulator') {
     return { text: `Simulator, ${dateText(sim.at)}: ${figureText('yours.kwhBlock', sim.value)}.`, action: 'Work it out again' };
   }
-  const scaled = sim.days > 90 ? ' (scaled from 90 days)' : '';
+  const scaled = sim.days > 90 ? ` (scaled from ${plural(90, 'day', 'days')})` : '';
   return {
     text: `Simulator, ${dateText(sim.at)} ${farmTime(sim.at)}: ${grouped(sim.kwh, 1)}${NB}kWh over ${plural(sim.days, 'day', 'days')}${scaled} for ${plural(sim.blocks, 'block', 'blocks')}.`,
     action: 'Work it out again',
@@ -131,9 +131,10 @@ export function simText(sim, f, { room, crop, life, machinesNote }) {
 
 // The headline card's sources line (spec 8.1): "From your runs: yield, selling price · Simulator: electricity · You set: 2 ·
 // The rest is research." ("All research: set your own figures below." when none is real.)
-const SHORT = { 'yours.yieldG': 'yield', price: 'selling price', blockPrice: 'block price', 'yours.kwhBlock': 'electricity', 'yours.blocks': 'blocks' };
+// The blocks are not counted: a planted room gives them from the first day, which would end "All research" on a new farm.
+const SHORT = { 'yours.yieldG': 'yield', price: 'selling price', blockPrice: 'block price', 'yours.kwhBlock': 'electricity' };
 export function sourcesLine(figures) {
-  const of = (source) => figures.filter((f) => f.source === source && SHORT[f.key]).map((f) => SHORT[f.key]);
+  const of = (source) => Object.keys(SHORT).filter((key) => figures.some((f) => f.key === key && f.source === source)).map((key) => SHORT[key]);
   const set = figures.filter((f) => f.source === 'owner').length;
   const parts = [
     of('runs').length ? `From your runs: ${of('runs').join(', ')}` : null,
@@ -167,7 +168,8 @@ export function savedText(key, value, room, crop) {
 // The warning at the top of Figures when a part was not read (spec 9.2), or null.
 export function partsLine(errors) {
   const parts = Object.keys(errors ?? {}).filter((p) => PART_NAMES[p]).map((p) => PART_NAMES[p]);
-  return parts.length ? `Couldn't read ${parts.join(' and ')} just now${DOT}trying again every minute` : null;
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0];
+  return parts.length ? `Couldn't read ${list} just now${DOT}trying again every minute` : null;
 }
 
 // The figures as the page holds them while the owner types (spec 8.5, 9.1): the last reply's, with each box's last valid
