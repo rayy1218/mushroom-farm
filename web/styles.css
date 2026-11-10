@@ -2965,10 +2965,16 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 
 /* ---- Economics (spec 2026-11-06-economics-design.md 8) ---- */
 /* the room and crop: Calendar's labelled selects, side by side, stacked under 600 px */
-.ec-picks { display: flex; flex-wrap: wrap; gap: 0 16px; margin: 0 0 16px; }
+.ec-picks { display: flex; flex-wrap: wrap; gap: 12px 16px; margin: 0 0 16px; }
 .ec-pick { margin: 0; min-width: 200px; }
 .ec-gone { margin: 0 0 12px; font-size: var(--fs-sm); }
 .ec-page { display: grid; gap: 16px; align-items: start; }
+/* a measure, as Inventory's item page: a label stays within reach of its box (the audit, #3) */
+.ec-page, .ec-picks { max-width: 1040px; }
+/* no rooms: DESIGN's empty card (a dashed edge, no fill or shadow) */
+.ec-empty { background: transparent; border-style: dashed; border-color: var(--border-strong); box-shadow: none; }
+:root[data-theme="light"] .card.ec-empty { box-shadow: none; }
+.ec-empty .none { margin: 0; color: var(--ink-2); }
 /* the headline: the lead sentence, the best other way under it, then where the figures come from */
 .ec-lead { margin: 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.45; }
 .ec-second { margin: 6px 0 0; font-size: var(--fs-md); color: var(--ink-2); }
@@ -2976,25 +2982,36 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 /* the comparison: a column a way on a desk; the way's room muted under its name; a loss's word under its figure */
 .ec-table thead th { vertical-align: bottom; }
 .ec-way { display: block; }
-.ec-way-room { display: block; color: var(--muted); font-weight: 400; font-size: var(--fs-sm); }
-.ec-sub { display: block; color: var(--muted); font-size: var(--fs-sm); }
+.ec-way-room, .ec-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }
 .ec-table tr[data-row="profit"] :is(th, td) { font-weight: 700; border-top: 1px solid var(--border-strong); }
 .ec-table tr[data-row="costs"] :is(th, td) { font-weight: 600; }
 .ec-lines { margin-top: 10px; }
 .ec-line { margin: 4px 0 0; font-size: var(--fs-sm); }
 .ec-phone { display: none; }
 /* the figures: folds as Setup's parts; a row is its label, box and tag, then its note and where it applies */
+/* the result while typing (the audit, #1): the headline's sentence, sticky under the top bar while the card scrolls, as
+   History's head */
+.ec-now { position: sticky; top: var(--topbar-h); z-index: 2; margin: 0 -20px 8px; padding: 8px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
+  font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ec-intro { margin: 0 0 8px; font-size: var(--fs-sm); }
 .ec-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 8px; color: var(--warning-text); font-size: var(--fs-sm); }
 .ec-fold { border-top: 1px solid var(--border); }
-.ec-fold-head { font-weight: 600; }
+/* a fold's head at Card title's size inside its card, a heading inside (the audit, #2) */
+.ec-fold-head { font-size: var(--fs-md); font-weight: 600; margin-bottom: 0; }
+.ec-fold-title { margin: 0; font: inherit; }
 .ec-fig { display: grid; grid-template-columns: minmax(0, 1fr) auto 10.5em; align-items: center; gap: 4px 12px; padding: 10px 0; border-top: 1px solid var(--border); }
 .ec-fold > summary + .ec-fig { border-top: 0; }
 .ec-fig-label { font-weight: 500; }
 .ec-fig-field { display: flex; align-items: center; gap: 6px; }
 /* a figure's box is a field (the shared field rules: 40 px, 44 px on a phone, the refused border and outline): its width and figures */
-.ec-box { width: 9em; text-align: right; font-variant-numeric: tabular-nums; }
-.ec-unit { min-width: 6.5em; color: var(--muted); font-size: var(--fs-sm); }
+.ec-box { width: 9em; text-align: right; font-variant-numeric: tabular-nums; scroll-margin-top: 88px; } /* clear of the sticky result */
+.ec-box[data-warn] { border-color: var(--warning-text); } /* a check: allowed, unlikely */
+.ec-box[data-warn]:focus-visible { outline-color: var(--warning-text); }
+/* RM inside the box before the figure (DESIGN's unit inside the box), the rest of the unit beside it (the audit, #12) */
+.ec-boxwrap { position: relative; display: inline-flex; }
+.ec-prefix { position: absolute; top: 50%; left: 10px; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+.ec-box.ec-has-prefix { padding-left: 38px; }
+.ec-unit { min-width: 4.5em; color: var(--muted); font-size: var(--fs-sm); }
 .ec-fig-value { font-variant-numeric: tabular-nums; }
 /* the source tag: a neutral mark chip, its words saying the source (never colour alone) */
 .ec-tag { justify-self: end; padding: 2px 10px; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
@@ -3002,8 +3019,10 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 .ec-error { color: var(--critical-text); }
 .ec-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
 .ec-note-line { margin: 0; }
+.ec-note > .ec-note-line { flex-basis: 100%; } /* a line each: "Couldn't save · Retry" never reads as the note's sentence */
 .ec-warn { color: var(--warning-text); }
 .ec-sim { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.ec-sim [data-sim-line]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ec-foot { margin: 10px 0 0; font-size: var(--fs-sm); }
 @media (max-width: 600px) {
   .ec-pick { flex: 1 1 100%; }
@@ -3014,6 +3033,8 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
   .ec-block-name { margin: 0; font-size: var(--fs-md); }
   .ec-block-profit { margin: 0; font-weight: 700; text-align: right; }
   .ec-block-label { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
+  .ec-now { margin: 0 -16px 8px; padding: 8px 16px; font-size: var(--fs-sm); }
+  .ec-box { scroll-margin-top: 112px; }
   .ec-block-table tbody th { font-weight: 400; color: var(--ink-2); }
   /* a figure: its label over its box; the tag beside the box */
   .ec-fig { grid-template-columns: minmax(0, 1fr) auto; }
@@ -3023,6 +3044,7 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
   .ec-fig-field { flex-wrap: wrap; }
   .ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
   /* a link inside a sentence of several links keeps its line, without padding: padding would overlap the next line's link
-     (WCAG 2.5.8's inline exception) */
+     (WCAG 2.5.8's inline exception); 1.75 lines give each link 24 px with no overlap (the audit, #15) */
+  .ec-note-line { line-height: 1.75; }
 }
 /* ---- end Economics ---- */

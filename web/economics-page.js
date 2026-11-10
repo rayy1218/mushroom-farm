@@ -11,12 +11,12 @@ import { economicsHash } from './route.js';
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { keepFocus, createReader } from './business-page.js';
-import { ECONOMICS_CROPS, figureOf } from './economics-defaults.js';
+import { ECONOMICS_CROPS, figureOf, unitParts } from './economics-defaults.js';
 import { blockLife, inputsOf } from './economics-model.js';
 import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText } from './economics-math.js';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint,
+  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems,
 } from './economics-figures.js';
 import { DOT } from './text-math.js';
 
@@ -38,6 +38,7 @@ const link = (text, href, newTab = false) => {
   if (newTab) {
     a.target = '_blank';
     a.rel = 'noopener';
+    a.append(el('span', 'sr-only', ' (opens in a new tab)'));
   }
   return a;
 };
@@ -58,7 +59,7 @@ const PAGE = `
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>
   <p class="sr-only" data-said aria-live="polite"></p>
-  <p class="muted ec-gone" data-gone hidden></p>
+  <p class="muted ec-gone" data-gone role="status" hidden></p>
   <div class="card ec-empty" data-empty hidden>
     <p class="none">No rooms yet. Economics plans with one of your rooms.</p>
     <p class="ec-foot"><a class="co-link" href="${ROOMS_HASH}">Rooms, to add one</a></p>
@@ -68,6 +69,7 @@ const PAGE = `
       <p class="ec-lead" data-lead></p>
       <p class="ec-second" data-second></p>
       <p class="muted ec-sources" data-sources></p>
+      <p class="ec-parts" data-head-parts hidden></p>
     </section>
     <section class="card ec-compare" aria-labelledby="ec-compare-title">
       <div class="card-head"><h2 id="ec-compare-title">A month, each way</h2></div>
@@ -76,6 +78,7 @@ const PAGE = `
     </section>
     <section class="card ec-figures" aria-labelledby="ec-figures-title">
       <div class="card-head"><h2 id="ec-figures-title">Figures</h2></div>
+      <p class="ec-now" data-now aria-hidden="true"></p>
       <p class="muted ec-intro">Change a figure and the page works it out again as you type; it is saved for every device when you leave the box.</p>
       <p class="ec-parts" data-parts hidden></p>
       <div data-folds></div>
@@ -93,7 +96,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     picks: q('[data-picks]'), room: q('[data-room]'), crop: q('[data-crop]'), banner: q('.banner'), bannerText: q('[data-banner-text]'),
     said: q('[data-said]'), gone: q('[data-gone]'), empty: q('[data-empty]'), body: q('[data-body]'), lead: q('[data-lead]'),
     second: q('[data-second]'), sources: q('[data-sources]'), table: q('[data-table]'), lines: q('[data-lines]'), parts: q('[data-parts]'),
-    folds: q('[data-folds]'),
+    folds: q('[data-folds]'), now: q('[data-now]'), headParts: q('[data-head-parts]'),
   };
   document.title = 'Economics · Mushroom farm';
   let want = { room, crop }; // the room and crop asked for (null: the server's choice)
@@ -104,16 +107,21 @@ export function mount(container, { room = null, crop = null } = {}) {
   const said = (text) => { els.said.textContent = text; };
 
   // ---- The headline and the comparison: worked out in the browser from the figures (and what is typed) ----
+  // The lead sentence's parts: a loss's figure in the critical text, its word ("loss") beside it.
+  const leadNodes = (first) => first.map((p) => (typeof p === 'string' ? p : el('span', 'co-loss', p.text)));
   function paintMoney() {
     const results = draft.results();
     if (!results.length) return;
     const values = draft.values();
     const life = values.life;
     const h = headline(results, { room: reply.room.name, crop: reply.crop, life });
-    els.lead.replaceChildren(...h.first.map((p) => (typeof p === 'string' ? p : el('span', 'co-loss', p.text))));
+    els.lead.replaceChildren(...leadNodes(h.first));
+    // the same sentence atop Figures, in view while typing (the audit, #1); a reader hears the result in the saved line
+    els.now.replaceChildren(...leadNodes(h.first));
     els.second.textContent = h.second ?? '';
     els.second.hidden = !h.second;
     els.sources.textContent = sourcesLine(reply.figures);
+    paintParts(els.headParts, 'retry-parts-head'); // a part not read, where the headline uses its fallback (the audit, #8)
     paintTable(results);
     const lines = [
       fillLine(results[0], { room: reply.room.name, blocks: values['yours.blocks'], first: values['yours.first'] }),
@@ -198,16 +206,19 @@ export function mount(container, { room = null, crop = null } = {}) {
   // ---- The Figures card ----
   // The rows are built when the room, crop or figures change; a repaint otherwise updates them in place and never rewrites
   // a box the owner is typing in (its text and its unsaved figure stay).
-  function paintFigures() {
+  // The warning of a part not read (spec 9.2), with its quiet Retry: in the headline card and atop Figures.
+  function paintParts(node, focusKey) {
     const line = partsLine(reply.errors);
-    els.parts.hidden = !line;
-    if (line) {
-      const retry = el('button', 'bz-quiet', 'Retry');
-      retry.type = 'button';
-      retry.dataset.focusKey = 'retry-parts';
-      retry.addEventListener('click', () => reader.load());
-      els.parts.replaceChildren(el('span', '', line), retry);
-    }
+    node.hidden = !line;
+    if (!line) return;
+    const retry = el('button', 'bz-quiet', 'Retry');
+    retry.type = 'button';
+    retry.dataset.focusKey = focusKey;
+    retry.addEventListener('click', () => reader.load());
+    node.replaceChildren(el('span', '', line), retry);
+  }
+  function paintFigures() {
+    paintParts(els.parts, 'retry-parts');
     const folds = foldsOf(reply);
     const next = JSON.stringify([reply.room.id, reply.crop, reply.figures.map((f) => f.key)]);
     if (next !== shape) {
@@ -215,8 +226,8 @@ export function mount(container, { room = null, crop = null } = {}) {
       els.folds.replaceChildren(...folds.map(foldNode));
     }
     for (const fold of folds) {
-      const summary = els.folds.querySelector(`[data-fold="${fold.way}"] > summary`);
-      if (summary) summary.textContent = foldHead(fold);
+      const title = els.folds.querySelector(`[data-fold="${fold.way}"] > summary > h3`);
+      if (title) title.textContent = foldHead(fold);
       for (const f of fold.figures) updateRow(f);
     }
   }
@@ -224,7 +235,8 @@ export function mount(container, { room = null, crop = null } = {}) {
     const d = el('details', 'ec-fold');
     d.dataset.fold = fold.way;
     d.open = fold.open;
-    const s = el('summary', 'part-title ec-fold-head', foldHead(fold));
+    const s = el('summary', 'part-title ec-fold-head');
+    s.append(el('h3', 'ec-fold-title', foldHead(fold))); // a heading a reader can jump to (the audit, #2)
     d.append(s, ...fold.figures.map(rowNode));
     return d;
   }
@@ -246,17 +258,25 @@ export function mount(container, { room = null, crop = null } = {}) {
       box.dataset.focusKey = `box:${f.key}`;
       box.addEventListener('input', () => onType(f.key, box));
       box.addEventListener('change', () => onSave(f.key, box));
-      field.append(box);
-      field.append(el('span', 'ec-unit', def.unit)); // empty for flushes: the boxes stay in one column
+      // RM inside the box before the figure, the rest of the unit beside it (the audit, #12; DESIGN's unit inside the box)
+      const { prefix, after } = unitParts(def.unit);
+      const wrap = el('span', 'ec-boxwrap');
+      if (prefix) wrap.append(Object.assign(el('span', 'ec-prefix', prefix), { id: `${box.id}-pre` }));
+      if (prefix) box.classList.add('ec-has-prefix');
+      wrap.append(box);
+      field.append(wrap);
+      field.append(Object.assign(el('span', 'ec-unit', after), { id: `${box.id}-unit` })); // empty for flushes: the boxes stay in one column
     }
-    const tag = el('span', 'ec-tag');
+    const tag = Object.assign(el('span', 'ec-tag'), { id: `${idOf(f.key)}-tag` });
     const error = el('p', 'ec-error');
     error.id = `${idOf(f.key)}-error`;
     error.hidden = true;
     const note = el('div', 'ec-note');
     const applies = el('p', 'muted ec-applies');
-    row.append(label, field, tag, error, note, applies);
+    // the row's note, then (electricity per block) Work it out's line, then where it applies (the audit, #20)
+    row.append(label, field, tag, error, note);
     if (f.key === 'yours.kwhBlock') row.append(el('div', 'ec-sim'));
+    row.append(applies);
     return row;
   }
   // A row's tag, box, note, applies and (electricity per block) simulator line, from the figure as the reply has it.
@@ -265,7 +285,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (!row) return;
     const box = row.querySelector('.ec-box');
     const typing = box && document.activeElement === box;
-    if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || serverErrors.has(f.key)) })) box.value = boxText(f.value);
+    if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || refusals.has(f.key)) })) box.value = boxText(f.value);
     const value = row.querySelector('.ec-fig-value');
     if (value) value.textContent = figureText(f.key, f.value);
     const tag = row.querySelector('.ec-tag');
@@ -275,7 +295,6 @@ export function mount(container, { room = null, crop = null } = {}) {
     const note = row.querySelector('.ec-note');
     const parts = noteParts(f, { room: reply.room.name, crop: reply.crop }).map((n, line) => noteNode(n, f.key, line));
     if (notSaved.has(f.key)) parts.unshift(retryNode(f.key));
-    if (f.source === 'owner') parts.push(backNode(f.key));
     note.replaceChildren(...parts);
     row.querySelector('.ec-applies').textContent = appliesText(f, reply.room.name, reply.crop);
     const sim = row.querySelector('.ec-sim');
@@ -291,12 +310,11 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (n.link) p.append(' ', keyed(link(n.link.text, n.link.href), 'link'));
     if (n.sources) {
       p.append(' Sources: ');
-      n.sources.forEach((s, i) => {
-        const words = [s.title, s.year].filter(Boolean).join('\u00a0'); // "Shroomy 2026" stays on one line
-        p.append(i ? ', ' : '', s.url ? keyed(link(words, s.url, true), i) : words);
-      });
+      // one link a page; two pages of one name told apart (the audit, #15)
+      sourceItems(n.sources).forEach((s, i) => p.append(i ? ', ' : '', s.url ? keyed(link(s.words, s.url, true), i) : s.words));
       p.append('.');
     }
+    if (n.back) p.append(' ', backNode(key)); // Back to default on its own line, the set figure's (the audit, #20)
     return p;
   }
   function backNode(key) {
@@ -319,26 +337,32 @@ export function mount(container, { room = null, crop = null } = {}) {
     p.append(DOT, b);
     return p;
   }
+  // The line under a box: its refusal (aria-invalid), else a check of an unusual figure (the audit, #6: amber, allowed, the
+  // box not invalid); the box's description is that line, then its unit and its source tag (the audit, #9).
   function showError(key, row = els.folds.querySelector(`[data-key="${key}"]`)) {
     const box = row?.querySelector('.ec-box');
     const error = row?.querySelector('.ec-error');
-    if (!box || !error) return;
-    const text = serverErrors.get(key) ?? draft.error(key);
+    const f = reply.figures.find((x) => x.key === key);
+    if (!box || !error || !f) return;
+    const refused = refusals.get(key) ?? draft.error(key);
+    const warn = refused ? null : likely(f, draft.unsaved(f.key) ? draft.values()[f.key] : f.source === 'owner' ? f.value : null);
+    const text = refused ?? warn;
     error.textContent = text ?? '';
     error.hidden = !text;
-    if (text) {
-      box.setAttribute('aria-invalid', 'true');
-      box.setAttribute('aria-describedby', error.id);
-    } else {
-      box.removeAttribute('aria-invalid');
-      box.removeAttribute('aria-describedby');
-    }
+    error.classList.toggle('ec-warn', Boolean(!refused && warn));
+    box.toggleAttribute('data-warn', Boolean(!refused && warn));
+    if (refused) box.setAttribute('aria-invalid', 'true');
+    else box.removeAttribute('aria-invalid');
+    const described = [error.hidden ? null : error, ...row.querySelectorAll('.ec-prefix, .ec-unit, .ec-tag')].filter((n) => n && n.textContent);
+    box.setAttribute('aria-describedby', described.map((n) => n.id).join(' '));
   }
 
   // The Electricity per block row's Work it out line (spec 6.3).
   let workingOut = false; // a Work it out request not yet answered
   let simSaid = null; // the run "Working it out" was said for
-  let simJustSaid = false; // "Working it out" was said in this paint
+  let simJustSaid = false; // the run's line was said in this paint
+  let simWatched = false; // this page asked for the run or saw it working: its end is said
+  let simEnded = null; // the end that was said (run, status, time)
   let simRefused = null; // the words of the last Work it out the server refused or never answered
   function paintSim(node, f) {
     const values = draft.values();
@@ -362,8 +386,20 @@ export function mount(container, { room = null, crop = null } = {}) {
     const working = reply.sim && (reply.sim.status === 'working' || reply.sim.status === 'waiting');
     if (working && simSaid !== reply.sim.simId) {
       simSaid = reply.sim.simId;
+      simWatched = true;
       said('Working it out');
       simJustSaid = true;
+    }
+    // its end (the figure, or why it failed), said once when this page saw it start (the audit, #22)
+    const ended = reply.sim && (reply.sim.status === 'done' || reply.sim.status === 'failed');
+    const endKey = ended ? `${reply.sim.simId}:${reply.sim.status}:${reply.sim.at}` : null;
+    if (ended && simEnded !== endKey) {
+      if (simWatched) {
+        said(s.text);
+        simJustSaid = true;
+      }
+      simEnded = endKey;
+      simWatched = false;
     }
   }
   // The line alone (typing changes the block life it names; the live progress), the cursor kept.
@@ -374,10 +410,10 @@ export function mount(container, { room = null, crop = null } = {}) {
   }
 
   // ---- Typing, saving, back to default, Work it out ----
-  const serverErrors = new Map(); // key → the server's refusal of the last save
+  const refusals = new Map(); // key → the refusal kept under a box left with it (the box's own check or the server's)
   const notSaved = new Set(); // keys whose save got no answer or a server fault
   function onType(key, box) {
-    serverErrors.delete(key);
+    refusals.delete(key);
     draft.type(key, box.value);
     showError(key);
     paintMoney();
@@ -387,7 +423,15 @@ export function mount(container, { room = null, crop = null } = {}) {
   const here = () => ({ room: { id: reply.room.id }, crop: reply.crop });
   async function onSave(key, box) {
     const t = draft.type(key, box.value);
-    if (t.error) return; // the refusal is under the box; nothing is sent
+    if (t.error) { // the refusal stays under the box with its text; the sums go back to the saved figure (the audit, #7)
+      refusals.set(key, t.error);
+      draft.drop(key);
+      said(t.error);
+      showError(key);
+      paintMoney();
+      paintSimRow();
+      return;
+    }
     const at = here();
     const row = els.folds.querySelector(`[data-key="${key}"]`);
     const tag = row?.querySelector('.ec-tag');
@@ -403,8 +447,10 @@ export function mount(container, { room = null, crop = null } = {}) {
       if (!fitsWant(next, want)) return; // another room or crop was picked meanwhile
       notSaved.delete(key);
       draft.drop(key, t.value); // only the value it saved: a newer one typed meanwhile stays
-      said(savedText(key, t.value, next.room.name, next.crop));
       if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…
+      // said with the result (out of view at the box) and, once, a check of an unusual figure
+      const warn = likely(reply.figures.find((x) => x.key === key), t.value);
+      said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0]) + (warn ? ` ${warn}` : ''));
     } catch (err) {
       if (!alive()) return;
       if (tag) delete tag.dataset.saving;
@@ -413,7 +459,7 @@ export function mount(container, { room = null, crop = null } = {}) {
         notSaved.add(key); // the typed figure stays in the sums, marked not saved
         said(`${figureOf(key).label}: couldn't save. Retry is under it.`);
       } else { // a refusal (its words under the box, the box keeping the text): the refused figure leaves the sums
-        serverErrors.set(key, err.message);
+        refusals.set(key, err.message);
         draft.drop(key, t.value);
         said(err.message); // the refusal, as under the box
       }
@@ -428,7 +474,7 @@ export function mount(container, { room = null, crop = null } = {}) {
       if (!alive()) return;
       if (!fitsWant(next, want)) return;
       draft.drop(key);
-      serverErrors.delete(key);
+      refusals.delete(key);
       notSaved.delete(key);
       if (show(next, { act }) !== 'new') repaint();
       // the box shows the figure it fell to (a repaint leaves a focused box alone), and keeps the cursor
@@ -448,6 +494,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     const at = here();
     const act = replies.act();
     simRefused = null;
+    simWatched = true; // its end is said
     try {
       const next = await request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop });
       if (!alive()) return;
@@ -491,13 +538,15 @@ export function mount(container, { room = null, crop = null } = {}) {
     const row = container.contains(active) ? active.closest('.ec-fig') : null;
     const inSim = Boolean(active?.closest('.ec-sim'));
     simJustSaid = false;
-    keepFocus(container, paint);
-    const to = focusAfterRepaint({
-      inRow: Boolean(row), rowKept: Boolean(row?.isConnected), stillInRow: Boolean(row?.contains(document.activeElement)),
-      hasBack: Boolean(row?.querySelector('.ec-back')), inSim,
+    let to = null;
+    // keepFocus's fallback: the row's place, worked out after the paint, so the title is never focused on the way (the audit, #11)
+    keepFocus(container, paint, document, () => {
+      to = focusAfterRepaint({
+        inRow: Boolean(row), rowKept: Boolean(row?.isConnected), stillInRow: false, hasBack: Boolean(row?.querySelector('.ec-back')), inSim,
+      });
+      const target = { back: '.ec-back', box: '.ec-box', sim: '[data-sim-line]' }[to];
+      return target ? row.querySelector(target) : null;
     });
-    const target = { back: '.ec-back', box: '.ec-box', sim: '[data-sim-line]' }[to];
-    if (target) row.querySelector(target)?.focus({ preventScroll: true });
     if (to === 'sim' && simJustSaid) said(''); // the focused line says it; the polite line would say it twice
   }
   function repaint() {
@@ -516,7 +565,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (verdict === 'same') return verdict; // the same answer: nothing to paint (the live progress stays)
     if (next.room && reply && (next.room.id !== reply.room?.id || next.crop !== reply.crop)) {
       draft = createDraft();
-      serverErrors.clear();
+      refusals.clear();
       notSaved.clear();
       simRefused = null;
     }
