@@ -3,8 +3,7 @@
 // 2026-11-06-business-summary-design.md 2; Economics: spec 2026-11-06-economics-design.md 2), styled as the room page's tabs
 // (their `.room-tabs` rules: underline tabs, the current one in ink on the accent line). On a phone the seven scroll
 // sideways: the edge that has more fades while a tab is hidden there (the room page's data-more). app.js puts it above the
-// page's own mount; the page itself
-// does not know it is there.
+// page's own mount; the page itself does not know it is there.
 //   businessTabs(current) → <nav class="room-tabs bz-tabs"> (current: a BUSINESS_TABS key)
 
 import { BUSINESS_TABS } from './route.js';
