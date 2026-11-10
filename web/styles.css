@@ -2947,14 +2947,18 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 /* a worker's "Who picked it": their name as words, not a one-name list (audit M5) */
 .tk-fixed-label { font-size: 0.9rem; font-weight: 600; }
 .tk-fixed-value { margin: 0; min-height: 24px; }
-/* Settings → Workers: the name with its sign-in line on top, the row's buttons under it (up to six: they wrap), the quiet
-   ones pulled left so their words line up with the name */
+/* Settings → Workers: the name with its sign-in line on top, the row's buttons under it (up to six: they wrap). The buttons'
+   box is pulled left by a quiet button's padding, so a quiet button's words line up with the name on every line it wraps
+   to; a framed first button (Set PIN while they cannot sign in) is pushed back, its frame on the name's edge */
 .tk-workers-list li { display: grid; gap: 4px; }
 .tk-worker-who { display: grid; min-width: 0; }
 .tk-worker-account { font-size: var(--fs-sm); }
-.tk-worker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-.tk-worker-actions > .tk-quiet:first-child { margin-left: -8px; }
-@media (max-width: 600px) { .tk-worker-actions > .tk-quiet:first-child { margin-left: -10px; } }
+.tk-worker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-left: -8px; }
+.tk-worker-actions > :not(.tk-quiet):first-child { margin-left: 8px; }
+@media (max-width: 600px) {
+  .tk-worker-actions { margin-left: -10px; }
+  .tk-worker-actions > :not(.tk-quiet):first-child { margin-left: 10px; }
+}
 /* Your password: a password is longer than the 160 px number boxes */
 .settings.s-password .field input { max-width: 320px; }
 /* ---- end Login ---- */
