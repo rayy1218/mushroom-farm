@@ -7,6 +7,8 @@
 export const PING_MS = 25_000;
 export const MAX_CLIENTS = 20;
 export const MAX_PER_SESSION = 3; // one sign-in must not take every place (a phone and a computer, with a tab to spare)
+export const MAX_PER_PERSON = 6; // nor one person over several sign-ins (each sign-in counts against the address limit only)
+export const OWNER_RESERVE = 4; // the last places are an owner's: workers together cannot shut the owner out
 export const MAX_BACKLOG = 64 * 1024; // bytes waiting for a client that does not read: it is dropped (the browser reconnects)
 const KEEPALIVE_MS = 30_000;
 
@@ -25,21 +27,35 @@ const json = (res, status, data) => {
   res.end(JSON.stringify(data));
 };
 
-// The event stream. check(req) → true while the request's sign-in still holds (auth.alive: the session is there, not
-// expired, its worker active); asked at every ping, and false ends the stream (the browser's reconnect then meets the
-// gate's 401). With sign-in on, req.who.sessionId (the gate's) counts the streams of each sign-in. Without sign-in (no
-// check, no req.who) neither applies. pingMs and maxClients are only replaced by tests.
-export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, check = null, now = Date.now }) {
-  const open = new Set(); // { res, off, ping, session }
+// The event stream. check(req) → true while the request's sign-in still holds (app.js: auth.alive, the session there, not
+// expired, its worker active, its role the one it opened with); asked at every ping, and false (or a throw, logged) ends
+// the stream, so a sign-in that ended is noticed up to one ping late (25 s). The browser's reconnect then meets the gate's
+// 401. With sign-in on, the gate's req.who counts the streams of each sign-in (sessionId) and person (id), and keeps
+// OWNER_RESERVE places from anyone not an owner; the 429s come before the 503. Without sign-in (no check, no req.who)
+// none of it applies. pingMs and maxClients are only replaced by tests.
+export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, check = null, now = Date.now, log = console.error }) {
+  const open = new Set(); // { res, off, ping, session, person }
   const perSession = new Map(); // session id → its open streams
+  const perPerson = new Map(); // worker id → their open streams
+  const count = (map, key, by) => {
+    if (key === null) return;
+    const n = (map.get(key) ?? 0) + by;
+    if (n > 0) map.set(key, n);
+    else map.delete(key);
+  };
 
   function handler(req, res) {
     if (req.method !== 'GET') return json(res, 404, { error: 'Not found' });
     const session = req.who?.sessionId ?? null;
+    const person = req.who?.id ?? null;
     if (session !== null && (perSession.get(session) ?? 0) >= MAX_PER_SESSION) {
       return json(res, 429, { error: 'Too many live connections for this sign-in' });
     }
-    if (open.size >= maxClients) return json(res, 503, { error: 'Too many live connections' });
+    if (person !== null && (perPerson.get(person) ?? 0) >= MAX_PER_PERSON) {
+      return json(res, 429, { error: 'Too many live connections for this person' });
+    }
+    const places = req.who && req.who.role !== 'owner' ? maxClients - OWNER_RESERVE : maxClients;
+    if (open.size >= places) return json(res, 503, { error: 'Too many live connections' });
     req.socket.setTimeout(0);
     req.socket.setNoDelay(true);
     req.socket.setKeepAlive?.(true, KEEPALIVE_MS); // a phone that went away is noticed
@@ -50,9 +66,10 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
       'x-accel-buffering': 'no', // a proxy in front must not hold the events back
     });
     res.flushHeaders();
-    const client = { res, off: null, ping: null, session };
+    const client = { res, off: null, ping: null, session, person };
     open.add(client);
-    if (session !== null) perSession.set(session, (perSession.get(session) ?? 0) + 1);
+    count(perSession, session, 1);
+    count(perPerson, person, 1);
     const write = (text) => {
       res.write(text);
       if (res.writableLength > MAX_BACKLOG) res.destroy(); // a client that does not read must not fill the memory
@@ -64,7 +81,7 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
       try {
         holds = !check || check(req);
       } catch (err) {
-        console.error(err);
+        log(err);
         holds = false; // a check that cannot answer does not keep the stream
       }
       if (!holds) {
@@ -80,10 +97,9 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
   function drop(client) {
     clearInterval(client.ping);
     client.off?.();
-    if (!open.delete(client) || client.session === null) return;
-    const left = perSession.get(client.session) - 1;
-    if (left > 0) perSession.set(client.session, left);
-    else perSession.delete(client.session);
+    if (!open.delete(client)) return;
+    count(perSession, client.session, -1);
+    count(perPerson, client.person, -1);
   }
 
   return {

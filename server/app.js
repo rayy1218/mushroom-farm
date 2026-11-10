@@ -2,7 +2,8 @@
 // 2026-11-06-login-design.md 4): the sign-in routes first; then every other /api request needs a session (401), a worker only
 // the routes of roles.js (403), and a worker's JSON replies leave the money out. The page files are open: they hold no farm data.
 // Before all of it (security review M2, M4): every /api reply gets API_HEADERS, and a write (not GET or HEAD) that the
-// browser marks as sent from another site's page is 403.
+// browser marks as sent from another site's page is 403 (OPTIONS counts as a write: a cross-site preflight is 403 too,
+// which is intended; the app's own pages never send one).
 
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +44,8 @@ export function createApp(db, {
 } = {}) {
   const auth = login ? createAuth({ db, notify: loginNotify }) : null;
   const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks, { onUnlock: (id) => auth?.unlocked(id) });
-  const sse = events && createSse({ events, pingMs: ssePingMs, check: auth && ((req) => auth.alive(req)) });
+  // the stream ends once its sign-in has ended or its role is no longer the one it opened with
+  const sse = events && createSse({ events, pingMs: ssePingMs, check: auth && ((req) => auth.alive(req) === req.who.role) });
   const files = createStatic(webDir);
   const authRoutes = auth && createAuthRoutes({ auth });
   const server = http.createServer(async (req, res) => {

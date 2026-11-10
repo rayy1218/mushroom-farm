@@ -314,12 +314,13 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     return { id: s.workerId, name: s.name, role: s.role, sessionId: s.id };
   }
 
-  // The request's sign-in still holds: its session is there, not expired, its worker active. Only reads (no touch, no
-  // cookie): the live stream asks it at every ping (live.js), on a reply whose headers have gone.
+  // The role of the request's session while it holds (there, not expired, its worker active), else null. Only reads (no
+  // touch, no cookie): the live stream asks it at every ping (app.js, live.js), on a reply whose headers have gone, and
+  // ends when it is not the role the stream opened with.
   function alive(req) {
     const token = readCookie(req.headers.cookie);
     const s = token && db.session(tokenHash(token));
-    return Boolean(s && s.active && s.expiresAt > now());
+    return s && s.active && s.expiresAt > now() ? s.role : null;
   }
 
   function logout(req) {
