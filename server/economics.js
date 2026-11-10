@@ -241,7 +241,7 @@ export function createEconomics({
       // never before its run was made (a clock behind the simulations' would read the run as a later one, gone)
       const row = db.startEconomicsSim({ ...where, simId: result.run.id, at: Math.max(now(), result.run.createdAt) });
       publish(r.id, c);
-      settleFrom(row); // a run that ended at once (a stand-in) is settled now
+      settleFrom(row); // a run that ended inside start (its worker could not spawn; its event came before the row) is settled now
       return { status: 202, view: view({ room: r.id, crop: c }) };
     },
 
