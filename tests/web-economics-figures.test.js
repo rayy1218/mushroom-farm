@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, valuesOf, typed, boxText, savedText, partsLine, createDraft,
+  fitsWant, createReplies, keepsBox,
 } from '../web/economics-figures.js';
 import { figuresFor, researchOf } from '../web/economics-defaults.js';
 
@@ -200,4 +201,50 @@ test('the simulator\'s intro says a long block life as it is; a note with no tex
   assert.match(text(90), /for one block life \(90 days\), /);
   assert.match(text(NaN), /for one block life \(1 day\), /);
   assert.deepEqual(noteParts(one('wage', { source: 'runs', runs: { count: 1 } }), ctx), []);
+});
+
+// ---- the page's replies and boxes (spec 9.1) ----
+const view = (room, crop, more = {}) => ({ room: { id: room, name: `Container ${room}` }, crop, figures: [], ...more });
+
+test('a reply fits the room and crop the page wants (null: the server\'s choice)', () => {
+  assert.equal(fitsWant(view(1, 'oyster'), { room: null, crop: null }), true);
+  assert.equal(fitsWant(view(1, 'oyster'), { room: 1, crop: 'oyster' }), true);
+  assert.equal(fitsWant(view(1, 'oyster'), { room: 2, crop: 'oyster' }), false, 'another room was picked since');
+  assert.equal(fitsWant(view(1, 'oyster'), { room: 1, crop: 'pink' }), false, 'another crop was picked since');
+  assert.equal(fitsWant(view(1, 'oyster'), { room: null, crop: 'oyster' }), true, 'a gone room: the first room, the crop kept');
+});
+
+test('the replies: a save\'s reply for a room no longer wanted is dropped; a read asked before a save is dropped', () => {
+  const replies = createReplies();
+  const want = { room: 1, crop: 'oyster' };
+  assert.equal(replies.take(view(1, 'oyster'), want, replies.asked()), 'new');
+
+  // a save of the old room answered after the owner picked room 2: dropped (no repaint, no address, no new draft)
+  replies.act();
+  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), { room: 2, crop: 'oyster' }), 'drop');
+
+  // a read asked before a save, answered after the save's reply: older than it, dropped
+  const before = replies.asked();
+  replies.act();
+  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), want), 'new', 'the save\'s own reply');
+  assert.equal(replies.take(view(1, 'oyster', { price: 48 }), want, before), 'drop', 'the read from before the save');
+  // a read asked after it is shown
+  assert.equal(replies.take(view(1, 'oyster', { price: 61 }), want, replies.asked()), 'new');
+});
+
+test('the replies: the same answer paints nothing, so a save whose reply a read already painted repaints itself', () => {
+  const replies = createReplies();
+  const want = { room: 1, crop: 'oyster' };
+  replies.take(view(1, 'oyster'), want, replies.asked());
+  replies.act(); // the save goes; its economics event brings a read first (asked after the save)
+  const saved = view(1, 'oyster', { price: 60 });
+  assert.equal(replies.take(saved, want, replies.asked()), 'new', 'the read paints first, while the tag says Saving…');
+  assert.equal(replies.take(saved, want), 'same', 'the save\'s reply is the same answer: the page repaints its tag itself');
+});
+
+test('a repaint leaves a box alone while it is focused, unsaved or refused (the refused text stays with its refusal)', () => {
+  assert.equal(keepsBox({ focused: false, unsaved: false, refused: false }), false);
+  assert.equal(keepsBox({ focused: true, unsaved: false, refused: false }), true);
+  assert.equal(keepsBox({ focused: false, unsaved: true, refused: false }), true);
+  assert.equal(keepsBox({ focused: false, unsaved: false, refused: true }), true, 'a refusal (the draft\'s or the server\'s) keeps the text it refused');
 });

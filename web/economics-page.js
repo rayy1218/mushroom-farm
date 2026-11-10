@@ -3,7 +3,8 @@
 // each comes from; the page works the money out with the model (web/economics-model.js) on every keystroke, saves a figure
 // when its box is left, and runs Work it out. It asks again on the economics, harvest, sales, batches and costs events, a
 // room's crops or name, when the stream comes back, and on a timer (as the Summary); an answer older than the last asked is
-// dropped; an older farm app stops the reads.
+// dropped, and so is a read asked before a save or a reply for a room or crop no longer picked; an older farm app stops the
+// reads.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
 import { economicsHash } from './route.js';
@@ -15,8 +16,9 @@ import { blockLife, inputsOf } from './economics-model.js';
 import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText } from './economics-math.js';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
+  fitsWant, createReplies, keepsBox,
 } from './economics-figures.js';
-import { cropShortName } from './crops.js';
+import { DOT } from './text-math.js';
 
 const REFRESH_MS = 60_000;
 const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs'].filter((type) => EVENT_TYPES.includes(type));
@@ -97,7 +99,7 @@ export function mount(container, { room = null, crop = null } = {}) {
   let want = { room, crop }; // the room and crop asked for (null: the server's choice)
   let reply = null;
   let draft = createDraft();
-  let painted = '';
+  const replies = createReplies(); // which reply is painted: none stale, none for a room or crop no longer picked
   let shape = ''; // the figure rows' keys and room and crop: the rows are rebuilt only when it changes
   const said = (text) => { els.said.textContent = text; };
 
@@ -158,15 +160,17 @@ export function mount(container, { room = null, crop = null } = {}) {
     }
     t.append(thead, body);
     wrap.append(t);
-    // the phone's: a block a way, its head the way's name with its profit
+    // the phone's: a block a way, its head the way's name with Profit a month beside it
     const phone = el('div', 'ec-phone');
+    const profitRow = table.find((x) => x.key === 'profit');
     results.forEach((r, i) => {
       const block = el('section', 'ec-block');
-      const profit = table.find((x) => x.key === 'profit').cells[i];
       const blockHead = el('div', 'ec-block-head');
       const name = el('h3', 'ec-block-name', wayName(r.way));
       if (r.way === 'yours') name.append(el('span', 'ec-way-room', reply.room.name));
-      blockHead.append(name, cellNode('p', profit, 'ec-block-profit'));
+      const profitNode = cellNode('p', profitRow.cells[i], 'ec-block-profit');
+      profitNode.prepend(el('span', 'ec-block-label', profitRow.label));
+      blockHead.append(name, profitNode);
       const bt = el('table', 'us-table ec-block-table');
       bt.append(el('caption', 'sr-only', `${wayName(r.way)}: a month`));
       const bb = el('tbody');
@@ -260,7 +264,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (!row) return;
     const box = row.querySelector('.ec-box');
     const typing = box && document.activeElement === box;
-    if (box && !typing && !draft.unsaved(f.key) && !draft.error(f.key)) box.value = boxText(f.value);
+    if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || serverErrors.has(f.key)) })) box.value = boxText(f.value);
     const value = row.querySelector('.ec-fig-value');
     if (value) value.textContent = figureText(f.key, f.value);
     const tag = row.querySelector('.ec-tag');
@@ -306,7 +310,7 @@ export function mount(container, { room = null, crop = null } = {}) {
       const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
       if (box) onSave(key, box);
     });
-    p.append(' · ', b);
+    p.append(DOT, b);
     return p;
   }
   function showError(key, row = els.folds.querySelector(`[data-key="${key}"]`)) {
@@ -327,6 +331,7 @@ export function mount(container, { room = null, crop = null } = {}) {
 
   // The Electricity per block row's Work it out line (spec 6.3).
   let simSaid = null; // the run "Working it out" was said for
+  let simRefused = null; // the words of the last Work it out the server refused or never answered
   function paintSim(node, f) {
     const values = draft.values();
     const s = simText(reply.sim, f, {
@@ -335,6 +340,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     const p = el('p', `ec-note-line${s.tone === 'warn' ? ' ec-warn' : ' muted'}`, s.text);
     p.dataset.simLine = '';
     const parts = [p];
+    if (simRefused) parts.push(el('p', 'ec-note-line ec-warn', simRefused));
     if (s.action) {
       const b = el('button', 'bz-quiet ec-work', s.action);
       b.type = 'button';
@@ -352,50 +358,61 @@ export function mount(container, { room = null, crop = null } = {}) {
 
   // ---- Typing, saving, back to default, Work it out ----
   const serverErrors = new Map(); // key → the server's refusal of the last save
-  const notSaved = new Set(); // keys whose save got no answer
+  const notSaved = new Set(); // keys whose save got no answer or a server fault
   function onType(key, box) {
     serverErrors.delete(key);
     draft.type(key, box.value);
     showError(key);
     paintMoney();
   }
+  // An action's room and crop, as a reply's (fitsWant): a failure for a room or crop no longer picked is dropped too.
+  const here = () => ({ room: { id: reply.room.id }, crop: reply.crop });
   async function onSave(key, box) {
     const t = draft.type(key, box.value);
     if (t.error) return; // the refusal is under the box; nothing is sent
+    const at = here();
     const row = els.folds.querySelector(`[data-key="${key}"]`);
     const tag = row?.querySelector('.ec-tag');
     if (tag) {
       tag.dataset.saving = '1';
       tag.textContent = 'Saving…';
     }
+    replies.act(); // a read asked before this save is older than its reply
     try {
-      const next = await request('PUT', '/api/economics/figures', { room: reply.room.id, crop: reply.crop, key, value: t.value });
+      const next = await request('PUT', '/api/economics/figures', { room: at.room.id, crop: at.crop, key, value: t.value });
       if (!alive()) return;
+      if (tag) delete tag.dataset.saving;
+      if (!fitsWant(next, want)) return; // another room or crop was picked meanwhile
       notSaved.delete(key);
       draft.drop(key, t.value); // only the value it saved: a newer one typed meanwhile stays
-      if (tag) delete tag.dataset.saving;
-      said(savedText(key, t.value, reply.room.name, reply.crop));
-      show(next);
+      said(savedText(key, t.value, next.room.name, next.crop));
+      if (show(next) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…
     } catch (err) {
       if (!alive()) return;
       if (tag) delete tag.dataset.saving;
+      if (!fitsWant(at, want)) return;
       if (err.status === 0 || err.status >= 500) {
         notSaved.add(key); // the typed figure stays in the sums, marked not saved
-      } else { // a refusal (its words under the box): the refused figure leaves the sums
+        said(`${figureOf(key).label}: couldn't save. Retry is under it.`);
+      } else { // a refusal (its words under the box, the box keeping the text): the refused figure leaves the sums
         serverErrors.set(key, err.message);
         draft.drop(key, t.value);
+        said(err.message); // the refusal, as under the box
       }
       repaint();
     }
   }
   async function onBack(key) {
+    const at = here();
+    replies.act();
     try {
-      const next = await request('DELETE', `/api/economics/figures?room=${reply.room.id}&crop=${reply.crop}&key=${encodeURIComponent(key)}`);
+      const next = await request('DELETE', `/api/economics/figures?room=${at.room.id}&crop=${at.crop}&key=${encodeURIComponent(key)}`);
       if (!alive()) return;
+      if (!fitsWant(next, want)) return;
       draft.drop(key);
       serverErrors.delete(key);
       notSaved.delete(key);
-      show(next);
+      if (show(next) !== 'new') repaint();
       // the box shows the figure it fell to (a repaint leaves a focused box alone), and keeps the cursor
       const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
       if (box) {
@@ -404,15 +421,24 @@ export function mount(container, { room = null, crop = null } = {}) {
       }
       said(`${figureOf(key).label}: back to default.`);
     } catch (err) {
-      if (alive()) fail(err);
+      if (alive() && fitsWant(at, want)) fail(err);
     }
   }
   async function onWorkOut() {
+    const at = here();
+    replies.act();
+    simRefused = null;
     try {
-      const next = await request('POST', '/api/economics/work-out', { room: reply.room.id, crop: reply.crop });
-      if (alive()) show(next);
+      const next = await request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop });
+      if (!alive()) return;
+      if (!fitsWant(next, want)) return;
+      if (show(next) !== 'new') repaint();
     } catch (err) {
-      if (alive()) said(err.message);
+      if (!alive() || !fitsWant(at, want)) return;
+      // "Already working it out…", the queue's words, or no answer: under the button and said
+      simRefused = err.status === 0 ? OFFLINE : err.message;
+      said(simRefused);
+      repaint();
     }
   }
 
@@ -441,24 +467,26 @@ export function mount(container, { room = null, crop = null } = {}) {
       paintFigures();
     });
   }
-  // A reply: shown at once (a save's or a Work it out's) or from a read.
-  function show(next) {
+  // A reply: shown at once (a save's or a Work it out's) or from a read (asked: its note of the actions before it).
+  // → 'new' (painted), 'same' (the answer already painted) or 'drop' (stale, or for a room or crop no longer picked).
+  function show(next, asked) {
+    const verdict = replies.take(next, want, asked);
+    if (verdict === 'drop') return verdict;
     els.banner.hidden = true;
     if (next.room && reply && (next.room.id !== reply.room?.id || next.crop !== reply.crop)) {
       draft = createDraft();
       serverErrors.clear();
       notSaved.clear();
+      simRefused = null;
     }
     reply = next;
     if (!reply.room) {
       els.picks.hidden = true;
       els.body.hidden = true;
       els.empty.hidden = false;
-      return;
+      return verdict;
     }
-    const key = JSON.stringify(reply);
-    if (key === painted) return; // the same answer: nothing to paint
-    painted = key;
+    if (verdict === 'same') return verdict; // the same answer: nothing to paint
     draft.use(reply);
     els.empty.hidden = true;
     els.picks.hidden = false;
@@ -466,6 +494,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     fillPicks();
     keepAddress();
     repaint();
+    return verdict;
   }
   // No answer: the banner says why; what was shown stays (a first read that fails shows the banner alone).
   function fail(err) {
@@ -475,8 +504,8 @@ export function mount(container, { room = null, crop = null } = {}) {
 
   const path = () => `/api/economics${want.room || want.crop ? `?${[want.room ? `room=${want.room}` : '', want.crop ? `crop=${want.crop}` : ''].filter(Boolean).join('&')}` : ''}`;
   const reader = createReader({
-    read: () => request('GET', path()),
-    done: show,
+    read: async () => { const asked = replies.asked(); return { next: await request('GET', path()), asked }; },
+    done: ({ next, asked }) => show(next, asked),
     failed(err) {
       if (err.status === 404 && err.message === 'Room not found' && want.room !== null) {
         want = { room: null, crop: want.crop }; // the address's room is gone: the first room instead

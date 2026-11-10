@@ -2999,7 +2999,6 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 .ec-fig-value { font-variant-numeric: tabular-nums; }
 /* the source tag: a neutral mark chip, its words saying the source (never colour alone) */
 .ec-tag { justify-self: end; padding: 2px 10px; border: 1px solid var(--border-strong); border-radius: 999px; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
-.ec-tag[data-source="owner"] { background: var(--accent-soft); }
 .ec-error, .ec-note, .ec-applies, .ec-sim { grid-column: 1 / -1; margin: 0; font-size: var(--fs-sm); }
 .ec-error { color: var(--critical-text); }
 .ec-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
@@ -3015,14 +3014,17 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
   .ec-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
   .ec-block-name { margin: 0; font-size: var(--fs-md); }
   .ec-block-profit { margin: 0; font-weight: 700; text-align: right; }
+  .ec-block-label { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
   .ec-block-table tbody th { font-weight: 400; color: var(--ink-2); }
   /* a figure: its label over its box; the tag beside the box */
   .ec-fig { grid-template-columns: minmax(0, 1fr) auto; }
   .ec-unit { min-width: 0; }
   .ec-fig-label { grid-column: 1 / -1; }
   .ec-box { min-height: 44px; }
-  /* the tariff's value and its link wrap rather than squeeze; a link on its own is a 44 px target (a source's stays in its sentence) */
+  /* the tariff's value and its link wrap rather than squeeze; a link on its own is a 44 px row */
   .ec-fig-field { flex-wrap: wrap; }
   .ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
+  /* a source's link in its sentence: 44 px by its padding over the line (inline: the line keeps its height), as Runs */
+  .ec-note .co-link { padding-block: 14px; }
 }
 /* ---- end Economics ---- */

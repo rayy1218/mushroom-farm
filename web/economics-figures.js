@@ -2,7 +2,7 @@
 // figure's tag, where it applies, its note, the simulator's line, the headline's sources line, and a typed figure checked
 // before it is sent. Pure: the figures are the server's view (server/economics.js), the words follow the One Format Rule.
 //   foldsOf · foldHead · tagText · appliesText · noteParts · simText · sourcesLine · valuesOf · typed · boxText · savedText
-//   · partsLine · createDraft
+//   · partsLine · createDraft · fitsWant · createReplies · keepsBox
 
 import { checkFigure, figureOf, SOURCES, WAY_NAMES } from './economics-defaults.js';
 import { compare } from './economics-model.js';
@@ -222,3 +222,31 @@ export function createDraft() {
     },
   };
 }
+
+// ---- The page's replies and boxes (spec 9.1) ----
+// A reply fits the room and crop the page wants (null: the server's choice). want: { room, crop }.
+export const fitsWant = (reply, want) => (want.room == null || reply.room?.id === want.room) && (want.crop == null || reply.crop === want.crop);
+
+// Which reply the page paints (spec 9.1, "A stale answer: dropped"): a read asked before the last save, Back to default or
+// Work it out is older than that action's reply; a reply for a room or crop no longer wanted is dropped; the same answer as
+// the last painted paints nothing. → { act() (an action goes), asked() (a read notes it when sent), take(reply, want, asked)
+// → 'drop' | 'same' | 'new' (asked: the read's note; an action's own reply leaves it out) }.
+export function createReplies() {
+  let acts = 0;
+  let painted = '';
+  return {
+    act() { acts += 1; },
+    asked: () => acts,
+    take(reply, want, asked = acts) {
+      if (asked !== acts || !fitsWant(reply, want)) return 'drop';
+      const key = JSON.stringify(reply);
+      if (key === painted) return 'same';
+      painted = key;
+      return 'new';
+    },
+  };
+}
+
+// A repaint leaves a box's text alone while the owner is in it, while it holds a figure not yet saved, or while its figure
+// is refused (the draft's check or the server's): the box keeps the text its refusal is about.
+export const keepsBox = ({ focused, unsaved, refused }) => focused || unsaved || refused;

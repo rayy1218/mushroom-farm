@@ -28,7 +28,7 @@ test('it reads again on the events, a room\'s crops or name, the stream\'s retur
   assert.ok(page.includes("live.on('simulation', (d) => {"), 'the progress of its own run');
   assert.ok(page.includes('const reader = createReader({'), 'the Summary\'s reader: a sequence drops a stale answer, a missing route stops');
   assert.ok(page.includes('delay: () => fallbackMs(REFRESH_MS, live.connected()),'));
-  assert.ok(page.includes('if (key === painted) return; // the same answer: nothing to paint'));
+  assert.ok(page.includes("if (verdict === 'same') return verdict; // the same answer: nothing to paint"));
   assert.ok(page.includes("if (err.status === 404 && err.message === 'Room not found' && want.room !== null) {"));
   assert.ok(page.includes('That room is gone; showing ${reply.room.name}.'));
 });
@@ -49,18 +49,17 @@ test('typing works the money out at once; a save on leaving the box; a refusal u
   assert.ok(page.includes("box.addEventListener('change', () => onSave(f.key, box));"));
   assert.ok(page.includes('if (t.error) return; // the refusal is under the box; nothing is sent'));
   assert.ok(page.includes("tag.textContent = 'Saving…';"));
-  assert.ok(page.includes("request('PUT', '/api/economics/figures', { room: reply.room.id, crop: reply.crop, key, value: t.value })"));
+  assert.ok(page.includes("request('PUT', '/api/economics/figures', { room: at.room.id, crop: at.crop, key, value: t.value })"));
   assert.ok(page.includes('notSaved.add(key); // the typed figure stays in the sums, marked not saved'));
   assert.ok(page.includes("box.setAttribute('aria-invalid', 'true');"));
   assert.ok(page.includes("box.setAttribute('aria-describedby', error.id);"));
-  assert.ok(page.includes("request('DELETE', `/api/economics/figures?room=${reply.room.id}&crop=${reply.crop}&key=${encodeURIComponent(key)}`)"));
-  assert.ok(page.includes("request('POST', '/api/economics/work-out', { room: reply.room.id, crop: reply.crop })"));
+  assert.ok(page.includes("request('DELETE', `/api/economics/figures?room=${at.room.id}&crop=${at.crop}&key=${encodeURIComponent(key)}`)"));
+  assert.ok(page.includes("request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop })"));
   assert.ok(page.includes("box.inputMode = def.whole ? 'numeric' : 'decimal';"));
 });
 
 test('a repaint keeps the cursor and never rewrites a box the owner is typing in', () => {
   assert.ok(page.includes('const typing = box && document.activeElement === box;'));
-  assert.ok(page.includes('if (box && !typing && !draft.unsaved(f.key) && !draft.error(f.key)) box.value = boxText(f.value);'));
   assert.ok(page.includes('keepFocus(container, () => {'));
   assert.ok(page.includes("box.dataset.focusKey = `box:${f.key}`;"));
   assert.ok(page.includes('if (next !== shape) {'), 'the rows are rebuilt only for another room, crop or set of figures');
@@ -74,10 +73,12 @@ test('the styles: one .ec- block, tokens only (no colour of its own), the phone\
   assert.ok(ecCss.includes('.ec-desk { display: none; }'));
   assert.ok(ecCss.includes('.ec-phone { display: grid; gap: 16px; }'));
   assert.ok(ecCss.includes('.ec-box { min-height: 44px; }'));
-  // a link on its own (Change in Settings, Rooms) is a 44 px target; a source's link stays in its sentence (the inline exception)
+  // a link on its own (Change in Settings, Rooms) is a 44 px row; a source's link in its sentence reaches 44 px by its padding
   assert.ok(ecCss.includes('.ec-fig-field { flex-wrap: wrap; }'));
   assert.ok(ecCss.includes('.ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }'));
-  assert.doesNotMatch(ecCss, /\.ec-(fig|note|note-line) \.co-link/);
+  assert.ok(ecCss.includes('.ec-note .co-link { padding-block: 14px; }'), 'a source\'s link in its sentence: 44 px by its padding (as Runs)');
+  assert.doesNotMatch(ecCss, /accent/, 'the source tag is a neutral chip, the owner\'s too');
+  assert.ok(ecCss.includes('.ec-block-label { display: block;'));
 });
 
 test('the reviews\' notes: a new draft for another room or crop; a refusal kept by the page; the tariff\'s link; sources; the run\'s state; farm time', () => {
@@ -97,8 +98,38 @@ test('the reviews\' notes: a new draft for another room or crop; a refusal kept 
   assert.ok(page.includes("a.target = '_blank';\n    a.rel = 'noopener';"));
   // Work it out's line is the view's sim.status, never the reply's HTTP status (202 even when the run ended at once)
   assert.ok(page.includes('const s = simText(reply.sim, f, {'));
-  assert.ok(page.includes("const next = await request('POST', '/api/economics/work-out', { room: reply.room.id, crop: reply.crop });\n      if (alive()) show(next);"));
+  assert.ok(page.includes("const next = await request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop });\n      if (!alive()) return;\n      if (!fitsWant(next, want)) return;\n      if (show(next) !== 'new') repaint();"));
   assert.doesNotMatch(page, /\b20[02]\b/);
   // dates are economics-figures.js's (farm time): the page formats none of its own
   assert.doesNotMatch(page, /toLocale|formatDate|new Date\(/);
+});
+
+test('the spec review\'s notes: replies through createReplies; a save that painted nothing repaints; Profit a month on a phone', () => {
+  // replies: a read notes the actions before it; an action bumps it; a reply not wanted, older or the same is not painted
+  assert.ok(page.includes('const replies = createReplies();'));
+  assert.ok(page.includes('const verdict = replies.take(next, want, asked);'));
+  assert.ok(page.includes("read: async () => { const asked = replies.asked(); return { next: await request('GET', path()), asked }; },"));
+  assert.ok(page.includes('done: ({ next, asked }) => show(next, asked),'));
+  for (const action of ['onSave', 'onBack', 'onWorkOut']) {
+    const body = page.slice(page.indexOf(`async function ${action}(`), page.indexOf('\n  }\n', page.indexOf(`async function ${action}(`)));
+    assert.ok(body.includes('replies.act();'), `${action} makes earlier reads stale`);
+    assert.ok(body.includes('if (!fitsWant(next, want)) return;') || body.includes("if (show(next) !== 'new') repaint();"), action);
+  }
+  // a save's reply that a read already painted (the economics event comes first) repaints the tag itself
+  assert.ok(page.includes("if (show(next) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…"));
+  // the box: kept while focused, unsaved or refused
+  assert.ok(page.includes('if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || serverErrors.has(f.key)) })) box.value = boxText(f.value);'));
+  // the phone's block head: the way's name with "Profit a month" over its profit
+  assert.ok(page.includes("profitNode.prepend(el('span', 'ec-block-label', profitRow.label));"));
+});
+
+test('the spec review\'s notes: Work it out\'s refusals shown and said; a failed save said; the dot; no unused import', () => {
+  assert.ok(page.includes('simRefused = err.status === 0 ? OFFLINE : err.message;'));
+  assert.ok(page.includes("parts.push(el('p', 'ec-note-line ec-warn', simRefused));"));
+  assert.ok(page.includes('said(simRefused);'));
+  assert.ok(page.includes('said(`${figureOf(key).label}: couldn\'t save. Retry is under it.`);'));
+  assert.ok(page.includes('said(err.message); // the refusal, as under the box'));
+  assert.ok(page.includes('p.append(DOT, b);'));
+  assert.doesNotMatch(page, /' · '/);
+  assert.doesNotMatch(page, /cropShortName/);
 });
