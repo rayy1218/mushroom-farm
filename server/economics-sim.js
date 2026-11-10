@@ -1,7 +1,7 @@
 // Work it out on the Economics page (spec 2026-11-06-economics-design.md 6): the body of the room's simulation with a crop
 // over one block life, and the electricity per block its finished run gives. Pure: the caller reads the room, its newest
 // simulation and the figures, and queues the body through simulations.start (which never switches a machine).
-//   simBody({ room, lastRun, crop, blocks, life }) → { body, days, machinesNote } · simFigure(run, life) → the row's figure
+//   simBody({ room, lastRun, crop, blocks, life, now }) → { body, days, machinesNote } · simFigure(run, life) → the row's figure
 
 import { PHYSICS_FIELDS, MACHINE_KEYS, roomMachines } from '../web/simulate-math.js';
 import { calendarDays } from '../web/filter-math.js';
