@@ -35,8 +35,8 @@ test('the page starts at boot.js; the app (and its live stream) only once someon
   assert.ok(src('api.js').includes('res.status === 401'));
 });
 
-test('a sign-in the browser did not keep (plain http) has its words; a failed app import shows the load-fail page at once', () => {
-  assert.equal(NOT_KEPT, 'This browser did not keep the sign-in. Open the farm app at its https:// address.');
+test('a sign-in the browser did not keep has its words (plain http on the tailnet works: no https:// address); a failed app import shows the load-fail page at once', () => {
+  assert.equal(NOT_KEPT, 'This browser did not keep the sign-in. Allow cookies for the farm app and try again.');
   const boot = src('boot.js');
   assert.ok(boot.includes('NOT_KEPT'));
   assert.ok(boot.includes("open(who).catch(() => showLoadFail())"));

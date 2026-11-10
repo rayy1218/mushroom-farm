@@ -81,7 +81,7 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once. farmGateway: the farm's gateway text (FARM_GATEWAY). tasks: from createTasks.
 export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null,
-  farmGateway = DEFAULT_GATEWAY, tasks = null) {
+  farmGateway = DEFAULT_GATEWAY, tasks = null, { onUnlock } = {}) {
   const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The tasks (spec 2026-10-30-tasks-design.md): main.js passes the one the controller also uses; tests may leave it out.
@@ -135,7 +135,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   }
 
   const crop = createCropApi({ db });
-  const accountRoutes = createAccountRoutes({ db }); // ---- Login ---- (spec 2026-11-06-login-design.md 5)
+  const accountRoutes = createAccountRoutes({ db, onUnlock }); // ---- Login ---- (spec 2026-11-06-login-design.md 5)
 
   const settingsReply = () => ({ ...settingsView(db, telegram?.status()), farmGateway }); // the farm's gateway: read only
 

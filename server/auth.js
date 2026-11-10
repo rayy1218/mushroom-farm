@@ -83,10 +83,21 @@ export function clientAddress(req) {
   return forwarded || socket;
 }
 
+// LOCK: wrong tries in a row at one account from one address (addressKey) lock the account for that address only (a
+// stranger cannot lock the owner or a worker out from elsewhere). DAILY: a worker's wrong tries in 24 hours from any
+// addresses, after which the account is locked until the owner's Unlock (a 6-digit PIN is not tried slowly for days); an
+// owner has none (a 12+ character password; a daily lock would let a stranger lock the owner out). ADDRESS_LIMIT: an
+// address's tries at any accounts.
 export const LOCK = { tries: 5, ms: 15 * 60_000 };
+export const DAILY = { tries: 20, ms: DAY_MS };
 export const ADDRESS_LIMIT = { tries: 20, ms: 15 * 60_000 };
+// The stored lock (workers.locked_until) of the daily cap: the last ms a Date holds, so "until the owner unlocks"
+// (web/settings-math.js mirrors it).
+export const LOCKED_UNTIL_UNLOCKED = 8.64e15;
+const NOTE_MS = 3_600_000; // at most one Telegram note an hour per account of an address's lock
 const MAX_CHECKING = 16; // scrypt checks (32 MiB each) in flight at once
 const MAX_ADDRESSES = 10_000;
+const MAX_ACCOUNT_ADDRESSES = 10_000;
 const MAX_SECRET = 1024;
 const TOUCH_MS = 3_600_000; // a session's last_seen and expiry are written at most once an hour
 
@@ -104,10 +115,18 @@ export function addressKey(address) {
   return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }
 
-// db: the farm database. log(line): one line per sign-in try (never the secret). → { names(), login(req, body), who(req,
-// res), logout(req), changePassword(req, me, body), prune(), close() }. login and changePassword → { status, body, cookie? }.
-export function createAuth({ db, now = Date.now, log = (line) => console.log(line) }) {
+// db: the farm database. log(line): one line per sign-in try (never the secret). notify(text): a note for the owner (a
+// Telegram message: server/login-alerts.js) when an address locks an account or a worker reaches the daily cap; not awaited,
+// its failure only logged. check: checkSecret (tests make the slow check's wait their own). → { names(), login(req, body),
+// who(req, res), logout(req), changePassword(req, me, body), unlocked(id), prune(), close() }. login and changePassword →
+// { status, body, cookie? }.
+export function createAuth({ db, now = Date.now, log = (line) => console.log(line), notify = () => {}, check = checkSecret }) {
   const tries = new Map(); // address → { count, until }: the tries of the address's current 15 minutes
+  // `${account id} ${address}` → { count, lockedUntil, seen }: the account's wrong tries in a row from the address, and its
+  // lock there. Forgotten when the lock ends, or a day after the last try.
+  const accountTries = new Map();
+  const daily = new Map(); // worker id → { count, until, noted }: the tries of the worker's current 24 hours
+  const noted = new Map(); // account id → when its last note of an address's lock went
   // The hash an unknown name is checked against, so it takes as long as a known one; made at start, so the first unknown
   // name after a restart is not slower.
   const dummy = hashSecret(newToken());
@@ -116,6 +135,18 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
 
   const wrong = (role) => ({ status: 401, body: { error: role === 'owner' ? 'That password is not right' : 'That PIN is not right', field: 'secret' } });
   const lockedReply = (until) => ({ status: 429, body: { error: `Too many tries. Try again at ${localTime(until)}` } });
+  const lockedTodayReply = () => ({ status: 429, body: { error: 'Locked: ask the owner to unlock you' } });
+  const accountExpired = (e, t) => (e.lockedUntil ?? e.seen + DAY_MS) <= t;
+
+  // The note goes on its own: login never waits for it, and its failure is only a log line.
+  function tell(text) {
+    const failed = (err) => log(`login note failed: ${err?.message ?? err}`);
+    try {
+      Promise.resolve(notify(text)).catch(failed);
+    } catch (err) {
+      failed(err);
+    }
+  }
 
   // Counts the try; → true when the address has had more than its tries in its window.
   function overLimit(address, t) {
@@ -128,6 +159,41 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     }
     seen.count += 1;
     return seen.count > ADDRESS_LIMIT.tries;
+  }
+
+  // Counts a try at a usable account (before the slow check, so tries in flight together each see the ones before them).
+  // → { entry, addressLock: the lock's end when this try locked the address, else null; day: the worker's daily count or
+  // null; dayLock: this try reached the daily cap (the lock is stored at once) }.
+  function countTry(account, key, t) {
+    let entry = accountTries.get(key);
+    if (!entry || accountExpired(entry, t)) {
+      if (!entry && accountTries.size >= MAX_ACCOUNT_ADDRESSES) {
+        sweepTries(t);
+        // still full: the oldest goes (a full map must not refuse the right secret from a new address)
+        if (accountTries.size >= MAX_ACCOUNT_ADDRESSES) accountTries.delete(accountTries.keys().next().value);
+      }
+      entry = { count: 0, lockedUntil: null, seen: t };
+      accountTries.set(key, entry);
+    }
+    entry.count += 1;
+    entry.seen = t;
+    const addressLock = entry.count >= LOCK.tries ? t + LOCK.ms : null;
+    if (addressLock !== null) entry.lockedUntil = addressLock;
+    let day = null;
+    let dayLock = false;
+    if (account.role === 'worker') {
+      day = daily.get(account.id);
+      if (!day || day.until <= t) {
+        day = { count: 0, until: t + DAILY.ms, noted: false };
+        daily.set(account.id, day);
+      }
+      day.count += 1;
+      if (day.count >= DAILY.tries) {
+        db.setTries(account.id, 0, LOCKED_UNTIL_UNLOCKED);
+        dayLock = true;
+      }
+    }
+    return { entry, addressLock, day, dayLock };
   }
 
   function startSession(req, account, t) {
@@ -157,30 +223,75 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     const usable = Boolean(account?.active && account.secretHash !== null);
     if (usable && account.lockedUntil !== null && account.lockedUntil > t) {
       note('locked');
-      return lockedReply(account.lockedUntil);
+      // (a 15-minute lock stored before the locks were per address runs out as it was)
+      return account.lockedUntil >= LOCKED_UNTIL_UNLOCKED ? lockedTodayReply() : lockedReply(account.lockedUntil);
     }
-    // Count the try before the slow check, so tries in flight together each see the ones before them.
-    let lockUntil = null;
-    if (usable) {
-      const count = account.failedTries + 1;
-      if (count >= LOCK.tries) lockUntil = t + LOCK.ms;
-      db.setTries(account.id, lockUntil === null ? count : 0, lockUntil);
+    const key = usable ? `${account.id} ${address}` : null;
+    const held = key && accountTries.get(key);
+    if (held && held.lockedUntil !== null && held.lockedUntil > t) {
+      note('locked-here');
+      return lockedReply(held.lockedUntil);
     }
+    // Count the try before the slow check (no await between the read and the write).
+    const counted = usable ? countTry(account, key, t) : null;
     checking += 1;
     let right;
     try {
-      right = await checkSecret(secret, usable ? account.secretHash : await dummy);
+      right = await check(secret, usable ? account.secretHash : await dummy);
     } finally {
       checking -= 1;
     }
-    if (!usable || !right) {
-      note(!usable ? 'unknown' : lockUntil === null ? 'wrong' : 'wrong-locked');
-      if (!usable) return wrong(account?.role);
-      return lockUntil === null ? wrong(account.role) : lockedReply(lockUntil);
+    if (!usable) {
+      note('unknown');
+      return wrong(account?.role);
     }
-    db.setTries(account.id, 0, null);
+    const { addressLock, day, dayLock } = counted;
+    if (!right) {
+      if (day && day.count >= DAILY.tries) {
+        note('wrong-locked-day');
+        if (!day.noted && daily.get(account.id) === day) {
+          day.noted = true;
+          tell(`🔒 Sign-in: ${account.name} locked after ${DAILY.tries} wrong tries today; unlock in Settings → Workers`);
+        }
+        return lockedTodayReply();
+      }
+      if (addressLock === null) {
+        note('wrong');
+        return wrong(account.role);
+      }
+      note('wrong-locked');
+      const last = noted.get(account.id);
+      if (last === undefined || t - last >= NOTE_MS) {
+        noted.set(account.id, t);
+        tell(`🔒 Sign-in: ${LOCK.tries} wrong tries for ${account.name} from ${raw}; locked for that address until ${localTime(addressLock)}`);
+      }
+      return lockedReply(addressLock);
+    }
+    // The right secret: not a wrong try. This address's count starts again; the daily count drops it (and the lock it
+    // reached, unless the tries counted with it still reach the cap).
+    accountTries.delete(key);
+    if (day && daily.get(account.id) === day) {
+      day.count -= 1;
+      if (dayLock && day.count < DAILY.tries) db.setTries(account.id, 0, null);
+    }
+    // The account as it is now: a change of the secret, the role or active while the check ran answers as a wrong secret.
+    const fresh = db.account(account.id);
+    if (!fresh?.active || fresh.role !== account.role || fresh.secretHash !== account.secretHash) {
+      note('changed');
+      return wrong(account.role);
+    }
+    if (fresh.lockedUntil !== null && fresh.lockedUntil >= LOCKED_UNTIL_UNLOCKED) {
+      note('locked');
+      return lockedTodayReply();
+    }
     note('right');
-    return { status: 200, body: { id: account.id, name: account.name, role: account.role }, cookie: startSession(req, account, t) };
+    return { status: 200, body: { id: fresh.id, name: fresh.name, role: fresh.role }, cookie: startSession(req, fresh, t) };
+  }
+
+  // The owner unlocked the account, or set its secret or role (accounts-api.js): its counts start again.
+  function unlocked(id) {
+    daily.delete(id);
+    for (const key of accountTries.keys()) if (key.startsWith(`${id} `)) accountTries.delete(key);
   }
 
   // The person of the request's session: { id, name, role, sessionId }, or null. An hour or more since it was last seen,
@@ -228,6 +339,9 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
 
   function sweepTries(t) {
     for (const [address, seen] of tries) if (seen.until <= t) tries.delete(address);
+    for (const [key, entry] of accountTries) if (accountExpired(entry, t)) accountTries.delete(key);
+    for (const [id, day] of daily) if (day.until <= t) daily.delete(id);
+    for (const [id, at] of noted) if (t - at >= NOTE_MS) noted.delete(id);
   }
 
   function prune() {
@@ -239,5 +353,5 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
   prune();
   const timer = setInterval(() => { try { prune(); } catch (err) { log(`login prune failed: ${err.message}`); } }, TOUCH_MS);
   timer.unref();
-  return { names: () => db.loginNames(), login, who, logout, changePassword, prune, close: () => clearInterval(timer) };
+  return { names: () => db.loginNames(), login, who, logout, changePassword, unlocked, prune, close: () => clearInterval(timer) };
 }

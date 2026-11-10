@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parsePoll, refreshMs, LIVE_READINGS, liveHint, yieldBody, accountLine, secretAction, accountActions, otherOwnerCanSignIn, roleConfirm, signOutConfirm, removeConfirm, accountDone, isNameField } from '../web/settings-math.js';
+import { LOCKED_UNTIL_UNLOCKED } from '../server/auth.js';
 import { readFileSync } from 'node:fs';
 import { parseRoute, isCanonical } from '../web/route.js';
 
@@ -161,6 +162,10 @@ test("a worker's sign-in line on Settings → Workers", () => {
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: null, sessions: 2 }, at), 'Worker · signed in on 2 devices');
   assert.equal(accountLine({ role: 'owner', hasSecret: true, lockedUntil: null, sessions: 1 }, at), 'Owner · signed in on 1 device');
   assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 600_000, sessions: 0 }, at), 'Worker · locked until 10:10');
+  // the daily cap's lock (server/auth.js LOCKED_UNTIL_UNLOCKED): it lasts until the owner's Unlock
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: LOCKED_UNTIL_UNLOCKED, sessions: 1 }, at), 'Worker · locked: unlock to let them sign in');
+  assert.equal(accountLine({ role: 'worker', hasSecret: true, lockedUntil: at + 400 * 86_400_000, sessions: 0 }, at), 'Worker · locked: unlock to let them sign in');
+  assert.equal(accountActions({ role: 'worker', hasSecret: true, lockedUntil: LOCKED_UNTIL_UNLOCKED, sessions: 0 }, { self: false, otherOwner: false, now: at }).unlock, true);
   assert.deepEqual(secretAction({ role: 'worker', hasSecret: false }), { label: 'Set PIN', field: 'PIN (6 digits)', kind: 'pin' });
   assert.deepEqual(secretAction({ role: 'owner', hasSecret: true }), { label: 'Change password', field: 'Password (12 characters or more)', kind: 'password' });
 });

@@ -214,11 +214,16 @@ export function yieldBody(rows) {
 
 // ---- Login ---- Settings → Workers' sign-in state (spec 2026-11-06-login-design.md 5)
 const farmClock = (ms) => new Date(ms + 8 * 3_600_000).toISOString().slice(11, 16); // the farm's UTC+8, no summer time
+// The daily cap's lock lasts until the owner's Unlock: stored as server/auth.js LOCKED_UNTIL_UNLOCKED (far in the future);
+// any lock more than a year ahead reads so.
+const UNTIL_UNLOCKED_FROM_MS = 366 * 86_400_000;
 
-// "Worker · signed in on 2 devices", "Owner · no password yet: cannot sign in", "Worker · locked until 10:10".
+// "Worker · signed in on 2 devices", "Owner · no password yet: cannot sign in", "Worker · locked until 10:10", "Worker ·
+// locked: unlock to let them sign in".
 export function accountLine(a, now) {
   const role = a.role === 'owner' ? 'Owner' : 'Worker';
   if (!a.hasSecret) return `${role} · no ${a.role === 'owner' ? 'password' : 'PIN'} yet: cannot sign in`;
+  if (a.lockedUntil !== null && a.lockedUntil - now > UNTIL_UNLOCKED_FROM_MS) return `${role} · locked: unlock to let them sign in`;
   if (a.lockedUntil !== null && a.lockedUntil > now) return `${role} · locked until ${farmClock(a.lockedUntil)}`;
   if (a.sessions > 0) return `${role} · signed in on ${a.sessions} ${a.sessions === 1 ? 'device' : 'devices'}`;
   return role;

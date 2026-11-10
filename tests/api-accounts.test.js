@@ -5,11 +5,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
-import { hashSecret } from '../server/auth.js';
+import { hashSecret, LOCKED_UNTIL_UNLOCKED } from '../server/auth.js';
 
 async function farm(t) {
   const db = openDb(':memory:');
-  const server = createApp(db);
+  const notes = [];
+  const server = createApp(db, { loginNotify: (text) => { notes.push(text); } });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -23,7 +24,7 @@ async function farm(t) {
   const ali = db.listWorkers()[0].id;
   const ray = db.setOwner('Ray', await hashSecret('long enough password'));
   const signIn = async (id, secret) => /^farm_session=[^;]+/.exec((await call('POST', '/api/login', { id, secret })).cookie)[0];
-  return { db, call, ali, ray, signIn, owner: await signIn(ray, 'long enough password') };
+  return { db, base, notes, call, ali, ray, signIn, owner: await signIn(ray, 'long enough password') };
 }
 
 test("the accounts: each worker's role, whether they can sign in, the lock and the browsers signed in", async (t) => {
@@ -64,12 +65,32 @@ test('the role: a change clears the secret (a PIN is no password) and signs them
   assert.equal(db.account(ray).role, 'owner');
 });
 
-test('Unlock and Sign out everywhere', async (t) => {
-  const { db, call, ali, owner, signIn } = await farm(t);
+test("Unlock: a worker the daily cap locked signs in again and their counts start again; so after a new PIN", async (t) => {
+  const { db, base, notes, call, ali, owner } = await farm(t);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner);
+  // through Tailscale's proxy (from this machine) the client is X-Forwarded-For's last entry
+  const login = (secret, address) => fetch(`${base}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': address }, body: JSON.stringify({ id: ali, secret }),
+  }).then((r) => r.status);
+  const lockOut = async (net) => { for (let i = 0; i < 20; i++) await login('111112', `100.64.${net}.${Math.floor(i / 4)}`); };
+  await lockOut(10);
+  assert.equal(await login('482913', '100.64.11.1'), 429, 'the right PIN is refused');
+  assert.deepEqual(notes, ['🔒 Sign-in: Ali locked after 20 wrong tries today; unlock in Settings → Workers'], "the owner's note (app.js passes loginNotify to createAuth)");
+  assert.equal(db.accounts(Date.now()).find((a) => a.id === ali).lockedUntil, LOCKED_UNTIL_UNLOCKED);
+  assert.equal((await call('POST', `/api/workers/${ali}/unlock`, undefined, owner)).body.account.lockedUntil, null);
+  assert.equal(await login('111112', '100.64.10.0'), 401, 'not locked again by the old counts');
+  assert.equal(await login('482913', '100.64.10.0'), 200);
+  await lockOut(12);
+  assert.equal(await login('482913', '100.64.11.2'), 429);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: '593024' }, owner);
+  assert.equal(await login('111112', '100.64.12.0'), 401, 'a new PIN: the counts start again');
+  assert.equal(await login('593024', '100.64.12.0'), 200);
+});
+
+test('Sign out everywhere', async (t) => {
+  const { call, ali, owner, signIn } = await farm(t);
   await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner);
   const one = await signIn(ali, '482913');
-  db.setTries(ali, 0, Date.now() + 60_000);
-  assert.equal((await call('POST', `/api/workers/${ali}/unlock`, undefined, owner)).body.account.lockedUntil, null);
   const out = await call('POST', `/api/workers/${ali}/sign-out`, undefined, owner);
   assert.equal(out.body.account.sessions, 0);
   assert.equal((await call('GET', '/api/session', undefined, one)).status, 401);

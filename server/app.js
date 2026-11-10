@@ -9,21 +9,23 @@ import { createStatic } from './static.js';
 import { createSse } from './live.js';
 import { DEFAULT_GATEWAY } from './gateways.js';
 import { createAuth } from './auth.js';
+import { createLoginNotify } from './login-alerts.js';
 import { createAuthRoutes } from './auth-api.js';
 import { workerMay, filterWorkerReplies } from './roles.js';
 
 const WEB_DIR = fileURLToPath(new URL('../web/', import.meta.url));
 
 // gateway: the farm's gateway text (FARM_GATEWAY), shown by GET /api/settings. tasks: from createTasks (one is made when
-// left out). login: false only in tests that are not about signing in; every request is then the owner's.
+// left out). login: false only in tests that are not about signing in; every request is then the owner's. loginNotify(text):
+// the owner's note of a sign-in lock (by default a Telegram message to the alarms' chat, when Telegram is set up).
 export function createApp(db, {
   webDir = WEB_DIR, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null, ssePingMs,
-  gateway = DEFAULT_GATEWAY, tasks = null, login = true,
+  gateway = DEFAULT_GATEWAY, tasks = null, login = true, loginNotify = createLoginNotify({ db }),
 } = {}) {
-  const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks);
+  const auth = login ? createAuth({ db, notify: loginNotify }) : null;
+  const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks, { onUnlock: (id) => auth?.unlocked(id) });
   const sse = events && createSse({ events, pingMs: ssePingMs });
   const files = createStatic(webDir);
-  const auth = login ? createAuth({ db }) : null;
   const authRoutes = auth && createAuthRoutes({ auth });
   const server = http.createServer(async (req, res) => {
     try {

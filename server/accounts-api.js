@@ -6,8 +6,10 @@ import { hashSecret, pinError, passwordError, clearCookie, viaProxy } from './au
 
 const ONE = /^\/api\/workers\/([1-9][0-9]{0,14})\/(secret|role|unlock|sign-out)$/;
 
-// → async (req, res, path, { send, readJson, HttpError }) that answers true when the path is one of its routes.
-export function createAccountRoutes({ db, now = Date.now }) {
+// onUnlock(id): the sign-in's counts of the account start again (auth.unlocked): after an Unlock, a new secret or a new
+// role (each clears the stored lock). → async (req, res, path, { send, readJson, HttpError }) that answers true when the
+// path is one of its routes.
+export function createAccountRoutes({ db, now = Date.now, onUnlock = () => {} }) {
   const accountOf = (id) => db.accounts(now()).find((a) => a.id === id);
 
   return async function accountRoutes(req, res, path, { send, readJson, HttpError }) {
@@ -32,6 +34,7 @@ export function createAccountRoutes({ db, now = Date.now }) {
       if (!db.setSecret(account.id, await hashSecret(secret), account.role)) {
         throw new HttpError(409, 'The role changed: set it again', 'secret');
       }
+      onUnlock(account.id);
     } else if (what === 'role') {
       const role = (await readJson(req))?.role;
       if (role !== 'owner' && role !== 'worker') throw new HttpError(400, 'The role must be owner or worker', 'role');
@@ -42,10 +45,12 @@ export function createAccountRoutes({ db, now = Date.now }) {
       // A worker's PIN is no owner's password, nor the other way: a new role needs a new secret (Set PIN or Set password).
       if (role !== account.role) {
         db.setRole(account.id, role); // clears the secret, the lock and the sessions with it
+        onUnlock(account.id);
         ownSessionEnds = req.who?.id === account.id;
       }
     } else if (what === 'unlock') {
       db.setTries(account.id, 0, null);
+      onUnlock(account.id);
     } else {
       db.signOutEverywhere(account.id);
       ownSessionEnds = req.who?.id === account.id;

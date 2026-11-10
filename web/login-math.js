@@ -18,5 +18,6 @@ export const landing = (hash, role) => (hash && hash !== '#' && hash !== '#/' ? 
 
 export const failText = (status, message) => (status === 0 ? "Couldn't reach the farm app. Try again." : message || 'Something went wrong. Try again.');
 
-// A sign-in the server accepted but the browser did not keep (plain http: the cookie is Secure).
-export const NOT_KEPT = 'This browser did not keep the sign-in. Open the farm app at its https:// address.';
+// A sign-in the server accepted but the browser did not keep (cookies blocked; plain http on the tailnet works: the cookie is
+// Secure only through Tailscale's https proxy).
+export const NOT_KEPT = 'This browser did not keep the sign-in. Allow cookies for the farm app and try again.';
