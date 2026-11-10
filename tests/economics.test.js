@@ -308,3 +308,59 @@ test('Work it out after a run cancelled with no event and no view: settled as de
   assert.equal(out.view.sim.status, 'waiting');
   assert.equal(db.listRuns(room).length, 1);
 });
+
+// The stand-in's start ending its run before it returns, and saying so (the real start fails a run whose worker cannot spawn).
+function endsAtOnce(s, outcome) {
+  const start = s.simulations.start;
+  s.simulations.start = function (roomId, body) {
+    const out = start.call(this, roomId, body);
+    if (out.run) {
+      s.db.finishRun(out.run.id, outcome, NOW + 1000);
+      s.events.publish('simulation', { id: out.run.id, roomId, status: outcome.status, progress: outcome.status === 'done' ? 1 : 0 });
+    }
+    return out;
+  };
+}
+
+test('Work it out whose run fails inside start (its event before the row): the row failed with the run\'s error, told twice', (t) => {
+  const s = setup(t);
+  endsAtOnce(s, { status: 'failed', error: 'boom' });
+  const out = s.econ.workOut({ room: s.room, crop: 'lionsmane' });
+  assert.deepEqual([out.view.sim.status, out.view.sim.error, out.view.sim.value], ['failed', 'boom', null]);
+  assert.equal(s.heard.length, 2, 'started and settled');
+});
+
+test('Work it out whose run is done inside start: settled at once, a block life over 90 days scaled', (t) => {
+  const s = setup(t);
+  s.econ.setFigure({ room: s.room, crop: 'lionsmane', key: 'yours.turn', value: 70 }); // 12 + 14 + 70 = 96 days
+  s.heard.length = 0;
+  endsAtOnce(s, { status: 'done', summary: { energy: { kWh: 900 } } });
+  const { view } = s.econ.workOut({ room: s.room, crop: 'lionsmane' });
+  assert.equal(s.db.listRuns(s.room)[0].input.days, 90);
+  assert.deepEqual([view.sim.status, view.sim.value, view.sim.kwh, view.sim.days, view.sim.at], ['done', 0.632, 960, 96, NOW + 1000]);
+  assert.equal(s.heard.length, 2);
+});
+
+test('Work it out with the simulations\' clock ahead of the service\'s: the run is its own, not gone', (t) => {
+  const s = setup(t);
+  const start = s.simulations.start;
+  s.simulations.start = (roomId, body) => {
+    const out = start.call(s.simulations, roomId, body);
+    s.db.deleteRun(out.run.id);
+    return { run: s.db.createRun(roomId, out.run.input, NOW + 5000) };
+  };
+  const out = s.econ.workOut({ room: s.room, crop: 'lionsmane' });
+  assert.deepEqual([out.view.sim.status, out.view.sim.error, out.view.sim.startedAt], ['waiting', null, NOW + 5000]);
+});
+
+test('clearFigure with no body: the room refused, not a TypeError', (t) => {
+  const s = setup(t);
+  assert.throws(() => s.econ.clearFigure(undefined), (e) => e instanceof EconomicsError && e.status === 404 && e.message === 'Room not found');
+});
+
+test('close stops listening to the events', (t) => {
+  const s = setup(t);
+  const n = s.events.listeners();
+  s.econ.close();
+  assert.equal(s.events.listeners(), n - 1);
+});

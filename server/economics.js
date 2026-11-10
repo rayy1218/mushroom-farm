@@ -35,6 +35,19 @@ const PARTS_OF = {
 // The figures Your runs may give; the rest are You set › Research (price also Settings).
 const FROM_RUNS = new Set(Object.keys(PARTS_OF));
 
+// The sources under You set of figure f, the first first (spec 4.3): Settings' electricity price; Your runs (a loss only
+// when the yield is from your runs too); the simulator's; Settings' expected price; Research. actual: Your runs' figure, if
+// any; yieldFrom: where the yield comes from; sim: the simulator row, if any; expected: Settings' price a kg of the crop.
+function sourcesBelow(f, { actual, yieldFrom, sim, electricityPrice, expected, research }) {
+  const below = [];
+  if (f.settings) below.push({ value: electricityPrice, source: 'settings' });
+  if (typeof actual?.value === 'number' && (f.key !== 'yours.loss' || yieldFrom === 'runs')) below.push({ value: actual.value, source: 'runs' });
+  if (f.key === SIM_KEY && typeof sim?.value === 'number') below.push({ value: sim.value, source: 'simulator' });
+  if (f.key === 'price' && typeof expected === 'number') below.push({ value: expected, source: 'settings' });
+  below.push({ value: research.value, source: 'research' });
+  return below;
+}
+
 // The room's main crop now (the most blocks, the first on a tie) when it is one of the four, else lion's mane.
 function cropOf(db, roomId) {
   const crops = db.getProgram(roomId)?.crops ?? [];
@@ -108,7 +121,8 @@ export function createEconomics({
     return f;
   }
 
-  // Every figure of the room and crop (spec 4.3 and 7.2), Your container's blocks first (the racks' default follows them).
+  // Every figure of the room and crop (spec 4.3 and 7.2) in figuresFor's order, Your container's blocks worked out first
+  // (the racks' default follows them).
   function figuresOf(room, crop) {
     const rows = db.economicsFigures(room.id, crop);
     const owner = new Map(rows.filter((r) => r.source === 'owner').map((r) => [r.key, r]));
@@ -117,39 +131,28 @@ export function createEconomics({
     const expected = readCropYield(db)[crop]?.priceKg;
     const { figures: runs, errors } = yourRuns({ db, harvests, batches, days, room, crop, today: zone.label(now()), zone, log });
     const size = { volume: room.volume, humidifierLH: room.humidifierLH };
-    const out = [];
-    const value = new Map();
-    const list = figuresFor(crop);
-    for (const f of [list.find((x) => x.key === 'yours.blocks'), ...list.filter((x) => x.key !== 'yours.blocks')]) {
-      const research = researchOf(f.key, crop, size, value.get('yours.blocks'));
-      const notes = [];
+    // the yield's source as its chain gives it (the loss's rule needs it)
+    const yieldFrom = owner.has('yours.yieldG') ? 'owner' : typeof runs['yours.yieldG']?.value === 'number' ? 'runs' : 'research';
+    const entryOf = (f, blocks) => {
+      const research = researchOf(f.key, crop, size, blocks);
       const actual = FROM_RUNS.has(f.key) ? runs[f.key] : undefined;
-      if (actual?.pending) notes.push('pending');
-      for (const part of PARTS_OF[f.key] ?? []) if (errors[part]) notes.push(`not-read:${part}`);
-      // the sources after You set, the first first
-      const below = [];
-      if (f.settings) below.push({ value: electricityPrice, source: 'settings' });
-      if (f.key === 'yours.loss') {
-        const yieldFrom = out.find((x) => x.key === 'yours.yieldG')?.source;
-        if (yieldFrom === 'runs' && actual) below.push({ value: actual.value, source: 'runs' });
-      } else if (actual && actual.value !== null) below.push({ value: actual.value, source: 'runs' });
-      if (f.key === SIM_KEY && sim?.value !== null && sim?.value !== undefined) below.push({ value: sim.value, source: 'simulator' });
-      if (f.key === 'price' && typeof expected === 'number') below.push({ value: expected, source: 'settings' });
-      below.push({ value: research.value, source: 'research' });
+      const below = sourcesBelow(f, { actual, yieldFrom, sim, electricityPrice, expected, research });
       const own = f.settings ? undefined : owner.get(f.key);
       const used = own ? { value: own.value, source: 'owner' } : below[0];
-      const real = own && below[0].source !== 'research' ? below[0] : null;
+      const notes = [];
+      if (actual?.pending) notes.push('pending');
+      for (const part of PARTS_OF[f.key] ?? []) if (errors[part]) notes.push(`not-read:${part}`);
       if (f.key === 'yours.loss' && used.source === 'runs') notes.push('loss-in-yield');
-      if (f.key === 'yours.loss' && own && out.find((x) => x.key === 'yours.yieldG')?.source === 'runs') notes.push('loss-twice');
-      value.set(f.key, used.value);
-      out.push({
+      if (f.key === 'yours.loss' && own && yieldFrom === 'runs') notes.push('loss-twice');
+      return {
         key: f.key, way: f.way, scope: f.scope, value: used.value, source: used.source,
         at: used.source === 'owner' ? own.at : used.source === 'simulator' ? sim.at : null,
-        real, research, runs: actual?.runs ?? null, notes,
-      });
-    }
-    const order = new Map(list.map((f, i) => [f.key, i]));
-    return { figures: out.sort((a, b) => order.get(a.key) - order.get(b.key)), errors, values: Object.fromEntries(value), sim };
+        real: own && below[0].source !== 'research' ? below[0] : null, research, runs: actual?.runs ?? null, notes,
+      };
+    };
+    const blocks = entryOf(figureOf('yours.blocks'));
+    const figures = figuresFor(crop).map((f) => (f.key === 'yours.blocks' ? blocks : entryOf(f, blocks.value)));
+    return { figures, errors, values: Object.fromEntries(figures.map((f) => [f.key, f.value])), sim };
   }
 
   // The simulator row as the page shows it: waiting while its run is queued, the run's progress while it works.
@@ -175,7 +178,7 @@ export function createEconomics({
     const c = crop ?? cropOf(db, r.id);
     settleWorking((row) => row.roomId === r.id && row.crop === c); // a run deleted meanwhile, or an event missed
     const { figures, errors, sim } = figuresOf(r, c);
-    const lastRun = db.listRuns(r.id)[0] ?? null;
+    const lastRun = db.listRuns(r.id, 1)[0] ?? null;
     return {
       rooms: rooms.map(({ id, name }) => ({ id, name })),
       room: { id: r.id, name: r.name, volume: r.volume, size: sizeOf(r), humidifierLH: r.humidifierLH },
@@ -202,7 +205,8 @@ export function createEconomics({
     },
 
     // DELETE /api/economics/figures: the owner's figure gone (nothing set: as it was). → the view.
-    clearFigure({ room, crop, key }) {
+    clearFigure(body) {
+      const { room, crop, key } = body ?? {};
       const r = roomOf(room);
       const c = cropCheck(crop);
       keyCheck(key, c);
@@ -223,7 +227,7 @@ export function createEconomics({
       }
       const { values } = figuresOf(r, c);
       const life = blockLife(inputsOf(values, 'yours'));
-      const { body: input } = simBody({ room: r, lastRun: db.listRuns(r.id)[0] ?? null, crop: c, blocks: values['yours.blocks'], life, now: now() });
+      const { body: input } = simBody({ room: r, lastRun: db.listRuns(r.id, 1)[0] ?? null, crop: c, blocks: values['yours.blocks'], life, now: now() });
       const result = simulations.start(r.id, input);
       if (result.error && result.conflict) throw new EconomicsError(409, result.error);
       const where = { roomId: r.id, crop: c };
@@ -234,7 +238,8 @@ export function createEconomics({
         return { status: 200, view: view({ room: r.id, crop: c }) };
       }
       lives.set(lifeKey(r.id, c), { simId: result.run.id, life });
-      const row = db.startEconomicsSim({ ...where, simId: result.run.id, at: now() });
+      // never before its run was made (a clock behind the simulations' would read the run as a later one, gone)
+      const row = db.startEconomicsSim({ ...where, simId: result.run.id, at: Math.max(now(), result.run.createdAt) });
       publish(r.id, c);
       settleFrom(row); // a run that ended at once (a stand-in) is settled now
       return { status: 202, view: view({ room: r.id, crop: c }) };
