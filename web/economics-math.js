@@ -28,10 +28,12 @@ export function monthsText(v) {
 // A figure's number and unit: [before, number, after] ("RM ", "55.00", " a kg"; "", "250", " g").
 function parts(key, v) {
   const { unit } = figureOf(key);
-  const money = (after) => [`RM${NB}`, grouped(v, 2), after];
+  // RM through Costs' formatters (the One Format Rule): the "RM " (or "−RM ") before, the figure after it.
+  const split = (text) => { const i = text.indexOf(NB) + 1; return [text.slice(0, i), text.slice(i)]; };
+  const money = (after, format = moneyText) => [...split(format(v)), after];
   const plural = (one, many) => (v === 1 ? one : many);
   switch (unit) {
-    case 'RM/kg': return money(`${NB}a${NB}kg`);
+    case 'RM/kg': return money(`${NB}a${NB}kg`, perKgText);
     case 'RM a block': return money(`${NB}a${NB}block`);
     case 'RM a month': return money(`${NB}a${NB}month`);
     case 'RM an hour': return money(`${NB}an${NB}hour`);
@@ -87,28 +89,36 @@ export function headline(results, { room, crop, life }) {
   const loss = (v) => ({ text: moneyText(v), tone: 'loss' });
   let first;
   if (!(yours.kgSold >= 0.05)) { // shows as 0.0 kg
-    first = [`${name} sells nothing at these figures: `, loss(yours.profit), ` a${NB}month loss.`];
+    first = cents(yours.profit) < 0
+      ? [`${name} sells nothing at these figures: `, loss(yours.profit), ` a${NB}month loss.`]
+      : [`${name} sells nothing at these figures: ${moneyText(yours.profit)} a${NB}month.`];
   } else if (cents(yours.profit) < 0) {
     first = [`${name}: `, loss(yours.profit), ` a${NB}month loss, break-even ${perKgText(yours.be)} a${NB}kg, never pays back.`];
   } else {
     const pays = yours.paybackAll === Infinity
-      ? `but it doesn't pay back within the ${life} months the equipment is written off over.`
+      ? `but it doesn't pay back within the ${life}${NB}months the equipment is written off over.`
       : `pays back in ${monthsText(yours.paybackAll)}.`;
     first = [`${name}: ${moneyText(yours.profit)} a${NB}month, break-even ${perKgText(yours.be)} a${NB}kg, ${pays}`];
   }
   if (!others.length) return { first, second: null };
   const best = others.reduce((a, b) => (cents(b.profit) > cents(a.profit) ? b : a));
+  // A profit that shows as RM 0.00 is not a loss: the other way "breaks even", and yours at zero is not beaten by a loss.
+  const nextWay = `${wayName(best.way, { sentence: true, lower: true })}`;
+  const sentence = wayName(best.way, { sentence: true });
+  const [y, o] = [cents(yours.profit), cents(best.profit)];
   let second;
-  if (cents(best.profit) > cents(yours.profit)) {
-    second = cents(best.profit) > 0
-      ? `${wayName(best.way, { sentence: true })} makes ${moneyText(best.profit)} ${equipmentWords(best, yours)}.`
-      : `${wayName(best.way, { sentence: true })} loses less, ${moneyText(best.profit)}, ${equipmentWords(best, yours)}.`;
-  } else if (cents(yours.profit) > 0) {
-    second = cents(best.profit) > 0
-      ? `That is the most of the ${results.length} ways; next, ${wayName(best.way, { sentence: true, lower: true })} makes ${moneyText(best.profit)}.`
-      : 'Every other way loses money at these figures.';
-  } else {
+  if (o > y) {
+    second = o > 0 ? `${sentence} makes ${moneyText(best.profit)} ${equipmentWords(best, yours)}.`
+      : o === 0 ? `${sentence} breaks even ${equipmentWords(best, yours)}.`
+        : `${sentence} loses less, ${moneyText(best.profit)}, ${equipmentWords(best, yours)}.`;
+  } else if (y < 0) {
     second = 'Every other way loses more.';
+  } else if (o > 0) {
+    second = `That is the most of the ${results.length} ways; next, ${nextWay} makes ${moneyText(best.profit)}.`;
+  } else if (o === 0) {
+    second = `That is the most of the ${results.length} ways; next, ${nextWay} breaks even.`;
+  } else {
+    second = 'Every other way loses money at these figures.';
   }
   return { first, second };
 }
@@ -143,12 +153,12 @@ export const fillLine = (yours, { room, blocks, first }) => `With the first fill
 export const sizedLine = (room, blocks) => `Every way is sized to ${room}'s ${grouped(blocks, 0)}${NB}blocks; a shed or a highland house holds up to ${grouped(HOUSE_BLOCKS, 0)}.`;
 // When any growing way never pays back.
 export const neverLine = (results, life) => (results.some((r) => r.kind === 'grow' && (r.payback === Infinity || r.paybackAll === Infinity))
-  ? `Never: not within the ${life} months the equipment is written off over.` : null);
+  ? `Never: not within the ${life}${NB}months the equipment is written off over.` : null);
 // The ways not compared for the crop (spec 8.4).
 const LEFT_WORDS = {
-  oyster: 'Not compared: a highland grower (grey oyster isn\'t grown commercially there; it fruits best at 25 °C and Cameron Highlands averages 17.9 °C) and importing (fresh grey oyster keeps 3–4 days and Malaysia grows its own).',
-  pink: 'Not compared: a highland grower (too cool to pin: it needs 18–20 °C) and importing (it keeps 1–4 days; none is imported).',
-  woodear: 'Not compared: a highland grower (growth slows sharply below 18 °C).',
-  lionsmane: 'Not compared: a lowland shed with the usual strain (it fruits at 18–24 °C); the warm strain is the lowland shed for lion\'s mane.',
+  oyster: `Not compared: a highland grower (grey oyster isn't grown commercially there; it fruits best at 25${NB}°C and Cameron Highlands averages 17.9${NB}°C) and importing (fresh grey oyster keeps 3–4${NB}days and Malaysia grows its own).`,
+  pink: `Not compared: a highland grower (too cool to pin: it needs 18–20${NB}°C) and importing (it keeps 1–4${NB}days; none is imported).`,
+  woodear: `Not compared: a highland grower (growth slows sharply below 18${NB}°C).`,
+  lionsmane: `Not compared: a lowland shed with the usual strain (it fruits at 18–24${NB}°C); the warm strain is the lowland shed for lion's mane.`,
 };
 export const leftLine = (crop) => LEFT_WORDS[crop] ?? null;

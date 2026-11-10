@@ -143,9 +143,32 @@ test('the way names, and the lines under the table', () => {
   const [cold, , , warm] = compare(GOLDEN, WAYS.lionsmane);
   assert.equal(plain(fillLine(cold, { room: 'Container 1', blocks: 1740, first: 12 })), "With the first fill: Container 1's equipment, its first 1,740 blocks (RM 10,440.00) and the costs until the first harvest, 12 days in (RM 326.75).");
   assert.equal(plain(sizedLine('Container 1', 1740)), "Every way is sized to Container 1's 1,740 blocks; a shed or a highland house holds up to 2,000.");
-  assert.equal(neverLine([cold, warm], 60), 'Never: not within the 60 months the equipment is written off over.');
+  assert.equal(plain(neverLine([cold, warm], 60)), 'Never: not within the 60 months the equipment is written off over.');
   assert.equal(neverLine([cold], 60), null);
-  assert.match(leftLine('oyster'), /^Not compared: a highland grower \(grey oyster isn't grown commercially there/);
-  assert.equal(leftLine('woodear'), 'Not compared: a highland grower (growth slows sharply below 18 °C).');
-  assert.equal(leftLine('lionsmane'), "Not compared: a lowland shed with the usual strain (it fruits at 18–24 °C); the warm strain is the lowland shed for lion's mane.");
+  assert.match(plain(leftLine('oyster')), /^Not compared: a highland grower \(grey oyster isn't grown commercially there/);
+  assert.equal(plain(leftLine('woodear')), 'Not compared: a highland grower (growth slows sharply below 18 °C).');
+  assert.equal(plain(leftLine('lionsmane')), "Not compared: a lowland shed with the usual strain (it fruits at 18–24 °C); the warm strain is the lowland shed for lion's mane.");
+});
+
+test('the spec review: RM through Costs\' formatters, RM 0.00 is not a loss, nothing sold follows the profit\'s sign, no-break spaces', () => {
+  // The One Format Rule: a cheap price per kg as Costs shows it, a negative RM figure with its minus.
+  assert.equal(figureText('price', 0.035), `RM${NB}0.035${NB}a${NB}kg`);
+  assert.equal(figureText('yours.rent', -5), `\u2212RM${NB}5.00${NB}a${NB}month`);
+  assert.equal(plain(rangeText('price', 0.035, 0.05)), 'RM 0.035–0.05 a kg');
+  // RM 0.00 in the second sentence.
+  const second = (results) => plain(headline(results, { room: 'Container 1', crop: 'lionsmane', life: 60 }).second);
+  assert.equal(second([r('yours', 100), r('highland', 0, { equipment: 2306 })]), 'That is the most of the 2 ways; next, a highland grower breaks even.');
+  assert.equal(second([r('yours', 0), r('highland', -50)]), 'Every other way loses money at these figures.');
+  assert.equal(second([r('yours', 0), r('highland', 0.004)]), 'That is the most of the 2 ways; next, a highland grower breaks even.');
+  assert.equal(second([r('yours', -100), r('highland', 0.003, { equipment: 2306 })]), 'A highland grower breaks even on a quarter of the equipment.');
+  assert.equal(second([r('yours', -100), r('shed', -0.004, { equipment: 1280 })]), 'A lowland shed breaks even on a tenth of the equipment.');
+  // Nothing sold at a zero profit is no loss; the first sentence has no loss tone.
+  const none = headline([r('yours', 0, { kg: 0, be: null })], { room: 'Container 1', crop: 'oyster', life: 60 });
+  assert.equal(text(none), 'Grey oyster in Container 1 sells nothing at these figures: RM 0.00 a month.');
+  assert.ok(none.first.every((p) => typeof p === 'string'));
+  // No-break spaces in "60 months".
+  const pays = headline([r('yours', 120, { paybackAll: Infinity })], { room: 'R', crop: 'lionsmane', life: 60 }).first[0];
+  assert.ok(pays.includes(`60${NB}months`));
+  assert.ok(neverLine([r('yours', 1, { paybackAll: Infinity })], 60).includes(`60${NB}months`));
+  assert.ok(leftLine('oyster').includes(`25${NB}\u00b0C`) && leftLine('oyster').includes(`3\u20134${NB}days`) && leftLine('woodear').includes(`18${NB}\u00b0C`));
 });
