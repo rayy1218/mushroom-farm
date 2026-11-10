@@ -1,5 +1,5 @@
-// Settings page: the owner's own password, the farm-wide reading interval, the outdoor sensor address, the electricity and water
-// prices, phone alarms, the crops' yield, and the workers (their sign-in too) and the task rules (task-settings.js).
+// Settings page: the farm-wide reading interval, the outdoor sensor address, the electricity and water prices, phone alarms,
+// the crops' yield, the workers (their sign-in too) and the task rules (task-settings.js), then the owner's own password.
 
 import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
@@ -19,7 +19,7 @@ const TEMPLATE = `
   <div class="page-head">
     <div class="page-titles">
       <h1 class="page-title" tabindex="-1">Settings</h1>
-      <p class="page-sub">Your password, then one set for the whole farm: how often rooms are read, prices, the outdoor sensor, phone alarms, the workers and the task rules.</p>
+      <p class="page-sub">One set for the whole farm: how often rooms are read, prices, the outdoor sensor, phone alarms, the workers and the task rules; then your own password.</p>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -27,29 +27,6 @@ const TEMPLATE = `
     <button type="button" data-retry>Retry</button>
   </div>
   <div class="settings-grid">
-  <form class="card settings s-password" data-password novalidate>
-    <h2>Your password</h2>
-    <input type="text" name="username" autocomplete="username" hidden data-pw-name>
-    <div class="field">
-      <label for="f-pw-current">Current password</label>
-      <input id="f-pw-current" name="current" type="password" autocomplete="current-password" aria-describedby="e-pw-current">
-      <p class="field-error" id="e-pw-current" role="status"></p>
-    </div>
-    <div class="field">
-      <label for="f-pw-next">New password (14 characters or more)</label>
-      <input id="f-pw-next" name="next" type="password" autocomplete="new-password" aria-describedby="e-pw-next">
-      <p class="field-error" id="e-pw-next" role="status"></p>
-    </div>
-    <div class="field">
-      <label for="f-pw-again">New password again</label>
-      <input id="f-pw-again" name="again" type="password" autocomplete="new-password" aria-describedby="e-pw-again">
-      <p class="field-error" id="e-pw-again" role="status"></p>
-    </div>
-    <div class="ac-send">
-      <button type="submit" class="primary" data-pw-save>Change password</button>
-    </div>
-    <p class="s-saved" data-pw-saved role="status" hidden></p>
-  </form>
   <form class="card settings" data-form novalidate hidden>
     <h2>Readings</h2>
     <div class="field">
@@ -88,6 +65,29 @@ const TEMPLATE = `
   <div data-yield></div>
   <div data-inventory-settings></div>
   <div class="tk-settings" data-task-settings></div>
+  <form class="card settings s-password" data-password novalidate>
+    <h2>Your password</h2>
+    <input type="text" name="username" autocomplete="username" hidden data-pw-name>
+    <div class="field">
+      <label for="f-pw-current">Current password</label>
+      <input id="f-pw-current" name="current" type="password" autocomplete="current-password" aria-describedby="e-pw-current">
+      <p class="field-error" id="e-pw-current" role="status"></p>
+    </div>
+    <div class="field">
+      <label for="f-pw-next">New password (14 characters or more)</label>
+      <input id="f-pw-next" name="next" type="password" autocomplete="new-password" aria-describedby="e-pw-next">
+      <p class="field-error" id="e-pw-next" role="status"></p>
+    </div>
+    <div class="field">
+      <label for="f-pw-again">New password again</label>
+      <input id="f-pw-again" name="again" type="password" autocomplete="new-password" aria-describedby="e-pw-again">
+      <p class="field-error" id="e-pw-again" role="status"></p>
+    </div>
+    <div class="ac-send">
+      <button type="submit" class="primary" data-pw-save>Change password</button>
+    </div>
+    <p class="s-saved" data-pw-saved role="status" hidden></p>
+  </form>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; a reply that finds the token changed is dropped

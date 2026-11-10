@@ -30,15 +30,15 @@ async function farm(t) {
 test("the accounts: each worker's role, whether they can sign in, the lock and the browsers signed in", async (t) => {
   const { call, ali, ray, owner } = await farm(t);
   assert.deepEqual((await call('GET', '/api/workers/accounts', undefined, owner)).body, { accounts: [
-    { id: ali, name: 'Ali', active: true, role: 'worker', hasSecret: false, lockedUntil: null, sessions: 0 },
-    { id: ray, name: 'Ray', active: true, role: 'owner', hasSecret: true, lockedUntil: null, sessions: 1 },
+    { id: ali, name: 'Ali', active: true, role: 'worker', hasSecret: false, lockedUntil: null, lockedHereUntil: null, sessions: 0 },
+    { id: ray, name: 'Ray', active: true, role: 'owner', hasSecret: true, lockedUntil: null, lockedHereUntil: null, sessions: 1 },
   ] });
 });
 
 test('Set PIN: a worker\'s 6 digits; then they can sign in', async (t) => {
   const { call, ali, owner, signIn } = await farm(t);
   assert.deepEqual((await call('POST', `/api/workers/${ali}/secret`, { secret: '12345' }, owner)).body, { error: 'The PIN must be 6 digits', field: 'secret' });
-  assert.deepEqual((await call('POST', `/api/workers/${ali}/secret`, { secret: '111111' }, owner)).body, { error: 'Pick a PIN that is harder to guess', field: 'secret' });
+  assert.deepEqual((await call('POST', `/api/workers/${ali}/secret`, { secret: '111111' }, owner)).body, { error: 'Pick a PIN that is harder to guess: no repeats, runs, keypad lines or dates', field: 'secret' });
   const set = await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner);
   assert.deepEqual([set.status, set.body.account.hasSecret], [200, true]);
   assert.ok(await signIn(ali, '482913'));
@@ -89,6 +89,25 @@ test("Unlock: a worker the daily cap locked signs in again and their counts star
   await call('POST', `/api/workers/${ali}/secret`, { secret: '593024' }, owner);
   assert.equal(await login('111112', '100.64.12.0'), 401, 'a new PIN: the counts start again');
   assert.equal(await login('593024', '100.64.12.0'), 200);
+});
+
+test("a worker locked for one address shows to the owner (lockedHereUntil, the latest such lock); Unlock clears it", async (t) => {
+  const { base, call, ali, owner } = await farm(t);
+  await call('POST', `/api/workers/${ali}/secret`, { secret: '482913' }, owner);
+  const login = (secret, address) => fetch(`${base}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': address }, body: JSON.stringify({ id: ali, secret }),
+  }).then(async (r) => ({ status: r.status, body: await r.json() }));
+  const before = Date.now();
+  for (let i = 0; i < 4; i++) await login('111112', '100.64.40.1');
+  const locked = await login('111112', '100.64.40.1');
+  assert.equal(locked.status, 429);
+  assert.ok(locked.body.retryAt >= before + 15 * 60_000 && locked.body.retryAt <= Date.now() + 15 * 60_000, 'the 429 says when');
+  const row = async () => (await call('GET', '/api/workers/accounts', undefined, owner)).body.accounts.find((a) => a.id === ali);
+  assert.deepEqual([(await row()).lockedUntil, (await row()).lockedHereUntil], [null, locked.body.retryAt]);
+  const unlocked = await call('POST', `/api/workers/${ali}/unlock`, undefined, owner);
+  assert.equal(unlocked.body.account.lockedHereUntil, null);
+  assert.equal((await row()).lockedHereUntil, null);
+  assert.equal((await login('482913', '100.64.40.1')).status, 200, 'that address signs in again');
 });
 
 test('Sign out everywhere', async (t) => {

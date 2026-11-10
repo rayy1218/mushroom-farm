@@ -97,6 +97,20 @@ test("a new secret, a role change, Sign out everywhere, made inactive or removed
   assert.equal(db.pruneSessions(Infinity), 0); // the row is gone, not only hidden by the join
 });
 
+test("a worker removed (made inactive) loses their PIN or password and lock: bringing them back needs a new one", () => {
+  const db = openDb(':memory:');
+  db.setWorkers([{ name: 'Ali', active: true }, { name: 'Siti', active: true }]);
+  const [ali, siti] = db.listWorkers();
+  db.setSecret(ali.id, 'pin');
+  db.setSecret(siti.id, 'pin2');
+  db.setTries(ali.id, 0, T + 60_000);
+  db.setWorkers([{ id: ali.id, name: 'Ali', active: false }, { id: siti.id, name: 'Siti', active: true }]);
+  assert.deepEqual([db.account(ali.id).secretHash, db.account(ali.id).lockedUntil], [null, null]);
+  assert.equal(db.account(siti.id).secretHash, 'pin2', 'the others keep theirs');
+  db.setWorkers([{ id: ali.id, name: 'Ali', active: true }, { id: siti.id, name: 'Siti', active: true }]);
+  assert.equal(db.account(ali.id).secretHash, null, 'back, without a PIN');
+});
+
 test('setTries and accounts: the lock and the signed-in count for Settings → Workers', () => {
   const db = openDb(':memory:');
   db.setWorkers([{ name: 'Ali', active: true }]);
