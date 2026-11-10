@@ -2744,7 +2744,8 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // A Work it out settled: done with its figure ({ value, at, kwh, blocks, days }) or failed ({ error }: the figure before
-    // it kept). → the row, or null when the room and crop have none. Neither throws (a done with no value would wipe the figure).
+    // it kept). → the row, or null when the room and crop have none. One with neither a value nor an error throws (as a done
+    // it would wipe the figure).
     settleEconomicsSim({ roomId, crop, error = null, value = null, at = null, kwh = null, blocks = null, days = null }) {
       if (error === null && value === null) throw new Error('settleEconomicsSim: a value or an error');
       if (error !== null) econQ.simFailed.run(error, roomId, crop, SIM_KEY);
