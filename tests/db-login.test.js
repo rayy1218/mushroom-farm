@@ -12,11 +12,11 @@ const fileOf = () => join(mkdtempSync('/tmp/login/db-'), 'farm.db');
 const T = Date.UTC(2026, 10, 6, 2); // 10:00 on the farm
 const pick = ({ name, active, role, secretHash }) => ({ name, active, role, secretHash });
 
-test('a new database is at version 25 with the sign-in columns on workers and a STRICT sessions table', () => {
+test('a new database (version 25 and on) has the sign-in columns on workers and a STRICT sessions table', () => {
   const file = fileOf();
   openDb(file).close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 25);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 26);
   const cols = raw.prepare('PRAGMA table_info(workers)').all().map((c) => c.name);
   assert.deepEqual(cols, ['id', 'name', 'active', 'role', 'secret_hash', 'failed_tries', 'locked_until']);
   assert.match(raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'sessions'").get().sql, /STRICT/);
