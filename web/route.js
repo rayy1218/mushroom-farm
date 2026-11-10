@@ -1,6 +1,7 @@
 // Hash router: which page does a location hash mean? Anything unknown means the Overview.
 
 import { CROP_KEYS } from './crops.js'; // ---- Runs ----
+import { ECONOMICS_CROPS } from './economics-defaults.js'; // ---- Economics ----
 
 // The room page's tabs (redesign 2026-10-28: for the three jobs check, act and set up; Tasks 2026-10-30, spec
 // 2026-10-30-tasks-design.md 7.1); the first has no name in the address (#/rooms/7), the others do (#/rooms/7/history).
@@ -117,11 +118,26 @@ function parseRuns(hash) {
   return { name: 'runs', crop: CROP_KEYS.includes(crop) ? crop : null };
 }
 // ---- end Runs ----
+// ---- Economics ---- (spec 2026-11-06-economics-design.md 2): the Economics tab, its room and crop in the query (none: the
+// page picks them and writes them in place).
+export const ECONOMICS_HASH = '#/business/economics';
+export function economicsHash({ room = null, crop = null } = {}) {
+  const q = [room ? `room=${room}` : '', crop ? `crop=${crop}` : ''].filter(Boolean).join('&');
+  return q ? `${ECONOMICS_HASH}?${q}` : ECONOMICS_HASH;
+}
+function parseEconomics(hash) {
+  const m = /^#\/business\/economics\/?(?:\?(.*))?$/.exec(hash);
+  if (!m) return null;
+  const p = new URLSearchParams(m[1] ?? '');
+  const room = /^[1-9][0-9]{0,14}$/.test(p.get('room') ?? '') ? Number(p.get('room')) : null;
+  return { name: 'economics', room, crop: ECONOMICS_CROPS.includes(p.get('crop')) ? p.get('crop') : null };
+}
+// ---- end Economics ----
 
 // ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ----: the top bar's one Business entry opens #/business,
-// the Summary tab (spec 2026-11-06-business-summary-design.md 2: always, no memory of the last tab); the six pages share a
+// the Summary tab (spec 2026-11-06-business-summary-design.md 2: always, no memory of the last tab); the seven pages share a
 // strip of tabs, as a room's page does. businessTabOf(route): the tab a page belongs to (the top bar marks Business on every
-// one of them); businessStrip(route): the tab whose strip shows: only the six pages themselves (a batch, an item, Count stock
+// one of them); businessStrip(route): the tab whose strip shows: only the seven pages themselves (a batch, an item, Count stock
 // and a run keep their back link; a sheet for print has no strip).
 export const BUSINESS_HASH = '#/business';
 export const BUSINESS_TABS = [
@@ -131,6 +147,7 @@ export const BUSINESS_TABS = [
   { key: 'sales', label: 'Sales', hash: SALES_HASH },
   { key: 'costs', label: 'Costs', hash: COSTS_HASH },
   { key: 'runs', label: 'Runs', hash: RUNS_HASH }, // ---- Runs ----
+  { key: 'economics', label: 'Economics', hash: ECONOMICS_HASH }, // ---- Economics ----
 ];
 const BUSINESS_PAGES = new Map([
   ['summary', 'summary'], // ---- Summary ----
@@ -138,6 +155,7 @@ const BUSINESS_PAGES = new Map([
   ['inventory', 'inventory'], ['inventoryItem', 'inventory'], ['inventoryCount', 'inventory'], ['inventorySheet', 'inventory'],
   ['sales', 'sales'], ['costs', 'costs'],
   ['runs', 'runs'], ['run', 'runs'], // ---- Runs ----
+  ['economics', 'economics'], // ---- Economics ----
 ]);
 export const businessTabOf = (route) => BUSINESS_PAGES.get(route?.name) ?? null;
 export const businessStrip = (route) => (BUSINESS_TABS.some((t) => t.key === route?.name) ? route.name : null);
@@ -193,6 +211,8 @@ export function parseRoute(hash) {
   if (costs) return { name: 'costs', month: monthOf(new URLSearchParams(costs[1] ?? '').get('month')) };
   const runs = parseRuns(hash ?? ''); // ---- Runs ----
   if (runs) return runs;
+  const economics = parseEconomics(hash ?? ''); // ---- Economics ----
+  if (economics) return economics;
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
 }
@@ -219,6 +239,7 @@ export function canonicalHash(route) {
   if (route.name === 'costs') return costsHash(route.month); // ---- Costs ----
   if (route.name === 'runs') return runsHash(route.crop); // ---- Runs ----
   if (route.name === 'run') return runHash(route.id);
+  if (route.name === 'economics') return economicsHash(route); // ---- Economics ----
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 

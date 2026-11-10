@@ -1,8 +1,9 @@
 // The Business strip (the integration, 2026-11-05; DESIGN.md "Business"): Summary · Batches · Inventory · Sales · Costs · Runs
-// over each of the six pages (Runs: spec 2026-11-05-runs-design.md 6; Summary, #/business: spec
-// 2026-11-06-business-summary-design.md 2), styled as the room page's tabs (their `.room-tabs` rules:
-// underline tabs, the current one in ink on the accent line). On a phone the six scroll sideways: the edge that has more
-// fades while a tab is hidden there (the room page's data-more). app.js puts it above the page's own mount; the page itself
+// · Economics over each of the seven pages (Runs: spec 2026-11-05-runs-design.md 6; Summary, #/business: spec
+// 2026-11-06-business-summary-design.md 2; Economics: spec 2026-11-06-economics-design.md 2), styled as the room page's tabs
+// (their `.room-tabs` rules: underline tabs, the current one in ink on the accent line). On a phone the seven scroll
+// sideways: the edge that has more fades while a tab is hidden there (the room page's data-more). app.js puts it above the
+// page's own mount; the page itself
 // does not know it is there.
 //   businessTabs(current) → <nav class="room-tabs bz-tabs"> (current: a BUSINESS_TABS key)
 
