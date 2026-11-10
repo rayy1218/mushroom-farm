@@ -11,6 +11,8 @@ export const MAX_PER_PERSON = 6; // nor one person over several sign-ins (each s
 export const OWNER_RESERVE = 4; // the last places are an owner's: workers together cannot shut the owner out
 export const MAX_BACKLOG = 64 * 1024; // bytes waiting for a client that does not read: it is dropped (the browser reconnects)
 const KEEPALIVE_MS = 30_000;
+// ---- Economics ---- the events only an owner's stream carries (a signed-in worker's never does): the owner's planning figures.
+export const OWNER_EVENTS = new Set(['economics']);
 
 // The farm's active alarms nobody has acknowledged: the number on the nav badge.
 export function alarmCount(db) {
@@ -75,7 +77,10 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
       if (res.writableLength > MAX_BACKLOG) res.destroy(); // a client that does not read must not fill the memory
     };
     write(`event: hello\ndata: ${JSON.stringify({ at: now() })}\n\n`);
-    client.off = events.subscribe((type, data) => write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
+    const owner = !req.who || req.who.role === 'owner'; // without sign-in (no req.who) every stream is the owner's
+    client.off = events.subscribe((type, data) => {
+      if (owner || !OWNER_EVENTS.has(type)) write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); // ---- Economics ----
+    });
     client.ping = setInterval(() => {
       let holds = true;
       try {
