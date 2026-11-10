@@ -1,6 +1,6 @@
 # Economics, stage 1: the Economics tab at #/business/economics
 
-Date: 2026-11-06 · Branch `feat/economics` from `v2` at `917219b` · Database version 25 (one step; section 12 on the number) ·
+Date: 2026-11-06 · Branch `feat/economics` from `v2` at `938a61e` (rebased after the login merge) · Database version 26 (one step after the login's 25) ·
 Approved design: the owner, 2026-11-06 (`~/.claude/task-logs/economics/approved-design.md`) · Research appendix:
 `docs/superpowers/specs/2026-11-06-economics-defaults.md`
 
@@ -23,7 +23,7 @@ the runs against the plan.
 | A **Figures** card: every figure of that room and crop with where it comes from (You set, Your runs, Simulator, Research; Settings for two), edited in place, saved for every device, **Back to default** *owner* | Editing a run's yield, a sale or a batch here: each is changed in its own module |
 | Your runs: the yield, price, block price and electricity per block of the room's finished runs of the crop, read on each request *owner* | A stored copy of the actuals |
 | **Work it out**: the room's simulation with the crop over one block life, offline, never switching a machine; the result saved and dated *owner* | Sizing the machines (Suggest machines does that) |
-| One table, `economics_figures` (the owner's figures and the simulator's), database version 25 *owner* | A table of results: the page works them out on every change |
+| One table, `economics_figures` (the owner's figures and the simulator's), database version 26 *owner* | A table of results: the page works them out on every change |
 | One pure model module (the port of `research/lions-mane-economics.html`) for the page now and stage 2 *owner* | The model on the server (stage 2 may add it) |
 | Research defaults in code with their range, confidence and sources, pink oyster and black jelly researched for this spec *owner* | Fetching prices from the web |
 | A row in the contract's section 7: Economics reads the other modules and never changes how they work a figure out *owner* | |
@@ -36,12 +36,12 @@ the runs against the plan.
 | Route | `parseRoute('#/business/economics')` (also with `/` and `?room=<id>&crop=<key>`) → `{ name: 'economics', room, crop }`: `room` a whole number or null, `crop` one of `ECONOMICS_CROPS` (`'oyster'`, `'pink'`, `'woodear'`, `'lionsmane'`) or null. `canonicalHash` leaves a null out |
 | The room and crop shown | The address's; without a room, the first room of the reply's list (the Overview's order); without a crop, the room's main crop now when it is one of the four (`mainCrop`), else lion's mane (the farm's main target, PRODUCT.md). The page writes its choice into the address in place (`history.replaceState`, as Runs' Crop select), so a reload keeps it. No memory between visits (as the Summary) |
 | Mount | `app.js`: `: route.name === 'economics' ? economics.mount(page, { room: route.room, crop: route.crop }) // ---- Economics ----` into the `.bz-page` box under the strip; the view takes `.bz-view` |
-| Who | The owner. The routes are not on the login work's worker allow-list (`feat/login`, `server/roles.js`), so a worker gets 403, as for every money page |
+| Who | The owner. The routes are not on the login work's worker allow-list (`server/roles.js`, merged in 938a61e), so a worker gets 403, as for every money page |
 
-## 3. Data (database version 25)
+## 3. Data (database version 26)
 
 `server/db.js` gains one block, `// ---- Economics ---- … // ---- end Economics ----`: the table, its upgrade step
-`if (version < 25) db.exec(ECONOMICS);`, `VERSION = 25`, and the methods below in the returned object.
+`if (version < 26) db.exec(ECONOMICS);`, `VERSION = 26`, and the methods below in the returned object.
 
 ```sql
 CREATE TABLE IF NOT EXISTS economics_figures (
@@ -486,7 +486,7 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 | `web/live.js` | Modify (one line) | `'economics'` in `EVENT_TYPES` |
 | `web/styles.css` | Modify (own block at the end) | `/* ---- Economics ---- */` … `/* ---- end Economics ---- */`, `.ec-` only, tokens only |
 | `DESIGN.md`, `README.md`, `PRODUCT.md` | Modify | An Economics section; the Business tab strip row (seven tabs); a capability row |
-| `~/.claude/task-logs/business/CONTRACT.md` | Modify (section 7) | "Economics reads Harvest's `roomView`, Batches' `list`, Sales' lines, the usage days and Costs' `runOn`, Settings' prices and Yield, and starts simulations through `simulations.start`; it never changes how they work a figure out. It owns `economics_figures` (version 25) and the `economics` event" |
+| `~/.claude/task-logs/business/CONTRACT.md` | Modify (section 7) | "Economics reads Harvest's `roomView`, Batches' `list`, Sales' lines, the usage days and Costs' `runOn`, Settings' prices and Yield, and starts simulations through `simulations.start`; it never changes how they work a figure out. It owns `economics_figures` (version 26) and the `economics` event" |
 | `tests/…` | Create, modify | Section 11 |
 
 ## 11. Testing
@@ -566,7 +566,7 @@ Worked by this spec's port at the appendix's defaults: a 67.4 m³ room (40 ft), 
 |---|---|
 | `tests/economics-model.test.js` | 11.1; `grow` with no kg sold (`be` null), op ≤ 0 (never), payback past the write-off (never), equipment 0; `trade`; `housesOf` (1, 2,000, 2,001); `inputsOf` (per-house sums, Your container's kWh a month from kWh per block) |
 | `tests/economics-defaults.test.js` | 11.2; every figure of every crop and shown way has a default inside its own range and inside 4.2's limits, a confidence and known source ids; `checkFigure`'s words (number, whole, range); the room-size rules (20 ft at 40 m³, 40 ft above; humidifiers per 6 L/h; racks per block; blocks from the volume) |
-| `tests/db-economics.test.js` | Version 25 from 24 (the table, the index, the trigger); set, clear, the scope sentinels; a room deleted takes its rows and leaves the farm's; the simulator row's start, done and failed keeping the value |
+| `tests/db-economics.test.js` | Version 26 from 25 (the table, the index, the trigger); set, clear, the scope sentinels; a room deleted takes its rows and leaves the farm's; the simulator row's start, done and failed keeping the value |
 | `tests/economics.test.js` | The real Harvest, Batches and Sales on one farm: the counted runs (ended, not partial, with kg of the crop; an open run, a partial run and another room's left out); yield, loss 0 "in your yield", price tied and farm-wide, block price with an unpriced batch, kWh per block from the usage days (pending, before the kept days, a mixed run); the source order of every figure of 4.3; Settings' expected price and electricity price; one part throwing (logged, its figures fall to research with the note, `errors` names it); no rooms; the room-size research |
 | `tests/api-economics.test.js` | The routes and their replies and refusals (7.1); the `economics` event on a save, a clear and a Work it out; Work it out with a stand-in `simulations`: working, done (kWh ÷ blocks, the run's figures saved), failed (the value kept), deleted, refused by the checks, a second one refused (409), the room's limit (409); the restart settling; the real simulations queue once on a short run (a 10-block room, 1 day) through to a saved figure, with `createEconomics` given no machines, poller or controller (it takes none: nothing it holds can switch a machine) |
 | `tests/web-economics-route.test.js` | `#/business/economics` and its `room` and `crop`; the seventh tab, its strip; the other tabs unchanged |
@@ -587,7 +587,7 @@ Test files use in-memory databases and servers on port 0; a look server uses a p
 | The ways shown depend on the crop (4.1): the highland grower for lion's mane only, importing for black jelly and lion's mane, the lowland shed for the warm crops; lion's mane's lowland shed is its warm strain | A way that nobody uses for that crop is not a competitor; the reasons (appendix 1.9) are shown under the table, so nothing is hidden. The owner may overrule: the highland estimates for pink (×0.6) and black jelly (×0.7) are in the appendix |
 | One table with four scopes (farm, crop, room, room and crop), `room_id` 0 and `crop` '' for "every", one row per key and source | A selling price or a wage is the farm's, not one room's; a container's price is the room's whatever it grows; the yield is the room's with that crop. Sentinels keep one plain unique index (no `NULL` in it) |
 | A trigger deletes a room's figures when the room goes | Room ids are reused; Costs' triggers already do this, so `deleteRoom` stays untouched |
-| Database version 25, and the login work (`feat/login`) also takes 25 | Both branches started at `917219b`. Whichever merges second renumbers its step to 26 and sets `VERSION` to 26 at merge (the contract's section 2 rule) |
+| Database version 26 | The login work (`feat/login`) merged first at 25 (938a61e), so Economics takes 26 (the contract's section 2 rule) |
 | A run counts when ended, not partial, with kg of the crop picked; the actuals are read on each request, not stored | "Finished" is the owner's word; a partial run lacks its start, a run with no picks recorded says nothing about yield. Reading live keeps them right after any edit in Harvest, Sales or Batches |
 | Your runs' yield is kg per block put in, and the loss then reads 0 ("counted in your yield") | Harvest's kg per block already divides by every block put in, the lost ones too; applying the loss again would count them twice |
 | The price from your runs is the crop's sale lines tied to the counted runs (run, or room and day), else the crop's farm-wide sales over the runs' span | A sale's room is optional, so many sales are tied to nothing; farm-wide sales over the same weeks are still the farm's real price, and the note says so |
