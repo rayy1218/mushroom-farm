@@ -2,7 +2,7 @@
 // figure's tag, where it applies, its note, the simulator's line, the headline's sources line, and a typed figure checked
 // before it is sent. Pure: the figures are the server's view (server/economics.js), the words follow the One Format Rule.
 //   foldsOf · foldHead · tagText · appliesText · noteParts · simText · sourcesLine · valuesOf · typed · boxText · savedText
-//   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved
+//   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint
 
 import { checkFigure, figureOf, SOURCES, WAY_NAMES } from './economics-defaults.js';
 import { compare } from './economics-model.js';
@@ -228,17 +228,25 @@ export function createDraft() {
 export const fitsWant = (reply, want) => (want.room == null || reply.room?.id === want.room) && (want.crop == null || reply.crop === want.crop);
 
 // Which reply the page paints (spec 9.1, "A stale answer: dropped"): a read asked before the last save, Back to default or
-// Work it out is older than that action's reply; a reply for a room or crop no longer wanted is dropped; the same answer as
-// the last painted paints nothing. → { act() (an action goes), asked() (a read notes it when sent), take(reply, want, asked)
-// → 'drop' | 'same' | 'new' (asked: the read's note; an action's own reply leaves it out) }.
+// Work it out is older than that action's reply; an action's reply older than one already painted (actions answered out of
+// order) is dropped; so is a reply for a room or crop no longer wanted; the same answer as the last painted paints nothing.
+// → { act() → the action's number, asked() (a read notes it when sent), take(reply, want, { asked } or { act })
+// → 'drop' | 'same' | 'new' }.
 export function createReplies() {
   let acts = 0;
+  let paintedAct = 0; // the newest action whose reply was taken
   let painted = '';
   return {
-    act() { acts += 1; },
+    act() {
+      acts += 1;
+      return acts;
+    },
     asked: () => acts,
-    take(reply, want, asked = acts) {
-      if (asked !== acts || !fitsWant(reply, want)) return 'drop';
+    take(reply, want, { asked = null, act = null } = {}) {
+      if (asked !== null && asked !== acts) return 'drop';
+      if (act !== null && act < paintedAct) return 'drop';
+      if (!fitsWant(reply, want)) return 'drop';
+      if (act !== null) paintedAct = act;
       const key = JSON.stringify(reply);
       if (key === painted) return 'same';
       painted = key;
@@ -254,3 +262,11 @@ export const keepsBox = ({ focused, unsaved, refused }) => focused || unsaved ||
 // Whether Work it out's run moved on between two replies (it started, ended, failed or was worked out again): a refusal
 // of the run before ("Already working it out…", no answer) is then old. Its progress alone is not a move.
 export const simMoved = (before, after) => (before?.status ?? null) !== (after?.status ?? null) || (before?.at ?? null) !== (after?.at ?? null);
+
+// A note's link's focus key (business-page.js keepFocus reads data-focus-key): scoped to its row, its line and its place,
+// since a source is cited by many rows and its address and words would find another row's.
+export const noteLinkKey = (key, line, i) => `note:${key}:${line}:${i}`;
+// Where the cursor goes after a repaint took it out of its figure's row (a research note's source link that a save turned
+// into "You set"): null to leave keepFocus's choice (it was not in a row, the row was rebuilt, or it is still in it), else
+// 'back' (the row's Back to default) or 'box'. Never the page's title.
+export const focusAfterRepaint = ({ inRow, rowKept, stillInRow, hasBack }) => (!inRow || !rowKept || stillInRow ? null : hasBack ? 'back' : 'box');

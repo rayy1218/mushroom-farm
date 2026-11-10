@@ -53,7 +53,7 @@ test('typing works the money out at once; a save on leaving the box; a refusal u
   assert.ok(page.includes('notSaved.add(key); // the typed figure stays in the sums, marked not saved'));
   assert.ok(page.includes("box.setAttribute('aria-invalid', 'true');"));
   assert.ok(page.includes("box.setAttribute('aria-describedby', error.id);"));
-  assert.ok(page.includes("request('DELETE', `/api/economics/figures?room=${at.room.id}&crop=${at.crop}&key=${encodeURIComponent(key)}`)"));
+  assert.ok(page.includes("request('DELETE', `/api/economics/figures?${new URLSearchParams({ room: at.room.id, crop: at.crop, key })}`)"));
   assert.ok(page.includes("request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop })"));
   assert.ok(page.includes("box.inputMode = def.whole ? 'numeric' : 'decimal';"));
 });
@@ -72,7 +72,12 @@ test('the styles: one .ec- block, tokens only (no colour of its own), the phone\
   assert.ok(ecCss.includes('@media (max-width: 600px)'));
   assert.ok(ecCss.includes('.ec-desk { display: none; }'));
   assert.ok(ecCss.includes('.ec-phone { display: grid; gap: 16px; }'));
-  assert.ok(ecCss.includes('.ec-box { min-height: 44px; }'));
+  // the box is a field: the shared field rules (40 px on a desk, 44 px on a phone, the refused outline), its own width and figures
+  assert.ok(css.includes('.sim-crop-row select, .sim-crop-row input, .brand-top, .ec-box { min-height: 44px; }'), 'the phone\'s field rule after the field rules');
+  assert.ok(css.includes('\n.ec-box, .field input, .yd-table input {\n  font: inherit;\n  min-height: 40px;'));
+  assert.ok(css.includes('.field input[aria-invalid="true"]:focus-visible, .ec-box[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }'));
+  assert.ok(ecCss.includes('.ec-box { width: 9em; text-align: right; font-variant-numeric: tabular-nums; }'));
+  assert.doesNotMatch(ecCss, /\.ec-box[^{]*\{[^}]*(min-height|padding|border)/, 'the field rules give its height, padding and border');
   // a link on its own (Change in Settings, Rooms) is a 44 px row; a source's link in its sentence keeps its line (no padding:
   // it would overlap the next line's link; WCAG 2.5.8's inline exception)
   assert.ok(ecCss.includes('.ec-fig-field { flex-wrap: wrap; }'));
@@ -95,11 +100,11 @@ test('the reviews\' notes: a new draft for another room or crop; a refusal kept 
   assert.ok(page.includes("field.append(el('span', 'ec-fig-value', ''), link('Change in Settings', '#/settings'));"));
   assert.ok(page.indexOf('if (def.settings) {') < page.indexOf("const box = el('input', 'ec-box');"));
   // a source with no url is plain words; one with a url opens in a new tab, rel="noopener"
-  assert.ok(page.includes('s.url ? link(words, s.url, true) : words'));
+  assert.ok(page.includes('s.url ? keyed(link(words, s.url, true), i) : words'));
   assert.ok(page.includes("a.target = '_blank';\n    a.rel = 'noopener';"));
   // Work it out's line is the view's sim.status, never the reply's HTTP status (202 even when the run ended at once)
   assert.ok(page.includes('const s = simText(reply.sim, f, {'));
-  assert.ok(page.includes("const next = await request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop });\n      if (!alive()) return;\n      if (!fitsWant(next, want)) return;\n      if (show(next) !== 'new') repaint();"));
+  assert.ok(page.includes("const next = await request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop });\n      if (!alive()) return;\n      if (!fitsWant(next, want)) return;\n      if (show(next, { act }) !== 'new') repaint();"));
   assert.doesNotMatch(page, /\b20[02]\b/);
   // dates are economics-figures.js's (farm time): the page formats none of its own
   assert.doesNotMatch(page, /toLocale|formatDate|new Date\(/);
@@ -108,16 +113,16 @@ test('the reviews\' notes: a new draft for another room or crop; a refusal kept 
 test('the spec review\'s notes: replies through createReplies; a save that painted nothing repaints; Profit a month on a phone', () => {
   // replies: a read notes the actions before it; an action bumps it; a reply not wanted, older or the same is not painted
   assert.ok(page.includes('const replies = createReplies();'));
-  assert.ok(page.includes('const verdict = replies.take(next, want, asked);'));
+  assert.ok(page.includes('const verdict = replies.take(next, want, how);'));
   assert.ok(page.includes("read: async () => { const asked = replies.asked(); return { next: await request('GET', path()), asked }; },"));
-  assert.ok(page.includes('done: ({ next, asked }) => show(next, asked),'));
+  assert.ok(page.includes('done: ({ next, asked }) => show(next, { asked }),'));
   for (const action of ['onSave', 'onBack', 'onWorkOut']) {
     const body = page.slice(page.indexOf(`async function ${action}(`), page.indexOf('\n  }\n', page.indexOf(`async function ${action}(`)));
-    assert.ok(body.includes('replies.act();'), `${action} makes earlier reads stale`);
-    assert.ok(body.includes('if (!fitsWant(next, want)) return;') || body.includes("if (show(next) !== 'new') repaint();"), action);
+    assert.ok(body.includes('const act = replies.act();'), `${action} makes earlier reads stale and numbers itself`);
+    assert.ok(body.includes('if (!fitsWant(next, want)) return;') && body.includes("if (show(next, { act }) !== 'new') repaint();"), action);
   }
   // a save's reply that a read already painted (the economics event comes first) repaints the tag itself
-  assert.ok(page.includes("if (show(next) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…"));
+  assert.ok(page.includes("if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…"));
   // the box: kept while focused, unsaved or refused
   assert.ok(page.includes('if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || serverErrors.has(f.key)) })) box.value = boxText(f.value);'));
   // the phone's block head: the way's name with "Profit a month" over its profit
@@ -134,4 +139,28 @@ test('the spec review\'s notes: Work it out\'s refusals shown and said; a failed
   assert.ok(page.includes('p.append(DOT, b);'));
   assert.doesNotMatch(page, /' · '/);
   assert.doesNotMatch(page, /cropShortName/);
+});
+
+test('the code review\'s notes: the cursor kept in its row; one Work it out at a time; the run\'s line as typed; the gone line', () => {
+  // a note's links keyed by their row; a repaint that took the cursor out of its row puts it on Back to default, else the box
+  assert.ok(page.includes('a.dataset.focusKey = noteLinkKey(key, line, i);'));
+  assert.ok(page.includes('const to = focusAfterRepaint({'));
+  assert.ok(page.includes("(to === 'back' ? row.querySelector('.ec-back') : row.querySelector('.ec-box'))?.focus({ preventScroll: true });"));
+  // Work it out: one request at a time
+  assert.ok(page.includes('if (workingOut) return; // one request at a time'));
+  assert.ok(page.includes('workingOut = false;'));
+  // the live progress: a run that moved on clears an old refusal
+  assert.ok(page.includes('if (simMoved(reply.sim, sim)) simRefused = null;'));
+  // the same answer returns before it replaces the reply (the live progress stays)
+  const show = page.slice(page.indexOf('  function show(next, how'), page.indexOf('\n  }\n', page.indexOf('  function show(next, how')));
+  assert.ok(show.indexOf("if (verdict === 'same') return verdict;") < show.indexOf('reply = next;'));
+  // typing repaints the run's line (its block life follows the figures)
+  const onType = page.slice(page.indexOf('  function onType('), page.indexOf('\n  }\n', page.indexOf('  function onType(')));
+  assert.ok(onType.includes('paintSimRow();'));
+  // the gone line shows only once the first room is read
+  assert.ok(page.includes('reader.load().then(() => {\n          if (!reply?.room) return;\n          els.gone.textContent = `That room is gone; showing ${reply.room.name}.`;\n          els.gone.hidden = false;'));
+  assert.doesNotMatch(page, /els\.gone\.hidden = false;\n\s+reader\.load/);
+  // the folds worked out once a repaint
+  const paintFigures = page.slice(page.indexOf('  function paintFigures('), page.indexOf('\n  }\n', page.indexOf('  function paintFigures(')));
+  assert.equal(paintFigures.split('foldsOf(reply)').length - 1, 1);
 });

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, valuesOf, typed, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox, simMoved,
+  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint,
 } from '../web/economics-figures.js';
 import { figuresFor, researchOf } from '../web/economics-defaults.js';
 
@@ -217,29 +217,54 @@ test('a reply fits the room and crop the page wants (null: the server\'s choice)
 test('the replies: a save\'s reply for a room no longer wanted is dropped; a read asked before a save is dropped', () => {
   const replies = createReplies();
   const want = { room: 1, crop: 'oyster' };
-  assert.equal(replies.take(view(1, 'oyster'), want, replies.asked()), 'new');
+  assert.equal(replies.take(view(1, 'oyster'), want, { asked: replies.asked() }), 'new');
 
   // a save of the old room answered after the owner picked room 2: dropped (no repaint, no address, no new draft)
-  replies.act();
-  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), { room: 2, crop: 'oyster' }), 'drop');
+  const old = replies.act();
+  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), { room: 2, crop: 'oyster' }, { act: old }), 'drop');
 
   // a read asked before a save, answered after the save's reply: older than it, dropped
   const before = replies.asked();
-  replies.act();
-  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), want), 'new', 'the save\'s own reply');
-  assert.equal(replies.take(view(1, 'oyster', { price: 48 }), want, before), 'drop', 'the read from before the save');
+  const save = replies.act();
+  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), want, { act: save }), 'new', 'the save\'s own reply');
+  assert.equal(replies.take(view(1, 'oyster', { price: 48 }), want, { asked: before }), 'drop', 'the read from before the save');
   // a read asked after it is shown
-  assert.equal(replies.take(view(1, 'oyster', { price: 61 }), want, replies.asked()), 'new');
+  assert.equal(replies.take(view(1, 'oyster', { price: 61 }), want, { asked: replies.asked() }), 'new');
 });
 
 test('the replies: the same answer paints nothing, so a save whose reply a read already painted repaints itself', () => {
   const replies = createReplies();
   const want = { room: 1, crop: 'oyster' };
-  replies.take(view(1, 'oyster'), want, replies.asked());
-  replies.act(); // the save goes; its economics event brings a read first (asked after the save)
+  replies.take(view(1, 'oyster'), want, { asked: replies.asked() });
+  const save = replies.act(); // the save goes; its economics event brings a read first (asked after the save)
   const saved = view(1, 'oyster', { price: 60 });
-  assert.equal(replies.take(saved, want, replies.asked()), 'new', 'the read paints first, while the tag says Saving…');
-  assert.equal(replies.take(saved, want), 'same', 'the save\'s reply is the same answer: the page repaints its tag itself');
+  assert.equal(replies.take(saved, want, { asked: replies.asked() }), 'new', 'the read paints first, while the tag says Saving…');
+  assert.equal(replies.take(saved, want, { act: save }), 'same', 'the save\'s reply is the same answer: the page repaints its tag itself');
+});
+
+test('the replies: actions in their order; an action\'s reply older than one painted is dropped', () => {
+  const replies = createReplies();
+  const want = { room: 1, crop: 'oyster' };
+  const a = replies.act();
+  const b = replies.act();
+  assert.ok(b > a, 'act() numbers the actions');
+  assert.equal(replies.take(view(1, 'oyster', { price: 60, wage: 12 }), want, { act: b }), 'new', 'save B answers first');
+  assert.equal(replies.take(view(1, 'oyster', { price: 60 }), want, { act: a }), 'drop', 'save A answers later: older than B\'s, dropped');
+  // in order, both are painted
+  const c = replies.act();
+  const d = replies.act();
+  assert.equal(replies.take(view(1, 'oyster', { price: 61 }), want, { act: c }), 'new');
+  assert.equal(replies.take(view(1, 'oyster', { price: 61, wage: 13 }), want, { act: d }), 'new');
+});
+
+test('a note\'s links are keyed by their row; after a repaint the cursor stays in its row (Back to default, else the box)', () => {
+  assert.equal(noteLinkKey('price', 0, 1), 'note:price:0:1');
+  assert.notEqual(noteLinkKey('price', 0, 1), noteLinkKey('wage', 0, 1), 'the same source in another row is another key');
+  assert.equal(focusAfterRepaint({ inRow: false, rowKept: true, stillInRow: false, hasBack: true }), null, 'not in a row: keepFocus\'s choice');
+  assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: true, hasBack: true }), null, 'still in its row');
+  assert.equal(focusAfterRepaint({ inRow: true, rowKept: false, stillInRow: false, hasBack: true }), null, 'the row is gone (another room)');
+  assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: false, hasBack: true }), 'back', 'a research link gone: Back to default');
+  assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: false, hasBack: false }), 'box');
 });
 
 test('a repaint leaves a box alone while it is focused, unsaved or refused (the refused text stays with its refusal)', () => {

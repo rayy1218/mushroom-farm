@@ -189,7 +189,7 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 
 .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .field label { font-size: 0.9rem; font-weight: 600; }
-.field input, .yd-table input {
+.ec-box, .field input, .yd-table input {
   font: inherit;
   min-height: 40px;
   padding: 8px 10px;
@@ -201,9 +201,9 @@ dialog { margin-top: var(--dialog-top); margin-bottom: auto; } /* anchored at th
 }
 .field select { font: inherit; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); width: 100%; min-width: 0; }
 .field select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.field select[aria-invalid="true"], .field input[aria-invalid="true"], .yd-table input[aria-invalid="true"] { border-color: var(--critical-text); }
+.field select[aria-invalid="true"], .field input[aria-invalid="true"], .yd-table input[aria-invalid="true"], .ec-box[aria-invalid="true"] { border-color: var(--critical-text); }
 .field input[aria-invalid="true"] { border-color: var(--critical-text); }
-.field input[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
+.field input[aria-invalid="true"]:focus-visible, .ec-box[aria-invalid="true"]:focus-visible { outline-color: var(--critical-text); }
 .field-error { margin: 0; font-size: 0.85rem; color: var(--critical-text); }
 /* a check, not a fault (an implausible pick: "Is 526.32 kg right?"): amber, the box not marked invalid */
 .field-error.field-warn { color: var(--warning-text); }
@@ -1307,7 +1307,7 @@ details.setup-part:not([open]) > summary.part-title { margin-bottom: 0; }
   .tg-check input, .sim-pick input { width: 20px; height: 20px; }
   .sim-pick { min-height: 44px; }
   .setup-nav a { display: inline-flex; align-items: center; min-height: 44px; }
-  .ctl, .field input, .field select, .yd-table input, .sim-crop-row select, .sim-crop-row input, .brand-top { min-height: 44px; }
+  .ctl, .field input, .field select, .yd-table input, .sim-crop-row select, .sim-crop-row input, .brand-top, .ec-box { min-height: 44px; }
   .brand-top { display: inline-flex; align-items: center; }
   /* the Crop tab, Setup, the Alarms card and the Simulations list (critique 2026-10-28: 28–36 px targets) */
   .cp-stage-actions button, .cp-room-note button, .cp-more, .c-byhand button, .c-humidifier button.toggle { min-height: 44px; }
@@ -2992,9 +2992,8 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 .ec-fold > summary + .ec-fig { border-top: 0; }
 .ec-fig-label { font-weight: 500; }
 .ec-fig-field { display: flex; align-items: center; gap: 6px; }
-.ec-box { width: 9em; min-height: 36px; padding: 6px 10px; font: inherit; text-align: right; font-variant-numeric: tabular-nums;
-  border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--ink); }
-.ec-box[aria-invalid="true"] { border-color: var(--critical-text); }
+/* a figure's box is a field (the shared field rules: 40 px, 44 px on a phone, the refused border and outline): its width and figures */
+.ec-box { width: 9em; text-align: right; font-variant-numeric: tabular-nums; }
 .ec-unit { min-width: 6.5em; color: var(--muted); font-size: var(--fs-sm); }
 .ec-fig-value { font-variant-numeric: tabular-nums; }
 /* the source tag: a neutral mark chip, its words saying the source (never colour alone) */
@@ -3020,7 +3019,6 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
   .ec-fig { grid-template-columns: minmax(0, 1fr) auto; }
   .ec-unit { min-width: 0; }
   .ec-fig-label { grid-column: 1 / -1; }
-  .ec-box { min-height: 44px; }
   /* the tariff's value and its link wrap rather than squeeze; a link on its own is a 44 px row */
   .ec-fig-field { flex-wrap: wrap; }
   .ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }

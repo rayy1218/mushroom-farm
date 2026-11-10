@@ -16,7 +16,7 @@ import { blockLife, inputsOf } from './economics-model.js';
 import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText } from './economics-math.js';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox, simMoved,
+  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint,
 } from './economics-figures.js';
 import { DOT } from './text-math.js';
 
@@ -208,12 +208,13 @@ export function mount(container, { room = null, crop = null } = {}) {
       retry.addEventListener('click', () => reader.load());
       els.parts.replaceChildren(el('span', '', line), retry);
     }
+    const folds = foldsOf(reply);
     const next = JSON.stringify([reply.room.id, reply.crop, reply.figures.map((f) => f.key)]);
     if (next !== shape) {
       shape = next;
-      els.folds.replaceChildren(...foldsOf(reply).map(foldNode));
+      els.folds.replaceChildren(...folds.map(foldNode));
     }
-    for (const fold of foldsOf(reply)) {
+    for (const fold of folds) {
       const summary = els.folds.querySelector(`[data-fold="${fold.way}"] > summary`);
       if (summary) summary.textContent = foldHead(fold);
       for (const f of fold.figures) updateRow(f);
@@ -272,7 +273,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     tag.dataset.source = f.source;
     showError(f.key, row);
     const note = row.querySelector('.ec-note');
-    const parts = noteParts(f, { room: reply.room.name, crop: reply.crop }).map(noteNode);
+    const parts = noteParts(f, { room: reply.room.name, crop: reply.crop }).map((n, line) => noteNode(n, f.key, line));
     if (notSaved.has(f.key)) parts.unshift(retryNode(f.key));
     if (f.source === 'owner') parts.push(backNode(f.key));
     note.replaceChildren(...parts);
@@ -280,14 +281,19 @@ export function mount(container, { room = null, crop = null } = {}) {
     const sim = row.querySelector('.ec-sim');
     if (sim) paintSim(sim, f);
   }
-  function noteNode(n) {
+  // A note's line; its links keyed by the row (a source is cited by many rows: keepFocus must not find another row's).
+  function noteNode(n, key, line) {
     const p = el('p', `ec-note-line${n.tone === 'warn' ? ' ec-warn' : ' muted'}`, n.text);
-    if (n.link) p.append(' ', link(n.link.text, n.link.href));
+    const keyed = (a, i) => {
+      a.dataset.focusKey = noteLinkKey(key, line, i);
+      return a;
+    };
+    if (n.link) p.append(' ', keyed(link(n.link.text, n.link.href), 'link'));
     if (n.sources) {
       p.append(' Sources: ');
       n.sources.forEach((s, i) => {
         const words = [s.title, s.year].filter(Boolean).join('\u00a0'); // "Shroomy 2026" stays on one line
-        p.append(i ? ', ' : '', s.url ? link(words, s.url, true) : words);
+        p.append(i ? ', ' : '', s.url ? keyed(link(words, s.url, true), i) : words);
       });
       p.append('.');
     }
@@ -330,6 +336,7 @@ export function mount(container, { room = null, crop = null } = {}) {
   }
 
   // The Electricity per block row's Work it out line (spec 6.3).
+  let workingOut = false; // a Work it out request not yet answered
   let simSaid = null; // the run "Working it out" was said for
   let simRefused = null; // the words of the last Work it out the server refused or never answered
   function paintSim(node, f) {
@@ -355,6 +362,12 @@ export function mount(container, { room = null, crop = null } = {}) {
       said('Working it out');
     }
   }
+  // The line alone (typing changes the block life it names; the live progress), the cursor kept.
+  function paintSimRow() {
+    const node = els.folds.querySelector('[data-key="yours.kwhBlock"] .ec-sim');
+    const f = reply.figures.find((x) => x.key === 'yours.kwhBlock');
+    if (node && f) keepFocus(container, () => paintSim(node, f));
+  }
 
   // ---- Typing, saving, back to default, Work it out ----
   const serverErrors = new Map(); // key → the server's refusal of the last save
@@ -364,6 +377,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     draft.type(key, box.value);
     showError(key);
     paintMoney();
+    paintSimRow();
   }
   // An action's room and crop, as a reply's (fitsWant): a failure for a room or crop no longer picked is dropped too.
   const here = () => ({ room: { id: reply.room.id }, crop: reply.crop });
@@ -377,7 +391,7 @@ export function mount(container, { room = null, crop = null } = {}) {
       tag.dataset.saving = '1';
       tag.textContent = 'Saving…';
     }
-    replies.act(); // a read asked before this save is older than its reply
+    const act = replies.act(); // a read asked before this save is older than its reply
     try {
       const next = await request('PUT', '/api/economics/figures', { room: at.room.id, crop: at.crop, key, value: t.value });
       if (!alive()) return;
@@ -386,7 +400,7 @@ export function mount(container, { room = null, crop = null } = {}) {
       notSaved.delete(key);
       draft.drop(key, t.value); // only the value it saved: a newer one typed meanwhile stays
       said(savedText(key, t.value, next.room.name, next.crop));
-      if (show(next) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…
+      if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…
     } catch (err) {
       if (!alive()) return;
       if (tag) delete tag.dataset.saving;
@@ -404,15 +418,15 @@ export function mount(container, { room = null, crop = null } = {}) {
   }
   async function onBack(key) {
     const at = here();
-    replies.act();
+    const act = replies.act();
     try {
-      const next = await request('DELETE', `/api/economics/figures?room=${at.room.id}&crop=${at.crop}&key=${encodeURIComponent(key)}`);
+      const next = await request('DELETE', `/api/economics/figures?${new URLSearchParams({ room: at.room.id, crop: at.crop, key })}`);
       if (!alive()) return;
       if (!fitsWant(next, want)) return;
       draft.drop(key);
       serverErrors.delete(key);
       notSaved.delete(key);
-      if (show(next) !== 'new') repaint();
+      if (show(next, { act }) !== 'new') repaint();
       // the box shows the figure it fell to (a repaint leaves a focused box alone), and keeps the cursor
       const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
       if (box) {
@@ -425,20 +439,24 @@ export function mount(container, { room = null, crop = null } = {}) {
     }
   }
   async function onWorkOut() {
+    if (workingOut) return; // one request at a time
+    workingOut = true;
     const at = here();
-    replies.act();
+    const act = replies.act();
     simRefused = null;
     try {
       const next = await request('POST', '/api/economics/work-out', { room: at.room.id, crop: at.crop });
       if (!alive()) return;
       if (!fitsWant(next, want)) return;
-      if (show(next) !== 'new') repaint();
+      if (show(next, { act }) !== 'new') repaint();
     } catch (err) {
       if (!alive() || !fitsWant(at, want)) return;
       // "Already working it out…", the queue's words, or no answer: under the button and said
       simRefused = err.status === 0 ? OFFLINE : err.message;
       said(simRefused);
       repaint();
+    } finally {
+      workingOut = false;
     }
   }
 
@@ -461,18 +479,29 @@ export function mount(container, { room = null, crop = null } = {}) {
     }
     els.crop.value = reply.crop;
   }
+  // A repaint, the cursor kept (keepFocus); one a repaint took out of its figure's row (a research note's link gone once the
+  // figure is the owner's) goes to the row's Back to default, else its box, never the page's title.
   function repaint() {
+    const active = document.activeElement;
+    const row = container.contains(active) ? active.closest('.ec-fig') : null;
     keepFocus(container, () => {
       paintMoney();
       paintFigures();
     });
+    const to = focusAfterRepaint({
+      inRow: Boolean(row), rowKept: Boolean(row?.isConnected), stillInRow: Boolean(row?.contains(document.activeElement)),
+      hasBack: Boolean(row?.querySelector('.ec-back')),
+    });
+    if (to) (to === 'back' ? row.querySelector('.ec-back') : row.querySelector('.ec-box'))?.focus({ preventScroll: true });
   }
-  // A reply: shown at once (a save's or a Work it out's) or from a read (asked: its note of the actions before it).
+  // A reply: shown at once (an action's: how { act }, its number) or from a read (how { asked }: its note of the actions
+  // before it).
   // → 'new' (painted), 'same' (the answer already painted) or 'drop' (stale, or for a room or crop no longer picked).
-  function show(next, asked) {
-    const verdict = replies.take(next, want, asked);
+  function show(next, how = {}) {
+    const verdict = replies.take(next, want, how);
     if (verdict === 'drop') return verdict;
     els.banner.hidden = true;
+    if (verdict === 'same') return verdict; // the same answer: nothing to paint (the live progress stays)
     if (next.room && reply && (next.room.id !== reply.room?.id || next.crop !== reply.crop)) {
       draft = createDraft();
       serverErrors.clear();
@@ -487,7 +516,6 @@ export function mount(container, { room = null, crop = null } = {}) {
       els.empty.hidden = false;
       return verdict;
     }
-    if (verdict === 'same') return verdict; // the same answer: nothing to paint
     draft.use(reply);
     els.empty.hidden = true;
     els.picks.hidden = false;
@@ -506,12 +534,15 @@ export function mount(container, { room = null, crop = null } = {}) {
   const path = () => `/api/economics${want.room || want.crop ? `?${[want.room ? `room=${want.room}` : '', want.crop ? `crop=${want.crop}` : ''].filter(Boolean).join('&')}` : ''}`;
   const reader = createReader({
     read: async () => { const asked = replies.asked(); return { next: await request('GET', path()), asked }; },
-    done: ({ next, asked }) => show(next, asked),
+    done: ({ next, asked }) => show(next, { asked }),
     failed(err) {
       if (err.status === 404 && err.message === 'Room not found' && want.room !== null) {
         want = { room: null, crop: want.crop }; // the address's room is gone: the first room instead
-        els.gone.hidden = false;
-        reader.load().then(() => { if (reply?.room) els.gone.textContent = `That room is gone; showing ${reply.room.name}.`; });
+        reader.load().then(() => {
+          if (!reply?.room) return;
+          els.gone.textContent = `That room is gone; showing ${reply.room.name}.`;
+          els.gone.hidden = false;
+        });
         return;
       }
       fail(err);
@@ -526,10 +557,10 @@ export function mount(container, { room = null, crop = null } = {}) {
     live.on('simulation', (d) => {
       // its progress words only; done or failed arrives as 'economics'
       if (!reply?.sim || d.id !== reply.sim.simId || (d.status !== 'running' && d.status !== 'queued')) return;
-      reply.sim = { ...reply.sim, status: d.status === 'queued' ? 'waiting' : 'working', progress: d.progress };
-      const node = els.folds.querySelector('[data-key="yours.kwhBlock"] .ec-sim');
-      const f = reply.figures.find((x) => x.key === 'yours.kwhBlock');
-      if (node && f) keepFocus(container, () => paintSim(node, f));
+      const sim = { ...reply.sim, status: d.status === 'queued' ? 'waiting' : 'working', progress: d.progress };
+      if (simMoved(reply.sim, sim)) simRefused = null;
+      reply.sim = sim;
+      paintSimRow();
     }),
     live.onStatus((up) => { if (up) reload.call(); }),
   ];
