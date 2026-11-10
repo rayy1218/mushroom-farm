@@ -129,3 +129,14 @@ test('a phone with seven icons: the Live dot alone, the alarm button for the Ove
   assert.ok(phone.includes('@container (max-width: 27.98px) { .brand-top .brand-mark { display: none; } }'), 'the mark whole or not at all');
   assert.ok(!css.includes('min-width: 40px; }\n  .topbar .theme-btn { width: 40px'), 'the 40 px of six icons is gone');
 });
+
+// ---- Economics (the audit, 2026-11-10, #4): a phone's strip shows its current tab, as the room page's row does
+test('the Business strip scrolls its current tab into view on its first measure (the strip only, never the page)', async () => {
+  const { tabInView } = await import('../web/business-tabs.js');
+  assert.equal(tabInView(363, 84, 390), 210, 'Economics at 363 of a 390 px strip: centred');
+  assert.equal(tabInView(20, 80, 390), 0, 'a tab already at the start: no scroll');
+  const tabs = readFileSync(new URL('../web/business-tabs.js', import.meta.url), 'utf8');
+  assert.ok(tabs.includes('nav.scrollLeft = tabInView(cur.offsetLeft, cur.offsetWidth, nav.clientWidth);'));
+  assert.ok(tabs.includes('new ResizeObserver(place).observe(nav);'));
+  assert.doesNotMatch(tabs, /scrollIntoView|window\.scroll/, 'the page itself never moves');
+});
