@@ -201,6 +201,10 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       // Done { worker, amount? }, Skip { worker, reason }, Cancel { reason }: server/tasks.js checks them, the row (404),
       // that it is still open (409 with who and when) and that the action fits its kind. Undo takes no body.
       const id = Number(action[1]);
+      // ---- Login ---- a worker undoes only their own Done or Skip (spec 2026-11-06-login-design.md 4)
+      // (a task that is not there goes on to its 404; one not done or skipped to undo's own 409)
+      const row = action[2] === 'undo' && req.who?.role === 'worker' ? db.getTask(id) : null;
+      if (row && (row.status === 'done' || row.status === 'skipped') && row.worker !== req.who.name) throw new HttpError(403, 'Ask the owner');
       send(res, 200, action[2] === 'undo' ? tasks.undo(id) : tasks[action[2]](id, await readBody()));
       return true;
     }
@@ -228,7 +232,11 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       }
       if (req.method !== 'PUT') throw notFound();
       // The whole list: done rows keep the name they were done by (text), so a rename or removal leaves the log as it was.
-      db.setWorkers(readWorkers(await readJson(req), db.listWorkers(), HttpError));
+      const list = readWorkers(await readJson(req), db.listWorkers(), HttpError);
+      // ---- Login ---- the list keeps an owner who can sign in (spec 2026-11-06-login-design.md 5)
+      const owners = db.usableOwners();
+      if (owners.length && !list.some((w) => owners.includes(w.id) && w.active)) throw new HttpError(400, 'The farm needs an owner', 'workers');
+      db.setWorkers(list);
       send(res, 200, { workers: db.listWorkers() });
       return true;
     }

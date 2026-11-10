@@ -9,7 +9,8 @@
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
 import { request, OFFLINE } from './api.js';
-import { ROOM_TABS, roomHash, tasksHash } from './route.js';
+import { ROOM_TABS, OWNER_TABS, roomHash, tasksHash } from './route.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { createRoomEdit, createDeleteCard, createSaveQueue } from './room-edit.js';
 import { createEquipment } from './equipment.js';
 import { cardOf } from './equipment-cards.js';
@@ -114,7 +115,7 @@ const TEMPLATE = `
         </div>
         <div class="charts hist-part" id="hist-climate" tabindex="-1" data-charts></div>
         <section class="card chart-card usage-charts hist-part" id="hist-energy" tabindex="-1" data-usage-charts></section>
-        <section data-usage></section>
+        <section data-usage data-owner-only></section>
         <section class="card chart-card usage-charts hist-part" id="hist-exchange" tabindex="-1" data-exchange hidden></section>
         <section class="card timeline-card hist-part" id="hist-timeline" tabindex="-1" data-timeline hidden>
           <h2>Machine timeline</h2>
@@ -182,7 +183,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
   const tabBar = q('[data-tabs]');
   let tasksLink = null;
   let tasksDot = null;
-  for (const t of ROOM_TABS) {
+  for (const t of ROOM_TABS.filter((t) => isOwner() || !OWNER_TABS.includes(t.key))) { // ---- Login ---- a worker's tabs
     const a = document.createElement('a');
     a.href = roomHash(id, t.key);
     a.dataset.tab = t.key;
@@ -354,7 +355,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
         request('GET', `/api/rooms/${id}/sensors`),
         // The machines are optional: a failing or missing route must not take the sensors down.
         request('GET', `/api/rooms/${id}/machines`).catch(() => null),
-        request('GET', `/api/rooms/${id}/control`).catch(() => null), // optional in the same way
+        // optional in the same way; ---- Login ---- the control settings are the owner's (a worker's card stays hidden)
+        isOwner() ? request('GET', `/api/rooms/${id}/control`).catch(() => null) : null,
         request('GET', '/api/settings').catch(() => null), // a failure keeps the 5 s refresh
         request('GET', `/api/rooms/${id}/alarms`).catch(() => null), // optional: alarms
         request('GET', '/api/outdoor').catch(() => null), // optional: the outdoor sensor
@@ -543,7 +545,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
       buildCharts();
       usageSection = createUsageSection(els.usageCharts, { onCursor: moveCursor });
       exchangeSection = createExchangeSection(els.exchange, { roomId: id });
-      usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
+      // ---- Login ---- the room's usage reply is the owner's (RM): a worker has no Energy and water card
+      if (isOwner()) usageCard = createUsageCard(els.usageHost, { roomId: id, getRoom: () => room });
       history = createHistory(els.rangeHost, { roomId: id, outdoor: true, initial: '24h', onChange: () => { if (alive() && sensors) { renderCharts(); syncHistoryNav(); } } });
       const saved = { // the head and the other tabs show the change; new ratings change the estimates
         queue: createSaveQueue(), // one save at a time on the page: each PUT sends the whole room
@@ -567,7 +570,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     equipmentTab.update(room, { sensors, machines: machineData ?? lastMachines, farmGateway }); // the cards' status lines and hints
     if (!cropCard) makeCrop(); // (again after a missing room came back)
     cropCard?.setLights(room?.lights === true); // lights fitted or taken out: the schedule shows or goes
-    simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room });
+    if (isOwner()) simulationsCard ??= createSimulationsCard(els.simulationsHost, { roomId: id, getRoom: () => room }); // ---- Login ---- the owner's tab
     // the grid's week in the address, in place (as the Calendar keeps its day): ‹ › add no history entry each (window's:
     // history here is the History tab's)
     tasksCard ??= createTasksCard(els.tasksHost, {
@@ -575,8 +578,10 @@ export function mount(container, { id, tab = 'now', week = null }) {
       onCounts: (c) => { if (alive()) paintTasksDot(c); }, onGone: () => { if (alive()) load(); },
     });
     harvestCard ??= createHarvestCard(els.harvestHost, { roomId: id, getRoom: () => room, onGone: () => { if (alive()) load(); } });
-    filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
-    filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
+    if (isOwner()) { // ---- Login ---- the Intake filter card is the Setup tab's (its Filter changed the owner's)
+      filterCard ??= createFilterCard(els.filterHost, { roomId: id, onChanged: () => { if (alive()) load(); } }); // the alarms clear
+      filterCard.update(room, sensors.dp, intakeRunning(machineData ?? lastMachines));
+    }
     // The Room card's filter from the replies of this load: a command later does not make the old pressure reading new.
     ({ last: filterLast, filter: filterNow } = filterFrom({ last: filterLast, room, sensor: sensors.dp, machines: machineData ?? lastMachines }));
     stopLoop ??= startLoop(() => (roomCardUi ? [roomCardUi.mimic] : [])); // (again after a missing room came back)
@@ -605,7 +610,7 @@ export function mount(container, { id, tab = 'now', week = null }) {
     renderCharts();
     syncHistoryNav();
     paintDrawing();
-    usageCard.refresh(); // not more than once a minute
+    usageCard?.refresh(); // not more than once a minute
   }
 
   // The Room card from the latest painted replies (also right after a command, not only on the next refresh).

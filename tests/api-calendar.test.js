@@ -16,7 +16,7 @@ async function app(t) {
   const db = openDb(':memory:');
   const now = Date.now();
   const tasks = createTasks({ db, now: () => now });
-  const server = createApp(db, { tasks });
+  const server = createApp(db, { login: false, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

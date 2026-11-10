@@ -9,13 +9,14 @@ import { roomHash } from './route.js';
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { slotGroups, upkeepRows, nowDue, dayTitle, tasksDueWords, longtermWords, todayCount } from './tasks-math.js';
-import { createTaskActions, createWorkerPicker } from './task-dialogs.js';
+import { createTaskActions } from './task-dialogs.js';
 import { el, taskRow, slotPart, keepFocus } from './task-list.js';
 import { DOT } from './text-math.js';
 import { cropLine } from './room-card-math.js';
 import { picture, emptyPicture } from './pictures.js';
 // ---- Batches ---- (contract 2026-11-05): the Blocks waiting card
 import { todayWaiting } from './batches-page.js';
+import { isOwner } from './session.js'; // ---- Login ----
 // ---- end Batches ----
 
 const REFRESH_MS = 30_000;
@@ -26,7 +27,6 @@ const TEMPLATE = `
       <h1 class="page-title" tabindex="-1">Today</h1>
       <p class="page-sub" data-sub>Loading…</p>
     </div>
-    <div class="td-picker" data-picker></div>
   </div>
   <div class="banner" role="alert" hidden>
     <span data-banner-text></span>
@@ -51,8 +51,6 @@ export function mount(container) {
     long: q('[data-long]'), longList: q('[data-long-list]'),
   };
   document.title = 'Today · Mushroom farm';
-  const picker = createWorkerPicker();
-  q('[data-picker]').append(picker.node);
 
   let view = null; // GET /api/tasks/today
   let seq = 0;
@@ -129,14 +127,13 @@ export function mount(container) {
       // The top bar's Today count: it leaves the asking to this page while it is shown.
       window.dispatchEvent(new CustomEvent('farm:today-count', { detail: todayCount(view) }));
       els.banner.hidden = true;
-      picker.node.hidden = false;
       paint();
     } catch (err) {
       if (!alive() || mine !== seq) return;
       els.bannerText.textContent = routeMissing(err) ? OUTDATED : err.status === 0 ? OFFLINE : err.message;
       els.banner.hidden = false;
       if (!view) els.sub.textContent = '';
-      if (routeMissing(err)) { outdated = true; picker.node.hidden = true; return; }
+      if (routeMissing(err)) { outdated = true; return; }
     }
     if (!alive()) return;
     clearTimeout(timer);
@@ -156,7 +153,8 @@ export function mount(container) {
   ];
   load();
   // ---- Batches ---- the waiting batches received 3 or more days ago, each to its batch (web/batches-page.js)
-  const stopBatches = todayWaiting(container);
+  // ---- Login ---- the batches are the owner's (Business): a worker has no Blocks waiting card
+  const stopBatches = isOwner() ? todayWaiting(container) : () => {};
   // ---- end Batches ----
 
   return function unmount() {
@@ -166,7 +164,6 @@ export function mount(container) {
     reload.cancel();
     for (const off of offLive) off();
     actions.destroy();
-    picker.destroy();
     document.title = 'Rooms · Mushroom farm';
     container.replaceChildren();
   };

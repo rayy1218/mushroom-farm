@@ -31,6 +31,13 @@ export async function request(method, path, body, timeout = 10000) {
     throw new ApiError(0, null);
   }
   if (res.status === 204) return null;
+  // ---- Login ---- a 401 once the app runs: the session ended (expired, signed out elsewhere, a new PIN); the page starts
+  // again at the sign-in view, which comes back to this address (spec 2026-11-06-login-design.md 6). An unsaved form is lost
+  // by design. The promise never settles, so nothing flashes "Sign in" or "Couldn't reach" while the page reloads.
+  if (res.status === 401 && path !== '/api/session' && !path.startsWith('/api/login')) {
+    globalThis.location?.reload();
+    return new Promise(() => {});
+  }
   let data = null;
   try {
     data = await res.json();

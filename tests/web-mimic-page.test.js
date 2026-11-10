@@ -8,7 +8,7 @@ const source = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
 // The room page and the picture must load: the farm serves every file the room page imports.
 test('the farm serves the room page, the Room card, the picture and its stylesheet', async (t) => {
-  const server = createApp(openDb(':memory:'));
+  const server = createApp(openDb(':memory:'), { login: false });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;

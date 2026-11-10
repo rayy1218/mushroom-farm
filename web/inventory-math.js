@@ -208,7 +208,8 @@ export function moveLine(m, item, today = null) {
   const day = dayNear(farmDate(m.at), today); // another year's with its year
   const when = m.refKind === 'purchase' ? day : `${day} ${farmTime(m.at)}`;
   let parts;
-  if (m.refKind === 'purchase') parts = [{ text: joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', rmText(m.total), m.useBy && `use by ${dayNear(m.useBy, today)}`) }];
+  // ---- Login ---- a worker's move has no total
+  if (m.refKind === 'purchase') parts = [{ text: joined(m.supplier ? `Bought from ${m.supplier}` : 'Bought', 'total' in m ? rmText(m.total) : null, m.useBy && `use by ${dayNear(m.useBy, today)}`) }];
   else if (m.refKind === 'adjust') parts = [{ text: joined(`Counted ${qtyText(m.counted, item.unit)}`, m.worker) }];
   else if (m.refKind === 'batch') {
     // Batches' note: 'contaminated' (blocks lost before placement), 'into a room' (the placement), 'spawn'/'mixed' (a material used on a making day).

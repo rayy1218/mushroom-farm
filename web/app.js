@@ -1,7 +1,7 @@
 // The shell: theme, hash router, and mounting pages into <main id="view">.
 // A page is { mount(container, params) → unmount() }.
 
-import { parseRoute, isCanonical, canonicalHash, businessTabOf, businessStrip } from './route.js';
+import { parseRoute, isCanonical, canonicalHash, businessTabOf, businessStrip, workerHash } from './route.js';
 import { businessTabs } from './business-tabs.js'; // ---- Business ----
 import * as detail from './room-detail.js';
 import * as simulation from './simulation-page.js';
@@ -26,7 +26,8 @@ import { loadBadge } from './overview-data.js';
 import { withTitlePrefix } from './overview-math.js';
 import { live } from './live.js';
 import { fallbackMs, liveMark } from './live-math.js';
-import { request } from './api.js';
+import { request, OFFLINE } from './api.js';
+import { me, isOwner } from './session.js'; // ---- Login ----
 import { todayCount, todayLinkLabel, countText } from './tasks-math.js';
 
 const view = document.getElementById('view');
@@ -50,6 +51,11 @@ function show(before = '') {
     // Tidy an empty or unknown hash without adding a history entry.
     history.replaceState(null, '', canonicalHash(route));
   }
+  // ---- Login ---- a worker on a page that is not theirs: the page they may see, without a history entry
+  if (!isOwner()) {
+    const instead = workerHash(parseRoute(location.hash));
+    if (instead) history.replaceState(null, '', instead);
+  }
   const route = parseRoute(location.hash);
   // Another tab of the same room: the page stays (its data, scroll and focus); only the panel changes.
   if (mounted?.name === 'detail' && route.name === 'detail' && mounted.id === route.id) {
@@ -72,7 +78,7 @@ function show(before = '') {
   // the look the four modules share (styles.css's .bz- block: card titles, head buttons) on every business page but a sheet
   view.classList.toggle('bz-view', Boolean(tab) && !/Sheet$/.test(route.name));
   let page = view;
-  if (businessStrip(route)) {
+  if (businessStrip(route) && isOwner()) { // ---- Login ---- a worker's Inventory has no Business tabs
     page = document.createElement('div');
     page.className = 'bz-page';
     view.append(businessTabs(businessStrip(route)), page);
@@ -259,6 +265,31 @@ window.addEventListener('farm:alarms-changed', refreshBadge); // after an Acknow
 // On the Today page the page asks for its own data; the tasks event keeps the count current.
 // (a hashchange made by a script may have no oldURL)
 window.addEventListener('hashchange', (e) => { show(e.oldURL ? new URL(e.oldURL).hash : ''); refreshBadge(); if (mounted?.name !== 'today') refreshToday(); });
+// ---- Login ---- the name signed in and Sign out; a worker's Business link is their Inventory (spec 2026-11-06-login-design.md 5, 6)
+for (const el of document.querySelectorAll('[data-me-name]')) el.textContent = me()?.name ?? '';
+if (!isOwner()) {
+  for (const a of menuLinks.business) {
+    a.href = '#/business/inventory';
+    a.setAttribute('aria-label', 'Inventory');
+    a.querySelector('span').textContent = 'Inventory';
+  }
+}
+// Signed out: the page starts again at the sign-in view. A 401 (the session had ended already) reloads in request() itself;
+// any other failure leaves the person signed in, so it is said and the page stays.
+async function signOut() {
+  try {
+    await request('POST', '/api/logout');
+  } catch (err) {
+    alert(`Not signed out: ${err.status === 0 ? OFFLINE : err.message}. Try again.`);
+    return;
+  }
+  history.replaceState(null, '', '#/');
+  location.reload();
+}
+for (const b of document.querySelectorAll('[data-signout]')) {
+  b.setAttribute('aria-label', me() ? `${me().name}: Sign out` : 'Sign out');
+  b.addEventListener('click', signOut);
+}
 show();
 refreshBadge();
 refreshToday();

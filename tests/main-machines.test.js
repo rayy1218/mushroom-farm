@@ -8,6 +8,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import net from 'node:net';
+import { openDb } from '../server/db.js';
+import { hashSecret } from '../server/auth.js';
 
 const MAIN = new URL('../server/main.js', import.meta.url).pathname;
 
@@ -31,6 +33,10 @@ test('a relay command is written to the gateway and the polled state comes back 
   t.after(() => gateway.close());
   const dir = mkdtempSync(join(tmpdir(), 'farm-main-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // ---- Login ---- the app of main.js has sign-in on: an owner, signed in below.
+  const seed = openDb(join(dir, 'farm.db'));
+  const owner = seed.setOwner('Ray', await hashSecret('long enough password'));
+  seed.close();
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', MAIN], {
     env: { ...process.env, FARM_PORT: '0', FARM_DB: join(dir, 'farm.db'), FARM_GATEWAY: `127.0.0.1:${gateway.address().port}` },
   });
@@ -45,7 +51,12 @@ test('a relay command is written to the gateway and the polled state comes back 
     once(child, 'exit').then(([code]) => { throw new Error(`server/main.js exited with ${code} before it printed: ${err}`); }),
   ]);
   const base = `http://localhost:${/localhost:(\d+)/.exec(line)[1]}`;
-  const json = { 'content-type': 'application/json' };
+  const login = await fetch(`${base}/api/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: owner, secret: 'long enough password' }),
+  });
+  assert.equal(login.status, 200);
+  const cookie = /^farm_session=[^;]+/.exec(login.headers.get('set-cookie'))[0];
+  const json = { 'content-type': 'application/json', cookie };
 
   const post = await fetch(`${base}/api/rooms`, {
     method: 'POST', headers: json, body: JSON.stringify({ name: 'R', length: 2, width: 2, height: 2, relayAddress: 3 }),
@@ -62,7 +73,7 @@ test('a relay command is written to the gateway and the polled state comes back 
   const deadline = Date.now() + 9000;
   let view;
   while (Date.now() < deadline) {
-    view = await (await fetch(`${base}/api/rooms/${id}/machines`)).json();
+    view = await (await fetch(`${base}/api/rooms/${id}/machines`, { headers: { cookie } })).json();
     if (view.relay.machines[2].reported === true) break;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRoute, isCanonical, ROOM_TABS, roomHash, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, SALES_HASH, sheetHash, tasksHash, taskSheetHash, BATCHES_HASH, batchHash, batchesRunHash, batchSheetHash } from '../web/route.js';
+import { parseRoute, isCanonical, ROOM_TABS, roomHash, workerHash, OWNER_TABS, suggestHash, canonicalHash, TODAY_HASH, HARVEST_HASH, SALES_HASH, sheetHash, tasksHash, taskSheetHash, BATCHES_HASH, batchHash, batchesRunHash, batchSheetHash } from '../web/route.js';
 
 test('empty and unknown hashes mean the Overview', () => {
   for (const h of ['', '#', '#/', '#/other', '#/rooms/abc', '#/rooms/0', '#/rooms/01', '#/rooms/1/x', '#/rooms/-1', undefined]) {
@@ -233,4 +233,15 @@ test('businessStrip: the strip shows on the six pages only (not a batch, an item
     '#/business/inventory/count': null, '#/business/inventory/sheet?days=30': null, '#/business': 'summary', '#/overview': null,
   };
   for (const [hash, tab] of Object.entries(cases)) assert.equal(businessStrip(parseRoute(hash)), tab, hash);
+});
+
+test("a worker's pages: Today, Calendar, Overview, a room but its Setup and Simulations, Harvest, Inventory; any other is Today", () => {
+  for (const hash of ['#/today', '#/calendar', '#/overview', '#/rooms/3/tasks', '#/harvest', '#/business/inventory', '#/business/inventory/count']) {
+    assert.equal(workerHash(parseRoute(hash)), null, hash);
+  }
+  for (const hash of ['#/settings', '#/business', '#/business/costs', '#/business/sales', '#/harvest/sheet', '#/rooms/3/simulations/2']) {
+    assert.equal(workerHash(parseRoute(hash)), '#/today', hash);
+  }
+  assert.equal(workerHash(parseRoute('#/rooms/3/setup')), roomHash(3, 'now'));
+  assert.deepEqual(OWNER_TABS, ['simulations', 'setup']);
 });

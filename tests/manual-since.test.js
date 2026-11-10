@@ -46,7 +46,7 @@ test('upgrade 16 to 17: a room in Manual counts from the upgrade, a room in auto
   const after = Date.now();
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 25);
   const m = db.getControl(manual);
   assert.equal(m.auto, false);
   assert.ok(m.autoChangedAt >= before && m.autoChangedAt <= after, `${m.autoChangedAt} in [${before}, ${after}]`);
@@ -75,7 +75,7 @@ test('a new database is at version 19; a new room counts from when it was made',
   t.after(() => db.close());
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 25);
   const { id } = db.createRoom(ROOM, 5000);
   assert.equal(db.getControl(id).autoChangedAt, 5000);
 });
@@ -128,7 +128,7 @@ test('the command stores autoChangedAt only when auto changes', (t) => {
 
 test('GET and PUT /api/rooms/:id/control carry autoChangedAt', async (t) => {
   const s = controllerSetup(t);
-  const server = createApp(s.db, { machines: s.machines, controller: s.controller });
+  const server = createApp(s.db, { login: false, machines: s.machines, controller: s.controller });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}/api/rooms/${s.id}/control`;

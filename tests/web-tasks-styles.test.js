@@ -35,7 +35,7 @@ test('long words in a task wrap, and a note keeps its line breaks', () => {
 test('a phone: the tick and Skip at 44 px, the fold at 44 px, the top bar links narrower, six tabs fit', () => {
   // owner 2026-11-02 ("so ugly"): a round tick for Done and a quiet Skip, both 44 px to tap on a phone
   for (const rule of ['.tk-tick { width: 44px; height: 44px; margin: -12px -4px -12px -12px; }', '.tk-quiet { min-height: 44px; padding: 0 10px; }',
-    '.tk-fold > summary { min-height: 44px; padding: 12px 0; }', '.tk-as select { flex: 1 1 auto; min-height: 44px; }',
+    '.tk-fold > summary { min-height: 44px; padding: 12px 0; }',
     '.top-link { min-width: 44px; padding: 4px 6px; justify-content: center; gap: 4px; }', '.room-tabs a { padding: 10px 5px; gap: 4px; }',
     '.sg-planned a { display: inline-block; min-height: 44px; line-height: 44px; white-space: nowrap; }']) {
     assert.ok(phone.includes(rule), rule);

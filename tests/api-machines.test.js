@@ -32,7 +32,7 @@ before(async () => {
     },
   };
   machines = createMachines({ db, client, poller });
-  server = createApp(db, { machines });
+  server = createApp(db, { login: false, machines });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -266,7 +266,7 @@ test('a room created after a delete (same id) does not inherit the old lastWrite
 });
 
 test('without a machines module the machine routes are 404', async () => {
-  const bare = createApp(db);
+  const bare = createApp(db, { login: false });
   await new Promise((resolve) => bare.listen(0, '127.0.0.1', resolve));
   try {
     const res = await fetch(`http://127.0.0.1:${bare.address().port}/api/rooms/1/machines`);

@@ -5,16 +5,17 @@
 // blocks starts a run), when the stream comes back, and on a timer (60 s; slower while the stream is up).
 
 import { request, OUTDATED, routeMissing } from './api.js';
+import { isOwner } from './session.js'; // ---- Login ----
 import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { cropShortName } from './crops.js';
 import { picture } from './pictures.js';
 import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
-import { openForm, closeTaskDialog, loadWorkers, setWorker, workerField, errorText, pickGuard } from './task-dialogs.js';
+import { openForm, closeTaskDialog, loadWorkers, workerField, errorText, pickGuard } from './task-dialogs.js';
 import {
-  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
-  BY_CROP_COLUMNS, byCropRows, runTiles, pricesNote,
+  runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, pastColumns, hasMoney, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
+  byCropColumns, byCropRows, runTiles, pricesNote,
   deleteTitle, deleteLead, whenBoxes, recordBody, editBody, recordPicks, editPicks,
 } from './harvest-math.js';
 import { batchLineFor } from './batches-math.js'; // ---- Batches ----
@@ -202,6 +203,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const emptyCard = el('section', 'card hv-part hv-empty');
   const giveCrops = el('a', 'button', 'Give it crops on the Crop tab');
   giveCrops.href = roomHash(roomId, 'crop');
+  giveCrops.dataset.ownerOnly = ''; // ---- Login ---- a worker cannot change the crops
   emptyCard.append(picture('task', 'harvestDaily', { size: 40 }), el('p', 'none', 'No crops in this room yet.'), giveCrops);
 
   for (const node of [runCard, listCard, pastCard, emptyCard]) node.hidden = true;
@@ -229,6 +231,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const actions = el('div', 'tk-actions');
     // one quiet Edit a row; Delete is in its dialog
     const edit = button('Edit', 'tk-quiet');
+    edit.dataset.ownerOnly = ''; // ---- Login ---- a harvest is changed by the owner
     edit.dataset.focusKey = `edit-${h.id}`;
     edit.setAttribute('aria-label', `Edit ${l.kg} picked ${l.when}`);
     edit.addEventListener('click', () => editHarvest(h, run, li, fallback));
@@ -238,7 +241,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function paintRun(run) {
-    runLine.replaceChildren(runHead(run), DOT, runPageLink(run, getRoom()?.name)); // ---- Runs ---- the run's page after its head
+    // ---- Runs ---- the run's page after its head (---- Login ---- a Business page: the owner's)
+    runLine.replaceChildren(runHead(run), ...(isOwner() ? [DOT, runPageLink(run, getRoom()?.name)] : []));
     // ---- Batches ----
     const line = batchLineFor(run, blocks?.runId === run.id ? blocks.reply : null);
     blocksLine.hidden = !line;
@@ -261,7 +265,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const prices = pricesNote(run.cost);
     const parts = [prices && el('p', 'muted hv-missing', prices), missingLine(run.missing)].filter(Boolean);
     if ((run.flushes ?? []).length) parts.push(flushTable(run));
-    if ((run.crops ?? []).length > 1) parts.push(table('By crop', BY_CROP_COLUMNS, byCropRows(run), 1));
+    const withMoney = hasMoney(run);
+    if ((run.crops ?? []).length > 1) parts.push(table('By crop', byCropColumns(withMoney), byCropRows(run, withMoney), 1));
     runBody.replaceChildren(...parts);
     const harvests = run.harvests ?? [];
     const shown = showAll ? harvests : harvests.slice(0, window.matchMedia?.(PHONE).matches ? SHOWN_PHONE : SHOWN);
@@ -272,8 +277,9 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   // A past run: its row (the dates a button that opens it) and the row under it with its flushes and latest harvests.
-  function pastRun(run) {
-    const row = pastRow(run);
+  function pastRun(run, money) {
+    const columns = pastColumns(money);
+    const row = pastRow(run, money);
     const tr = el('tr', 'hv-run-row');
     const name = el('th');
     name.scope = 'row';
@@ -283,18 +289,20 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     name.append(toggle);
     tr.append(name, ...row.cells.map((c, i) => {
       const td = el('td', i >= 1 ? 'num' : 'hv-run-crops', c);
-      td.dataset.label = PAST_COLUMNS[i + 1];
+      td.dataset.label = columns[i + 1];
       return td;
     }));
     const detail = el('tr', 'hv-run-detail');
     detail.id = `hv-run-${run.id}`;
     const cell = el('td');
-    cell.colSpan = PAST_COLUMNS.length;
+    cell.colSpan = columns.length;
     const body = el('div', 'hv-run-body');
     const harvests = run.harvests ?? [];
-    const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
-    page.append(runPageLink(run, getRoom()?.name));
-    body.append(page);
+    if (isOwner()) { // ---- Login ---- the run's page is a Business page: the owner's
+      const page = el('p', 'muted hv-missing'); // ---- Runs ---- the run's page first in its fold
+      page.append(runPageLink(run, getRoom()?.name));
+      body.append(page);
+    }
     const note = missingLine(run.missing);
     if (note) body.append(note);
     if ((run.flushes ?? []).length) body.append(flushTable(run));
@@ -331,10 +339,11 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   }
 
   function pastTable(past) {
+    const money = past.length ? hasMoney(past[0]) : true;
     const t = el('table', 'us-table hv-table hv-runs-table');
-    t.append(el('caption', 'sr-only', 'Past runs'), headRow(PAST_COLUMNS, 2));
+    t.append(el('caption', 'sr-only', 'Past runs'), headRow(pastColumns(money), 2));
     const body = el('tbody');
-    for (const run of past) body.append(...pastRun(run));
+    for (const run of past) body.append(...pastRun(run, money));
     t.append(body);
     return t;
   }
@@ -377,8 +386,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     try {
       const data = await request('GET', `/api/rooms/${roomId}/harvests`);
       if (!alive || me !== seq) return;
-      // ---- Batches, Costs ---- the run's blocks and profit, together
-      const [runBlocks, runProfit] = await Promise.all([readBlocks(data.current), readProfit(data.current)]);
+      // ---- Batches, Costs ---- the run's blocks and profit, together (---- Login ---- the owner's: Business)
+      const [runBlocks, runProfit] = await Promise.all([isOwner() ? readBlocks(data.current) : null, isOwner() ? readProfit(data.current) : null]);
       if (!alive || me !== seq) return;
       view = data;
       blocks = runBlocks;
@@ -494,7 +503,6 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
         if (body.error) return { field: body.field, message: body.error };
         const asked = implausible(form, recordPicks(body, run));
         if (asked) return asked;
-        setWorker(body.worker); // kept for the next Done, as the Done dialog does
         return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));
       },
     });

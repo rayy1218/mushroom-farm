@@ -16,7 +16,7 @@ async function app(t) {
   const events = createEvents();
   const seen = [];
   events.subscribe((type, data) => seen.push([type, data]));
-  const server = createApp(db, { tasks: createTasks({ db }), events });
+  const server = createApp(db, { login: false, tasks: createTasks({ db }), events });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -142,7 +142,7 @@ test('making blocks: recipes, Make blocks, the steps through PUT, loads, the sto
 
 test('GET /api/batches/stock-items with Inventory lists its items with their latest price, without the archived and the blocks', async (t) => {
   const inv = openWithInventory(t);
-  const server = createApp(inv.db, { tasks: createTasks({ db: inv.db }), events: createEvents() });
+  const server = createApp(inv.db, { login: false, tasks: createTasks({ db: inv.db }), events: createEvents() });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(() => new Promise((r) => server.close(r)));
   const sawdust = inv.item('Sawdust');

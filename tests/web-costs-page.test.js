@@ -91,7 +91,7 @@ test('styles: Profit in Display, the two columns from 900 px, the lists by their
 // ---- the Business audit, 2026-11-05 ----
 test('the head: Loading… until the first answer (not a blank), and Export CSV of the month on show', () => {
   assert.ok(page.includes('<span class="co-month-name" data-month aria-live="polite">Loading…</span>'));
-  assert.ok(page.includes('<a class="button" data-csv href="/api/costs.csv" download>Export CSV</a>'));
+  assert.ok(page.includes("<a class=\"button\" data-csv href='/api/costs.csv' download>Export CSV</a>")); // (a route never in double quotes: the worker sweep, web-roles)
   assert.ok(page.includes('els.csv.href = `/api/costs.csv?month=${m}`;'));
   assert.ok(!/\.co-tools > \.primary \{/.test(costsCss), "the head buttons' height is the Business pages' (bz), not the module's");
 });

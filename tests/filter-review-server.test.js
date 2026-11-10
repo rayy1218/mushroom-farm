@@ -39,7 +39,7 @@ test('a Filter changed during another room\'s sends is not undone: the room is r
 
 async function app(t) {
   const db = openDb(':memory:');
-  const server = createApp(db, {});
+  const server = createApp(db, { login: false });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

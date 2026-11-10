@@ -11,6 +11,7 @@ import { roomUsage, farmUsage } from './usage.js';
 import { bucketUsage } from './usage-buckets.js';
 import { changeFilter, lastCounted } from './filter.js';
 import { createCropApi } from './crop-api.js';
+import { createAccountRoutes } from './accounts-api.js'; // ---- Login ----
 import { createSimulationRoutes } from './simulation-api.js';
 import { createTaskRoutes } from './tasks-api.js';
 import { createTasks } from './tasks.js';
@@ -27,7 +28,7 @@ import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 
 const MAX_BODY = 64 * 1024;
 
-class HttpError extends Error {
+export class HttpError extends Error {
   constructor(status, message, field) {
     super(message);
     this.status = status;
@@ -35,12 +36,12 @@ class HttpError extends Error {
   }
 }
 
-function send(res, status, data) {
+export function send(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data));
 }
 
-async function readJson(req) {
+export async function readJson(req) {
   if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) throw new HttpError(415, 'Content-Type must be application/json');
   const chunks = [];
   let size = 0;
@@ -49,11 +50,16 @@ async function readJson(req) {
     if (size > MAX_BODY) throw new HttpError(413, 'Body is too large');
     chunks.push(chunk);
   }
+  let body;
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     throw new HttpError(400, 'Body must be valid JSON');
   }
+  // ---- Login ---- a worker is recorded as themselves (spec 2026-11-06-login-design.md 4): every write a worker may make
+  // takes who did it as `worker`, which is the signed-in name whatever the body says. (An owner's body is as sent.)
+  if (req.who?.role === 'worker' && body !== null && typeof body === 'object' && !Array.isArray(body)) body.worker = req.who.name;
+  return body;
 }
 
 const ADDRESS_FIELDS = ['trhAddress', 'co2Address', 'relayAddress', 'acAddress', 'meterAddress', 'dpAddress'];
@@ -75,7 +81,7 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once. farmGateway: the farm's gateway text (FARM_GATEWAY). tasks: from createTasks.
 export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null,
-  farmGateway = DEFAULT_GATEWAY, tasks = null) {
+  farmGateway = DEFAULT_GATEWAY, tasks = null, { onUnlock } = {}) {
   const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The tasks (spec 2026-10-30-tasks-design.md): main.js passes the one the controller also uses; tests may leave it out.
@@ -129,6 +135,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   }
 
   const crop = createCropApi({ db });
+  const accountRoutes = createAccountRoutes({ db, onUnlock }); // ---- Login ---- (spec 2026-11-06-login-design.md 5)
 
   const settingsReply = () => ({ ...settingsView(db, telegram?.status()), farmGateway }); // the farm's gateway: read only
 
@@ -138,6 +145,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   };
 
   async function route(req, res, path, url) {
+    if (await accountRoutes(req, res, path, { send, readJson, HttpError })) return; // ---- Login ----
     if (simulationRoutes && await simulationRoutes(req, res, path, { send, readJson, HttpError })) return;
     if (await taskRoutes(req, res, path, { send, readJson, HttpError, url })) return;
     if (await harvestRoutes(req, res, path, { send, readJson, HttpError, url })) return;

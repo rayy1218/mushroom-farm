@@ -14,7 +14,7 @@ let db, sims, server, base, jobs;
 before(async () => {
   db = openDb(':memory:');
   sims = createSimulations({ db, spawn: (job, handlers) => { const j = { job, handlers, stopped: false }; jobs.push(j); return { stop() { j.stopped = true; } }; } });
-  server = createApp(db, { simulations: sims });
+  server = createApp(db, { login: false, simulations: sims });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });

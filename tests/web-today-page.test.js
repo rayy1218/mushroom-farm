@@ -39,12 +39,11 @@ test("on its way to #/today the top bar leaves the count to the page's own load,
 
 test('the stream gone before the first answer: the page still switches to the 30 s timer (not on a farm app without tasks)', () => {
   assert.ok(page.includes('else if (!outdated) { clearTimeout(timer); timer = setTimeout(load, REFRESH_MS); }'));
-  assert.ok(page.includes('if (routeMissing(err)) { outdated = true; picker.node.hidden = true; return; }'));
+  assert.ok(page.includes('if (routeMissing(err)) { outdated = true; return; }'));
 });
 
-test("the page: who is doing the rounds, each room's open rows by slot and its overdue upkeep, then the long-term lines", () => {
+test("the page: each room's open rows by slot and its overdue upkeep, then the long-term lines", () => {
   assert.ok(page.includes("request('GET', '/api/tasks/today')"));
-  assert.ok(page.includes("q('[data-picker]').append(picker.node);"));
   assert.ok(page.includes('slotPart(g, actions, { openFolds, foldKey: `${r.id}:${g.slot}`, crop: crop.crop })'));
   assert.ok(page.includes('const crop = cropLine(r.crop);'), 'the crop line and picture under the room name (spec 2026-11-03-pictures-design.md 3)');
   assert.ok(page.includes('upkeepRows(r.upkeepDue, view.date)'));
@@ -53,7 +52,7 @@ test("the page: who is doing the rounds, each room's open rows by slot and its o
   assert.ok(page.includes("document.title = 'Today · Mushroom farm';"));
   assert.ok(page.includes("live.on('tasks', () => reload.call())"));
   const unmount = page.slice(page.indexOf('return function unmount()'));
-  for (const x of ['reload.cancel();', 'actions.destroy();', 'picker.destroy();', 'clearTimeout(timer);']) assert.ok(unmount.includes(x), x);
+  for (const x of ['reload.cancel();', 'actions.destroy();', 'clearTimeout(timer);']) assert.ok(unmount.includes(x), x);
 });
 
 test('a Done or Skip repaints the page even when the next answer reads the same (the tapped row lets go), through the throttle', () => {

@@ -12,7 +12,7 @@ const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
 async function app(t, { controller = null } = {}) {
   const db = openDb(':memory:');
-  const server = createApp(db, { controller });
+  const server = createApp(db, { login: false, controller });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

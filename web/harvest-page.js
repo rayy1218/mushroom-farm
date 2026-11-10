@@ -13,8 +13,8 @@ import { mainCrop } from './room-card-math.js';
 import { sheetWithSales, sheetTotals } from './sales-math.js'; // Sales: the sheet's sale rows (spec 2026-11-05-sales-design.md 6)
 import { picture, emptyPicture } from './pictures.js';
 import {
-  pageTiles, pricesNote, harvestBars, barTip, harvestTicks, rangeText, emptyText, periodWords, roomRows, ROOM_COLUMNS, cropRows,
-  CROP_COLUMNS, chartTitle, chartLabel, SHEET_TITLE, SHEET_COLUMNS,
+  pageTiles, pricesNote, harvestBars, barTip, harvestTicks, rangeText, emptyText, periodWords, roomRows, roomColumns, cropRows,
+  cropColumns, hasMoney, chartTitle, chartLabel, SHEET_TITLE, SHEET_COLUMNS,
 } from './harvest-math.js';
 
 const REFRESH_MS = 60_000;
@@ -28,8 +28,8 @@ const TEMPLATE = `
     </div>
     <div class="hv-tools">
       <div class="range-bar" role="group" aria-label="Period" data-range></div>
-      <a class="button" data-csv download>Export CSV</a>
-      <a class="button" data-sheet>myGAP sheet</a>
+      <a class="button" data-csv download data-owner-only>Export CSV</a>
+      <a class="button" data-sheet data-owner-only>myGAP sheet</a>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -199,11 +199,12 @@ export function mount(container, { days = 30 } = {}) {
     };
     if (chart) chart.update(opts);
     else chart = drawTimeBars(els.chart, opts);
-    const rooms = roomRows(farm);
-    const groups = [{ label: '', span: 1 }, { label: `Last ${periodWords(farm.days)}`, span: 2 }, { label: 'This run', span: 2, className: 'hv-run-col' }];
-    els.rooms.replaceChildren(el('h2', '', 'By room'), table('By room', ROOM_COLUMNS, rooms, roomHead, { groups, runFrom: 3 }));
+    const money = hasMoney(farm.totals);
+    const rooms = roomRows(farm, money);
+    const groups = [{ label: '', span: 1 }, { label: `Last ${periodWords(farm.days)}`, span: money ? 2 : 1 }, { label: 'This run', span: 2, className: 'hv-run-col' }];
+    els.rooms.replaceChildren(el('h2', '', 'By room'), table('By room', roomColumns(money), rooms, roomHead, { groups, runFrom: money ? 3 : 2 }));
     els.crops.replaceChildren(el('h2', '', 'By crop'),
-      table('By crop', CROP_COLUMNS, cropRows(farm), (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)]));
+      table('By crop', cropColumns(money), cropRows(farm, money), (c) => [picture('crop', c.crop, { size: 24 }), el('span', '', c.name)]));
   }
 
   async function load() {

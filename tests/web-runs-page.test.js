@@ -86,7 +86,8 @@ test('the styles: one .rn- block, tokens only', () => {
 
 test('the links in: Harvest\'s This run and past runs, Costs\' run breakdown, Batches\' room heads open the run page', () => {
   const card = src('harvest-card.js');
-  assert.ok(card.includes("runLine.replaceChildren(runHead(run), DOT, runPageLink(run, getRoom()?.name)); // ---- Runs ----"));
+  // (Login: an owner's only, a Business page)
+  assert.ok(card.includes("runLine.replaceChildren(runHead(run), ...(isOwner() ? [DOT, runPageLink(run, getRoom()?.name)] : []));"));
   assert.ok(card.includes('page.append(runPageLink(run, getRoom()?.name));'));
   assert.ok(card.includes("const a = el('a', 'co-link', 'Run page');"), 'the Business link look (.rn-run-link merged into .co-link)');
   assert.ok(card.includes("a.setAttribute('aria-label', runPageLabel({ ...run, roomName }));"), 'a name per run');

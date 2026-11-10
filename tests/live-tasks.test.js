@@ -21,7 +21,7 @@ async function app(t) {
   const events = createEvents();
   const now = Date.now();
   const tasks = createTasks({ db, now: () => now });
-  const server = createApp(db, { events, tasks });
+  const server = createApp(db, { login: false, events, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -101,7 +101,7 @@ test('a closed server no longer publishes the changes of the tasks it was given'
   t.after(() => db.close()); // closed even when an assertion fails
   const events = createEvents();
   const tasks = createTasks({ db });
-  const server = createApp(db, { events, tasks });
+  const server = createApp(db, { login: false, events, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   await new Promise((r) => server.close(r));
   const got = [];
@@ -116,7 +116,7 @@ test('a closed server no longer publishes a Done that made harvests', async (t) 
   const events = createEvents();
   const now = Date.now();
   const tasks = createTasks({ db, now: () => now });
-  const server = createApp(db, { events, tasks });
+  const server = createApp(db, { login: false, events, tasks });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const id = db.createRoom(ROOM).id;
   createCropApi({ db, now: () => now }).put(id, { crops: [{ crop: 'oyster', blocks: 100 }] });

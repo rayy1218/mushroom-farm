@@ -44,7 +44,7 @@ test('This run: the notes right under the tiles; Past runs a table whose rows op
   assert.ok(card.indexOf('missingLine(run.missing)].filter(Boolean)') < card.indexOf('parts.push(flushTable(run))'));
   assert.ok(card.includes("const toggle = button(row.title, 'hv-run-toggle');"));
   assert.ok(card.includes("toggle.setAttribute('aria-expanded', String(open));"));
-  assert.ok(card.includes('cell.colSpan = PAST_COLUMNS.length;'));
+  assert.ok(card.includes('cell.colSpan = columns.length;'));
   assert.ok(card.includes('const SHOWN_PAST = 8;'));
   assert.match(css, /\.hv-run-body \{ padding-left: 12px; border-left: 2px solid var\(--border\); \}/);
 });
@@ -163,7 +163,7 @@ test("This run: the run's batches read with its harvests under the same token, a
   assert.ok(card.includes("import { batchLineFor } from './batches-math.js';"));
   assert.ok(card.includes("return { runId: run.id, reply: await request('GET', `/api/batches?run=${run.id}`) };"));
   const load = card.slice(card.indexOf('async function refresh() {'), card.indexOf('// ---- Batches ---- the current run'));
-  assert.match(load, /const \[runBlocks, runProfit\] = await Promise\.all\(\[readBlocks\(data\.current\), readProfit\(data\.current\)\]\);\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*profit = runProfit;\n\s*paint\(\);/,
+  assert.match(load, /const \[runBlocks, runProfit\] = await Promise\.all\(\[isOwner\(\) \? readBlocks\(data\.current\) : null, isOwner\(\) \? readProfit\(data\.current\) : null\]\);\n\s*if \(!alive \|\| me !== seq\) return;\n\s*view = data;\n\s*blocks = runBlocks;\n\s*profit = runProfit;\n\s*paint\(\);/,
     'a stale answer is dropped before anything changes');
   assert.ok(card.includes('return blocks?.runId === run.id ? blocks : null;'), 'a failed read keeps the same run\'s line');
   assert.ok(card.includes('const key = JSON.stringify([view, showAll, [...allOf], blocks, profit]);'), 'a new answer repaints');

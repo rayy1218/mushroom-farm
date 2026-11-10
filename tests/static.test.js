@@ -22,7 +22,7 @@ before(async () => {
   mkdirSync(join(dir, 'sub'));
   writeFileSync(join(dir, 'sub', 'x.js'), 'export {};');
   db = openDb(':memory:');
-  server = createApp(db, { webDir: dir });
+  server = createApp(db, { login: false, webDir: dir });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = server.address().port;
 });
@@ -95,7 +95,7 @@ test('other methods, missing files, other types, subfolders and .. give 404', as
 });
 
 test('the real web folder is the default', async (t) => {
-  const real = createApp(db);
+  const real = createApp(db, { login: false });
   await new Promise((resolve) => real.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve) => real.close(resolve)));
   const res = await fetch(`http://127.0.0.1:${real.address().port}/`);

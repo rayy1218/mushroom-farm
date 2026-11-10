@@ -19,7 +19,7 @@ test('the top bar: the farm\'s name, then Overview and Settings as links, the al
   const bar = html.slice(html.indexOf('<header class="topbar">'), html.indexOf('</header>'));
   assert.match(bar, /<a class="brand brand-top" href="#\/overview"/);
   assert.match(bar, /<a class="top-link" href="#\/overview" data-nav="overview" aria-label="Overview">/, "its word hides on a phone, so the link keeps its name (critique 2026-10-29c)");
-  assert.match(bar, /<a class="top-link" href="#\/settings" data-nav="settings" aria-label="Settings">/);
+  assert.match(bar, /<a class="top-link" href="#\/settings" data-nav="settings" aria-label="Settings" data-owner-only>/);
   assert.match(bar, /<a class="top-alarm" href="#\/overview" data-alarm-button hidden><svg[^]*<span data-badge><\/span><\/a>/);
   assert.ok(bar.indexOf('data-nav="overview"') < bar.indexOf('data-nav="settings"'), 'Overview before Settings');
   assert.equal((html.match(/data-badge/g) ?? []).length, 1);
@@ -27,7 +27,7 @@ test('the top bar: the farm\'s name, then Overview and Settings as links, the al
 
 test('the Overview holds every room and Add room (the Rooms list is folded into it)', () => {
   const overview = readFileSync(new URL('../web/overview.js', import.meta.url), 'utf8');
-  assert.match(overview, /<button type="button" data-add>Add room<\/button>/);
+  assert.match(overview, /<button type="button" data-add data-owner-only>Add room<\/button>/);
   assert.match(overview, /<div class="ov-section-head">\n\s*<h2>Rooms<\/h2>\n\s*<span class="card-note">Traces: the last 24 hours<\/span>\n\s*<\/div>\n\s*<div class="ov-rooms" data-rooms><\/div>/);
   assert.match(overview, /openRoomDialog\(\{ onSaved: \(room\) => \{ location\.hash = roomHash\(room\.id, 'setup'\); \} \}\)/, 'a new room opens on its Setup');
 });
@@ -37,7 +37,7 @@ test("the page says it couldn't load when its modules never ran (a blank page un
   const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
   const app = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
   assert.match(html, /<div class="load-fail" id="load-fail" role="alert" hidden>/);
-  assert.match(html, /setTimeout\(function\(\)\{if\(window\.farmReady\)return;/);
+  assert.match(html, /setTimeout\(function\(\)\{if\(window\.farmReady\|\|window\.farmBooting\)return;/);
   assert.match(app, /window\.farmReady = true;/);
 });
 

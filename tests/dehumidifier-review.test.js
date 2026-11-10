@@ -22,7 +22,7 @@ async function app(t) {
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, client, poller });
   const controller = createController({ db, machines });
-  const server = createApp(db, { machines, controller });
+  const server = createApp(db, { login: false, machines, controller });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -128,7 +128,7 @@ test('upgrade 11 to 14 rebuilds the machine log with its rows and ids, keeps its
   t.after(() => db.close());
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 25);
   assert.deepEqual(check.prepare('SELECT * FROM machine_log ORDER BY id').all().map((r) => ({ ...r })), rows.filter((r) => r.machine !== 'dehumidifier').map((r) => ({ ...r })));
   assert.ok(check.prepare("SELECT 1 FROM sqlite_master WHERE name = 'machine_log_by_room'").get(), 'index kept');
   db.updateRoom(id, { ...ROOM, dehumidifier: true });

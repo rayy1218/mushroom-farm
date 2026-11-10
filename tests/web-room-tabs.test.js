@@ -14,7 +14,7 @@ const template = page.slice(page.indexOf('const TEMPLATE'), page.indexOf('`;', p
 // 2026-10-30).
 const PANELS = {
   now: ['data-readings', 'data-picture', 'data-now-side', 'data-mode', 'data-machine-list', 'data-machines', 'data-crop-sum'],
-  history: ['data-range', 'data-charts', 'data-usage-charts', 'data-usage>', 'data-timeline'], // the by-day card with the range's energy and water (critique 2026-10-28)
+  history: ['data-range', 'data-charts', 'data-usage-charts', 'data-usage data-owner-only>', 'data-timeline'], // the by-day card with the range's energy and water (critique 2026-10-28)
   crop: ['data-crop'],
   tasks: ['data-tasks'],
   harvest: ['data-harvest'],
@@ -57,7 +57,7 @@ test('the Now tab: the readings first; on a narrow screen one column in the orde
 });
 
 test('the tab bar links each tab by its address and marks the current one', () => {
-  assert.match(page, /import \{ ROOM_TABS, roomHash, tasksHash \} from '\.\/route\.js';/);
+  assert.match(page, /import \{ ROOM_TABS, OWNER_TABS, roomHash, tasksHash \} from '\.\/route\.js';/);
   assert.match(page, /a\.href = roomHash\(id, t\.key\)/);
   assert.match(page, /setAttribute\('aria-current', 'page'\)/);
   assert.match(page, /panel\.hidden = panel\.dataset\.panel !== tab/);

@@ -38,6 +38,7 @@ function alarmItem(a, { withAck, readings = null }) {
   if (withAck && a.ackedAt == null) {
     const b = el('button', 'al-ack', 'Acknowledge');
     b.type = 'button';
+    b.dataset.ownerOnly = ''; // ---- Login ---- a worker reads the alarms; the owner acknowledges them
     b.dataset.ack = a.id;
     b.setAttribute('aria-label', ackLabel(a));
     li.append(b);
@@ -53,6 +54,7 @@ export function createAlarmsCard(host, { roomId, onChange, onOffline }) {
   head.append(el('h2', '', 'Alarms'));
   const ackAll = el('button', '', 'Acknowledge all');
   ackAll.type = 'button';
+  ackAll.dataset.ownerOnly = ''; // ---- Login ----
   head.append(ackAll);
   const list = el('ul', 'al-list');
   const err = el('p', 'm-error');

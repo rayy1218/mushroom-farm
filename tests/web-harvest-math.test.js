@@ -60,7 +60,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 // ---- Task 9: the Harvest room tab ----
 
 import { flushSplits, flushPerCrop } from '../web/harvest-math.js';
-import { recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { hasMoney, recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, pastColumns, byCropColumns, roomColumns, cropColumns, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -453,4 +453,39 @@ test('the picks of a Done body: a harvest check\'s kg with the run\'s blocks of 
   assert.deepEqual(donePicks({ harvestCrops: null, unit: 'bags' }, { worker: 'Ali', amount: 40 }), [], 'not a harvest check');
   assert.deepEqual(donePicks({ harvestCrops: [{ crop: 'oyster', name: 'Grey oyster' }] }, { worker: 'Ali', amount: 4 }), [{ field: 'amount', kg: 4, blocks: undefined }],
     'a server without the blocks: no check (pickCheck takes no blocks as unknown)');
+});
+
+test("a worker's run and farm (no money in the reply): no value or energy tiles, no money columns", () => {
+  const run = { kg: 10, perBlock: 0.1, be: 0.5, crops: [{ crop: 'oyster', blocks: 100 }], byCrop: [{ crop: 'oyster', blocks: 100, kg: 10, perBlock: 0.1, be: 0.5 }], startedAt: Date.UTC(2026, 9, 1), endedAt: Date.UTC(2026, 9, 20) };
+  assert.deepEqual(runTiles(run).map((x) => x.label), ['kg', 'kg per block', 'BE']);
+  assert.deepEqual(runTiles({ ...run, value: 100, cost: null }).map((x) => x.label), ['kg', 'kg per block', 'BE', 'Expected value', 'Energy per kg']);
+  assert.deepEqual(pastColumns(false), ['Dates', 'Crops', 'kg', 'kg per block', 'BE']);
+  assert.equal(pastRow(run, false).cells.length, 4);
+  assert.deepEqual(byCropColumns(false), ['Crop', 'Blocks', 'kg', 'kg per block', 'BE']);
+  assert.equal(byCropRows(run, false)[0].length, 5);
+  const farm = { totals: { kg: 10 }, rooms: [{ id: 1, name: 'Room 1', kg: 10, current: null }], crops: [{ crop: 'oyster', kg: 10 }] };
+  assert.deepEqual(pageTiles(farm).map((x) => x.label), ['kg']);
+  assert.deepEqual(roomColumns(false), ['Room', 'kg', 'kg per block', 'BE']);
+  assert.equal(roomRows(farm, false)[0].cells.length, 3);
+  assert.deepEqual(cropColumns(false), ['Crop', 'kg']);
+  assert.equal(cropRows(farm, false)[0].cells.length, 1);
+});
+
+test('hasMoney: a reply with a value key (even null) has money; anything else does not', () => {
+  assert.equal(hasMoney({ value: null }), true);
+  assert.equal(hasMoney({ value: 12 }), true);
+  assert.equal(hasMoney({}), false);
+  assert.equal(hasMoney(null), false);
+  assert.equal(hasMoney(undefined), false);
+  assert.equal(hasMoney(5), false);
+});
+
+test("a worker-shaped farm: the Overview tile has no line or note, no notes, no 'without'", () => {
+  const farm = { today: { kg: 1 }, last7: { kg: 2 }, last30: { kg: 3 }, rooms: [{ id: 1, name: 'Room 1', kg: 3, crops: ['oyster'], current: null }] };
+  const thirty = overviewTiles(farm).tiles[2];
+  assert.equal(thirty.line, null);
+  assert.equal(thirty.note, null);
+  assert.equal(pricesNote(undefined), null);
+  assert.equal(missingNote(undefined), null);
+  assert.equal(roomRows(farm, false)[0].without, null);
 });

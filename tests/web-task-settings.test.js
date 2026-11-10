@@ -104,3 +104,28 @@ test('C9 re-review minor: an own rule whose id the server no longer knows (remov
   const branch = cards.slice(cards.indexOf('/^custom\\.\\d+\\.id$/'));
   assert.ok(branch.slice(0, branch.indexOf('} else {')).includes('r.error.textContent = RULES_CHANGED;\n        await reloadRules();'));
 });
+
+// Review of Task 11 (spec 2026-11-06-login-design.md 5): the accounts beside the names; the secret dialog's refusals.
+test("Workers: the accounts are read with the names, again after each change, and an older reply that comes last is dropped", () => {
+  assert.ok(cards.includes("request('GET', '/api/workers'), request('GET', '/api/task-rules'), request('GET', '/api/rooms'), loadAccounts(),"));
+  assert.ok(cards.includes("const data = await request('GET', '/api/workers/accounts');"));
+  assert.ok(cards.includes('if (alive && mine === accountsSeq) accounts = new Map('));
+  assert.ok(cards.includes('await loadAccounts(); // a new name has no PIN yet; a removed one is signed out'));
+});
+
+test('Workers: the secret dialog keeps a 400 under its box; the role changed meanwhile (409) leaves only Cancel; the page closes it', () => {
+  const submit = cards.slice(cards.indexOf("await request('POST', `/api/workers/${x.id}/secret`, { secret }, COMMAND_TIMEOUT);"));
+  assert.match(submit, /^[^]*?if \(err\.status === 400\) return \{ field: 'secret', message: err\.message \};\s*if \(err\.status === 409\) \{[^]*?return \{ message: err\.message, final: true \};/);
+  assert.ok(cards.includes("box.autocomplete = action.kind === 'pin' ? 'off' : 'new-password';"));
+  assert.ok(cards.slice(cards.indexOf('return function unmount()')).includes('if (secretForm?.alive()) closeTaskDialog();'));
+});
+
+test("Workers: the row's buttons are accountActions'; no Remove on your own row; an owner's Remove and every confirm wait for a change on its way", () => {
+  assert.ok(cards.includes('accountActions(account, { self, otherOwner: otherOwnerCanSignIn([...accounts.values()], x.id), now: Date.now() })'));
+  assert.ok(cards.includes('if (!self) actions.append(remove);'));
+  assert.ok(cards.includes('const ask = removeConfirm(x.name, account);'));
+  const confirm = cards.slice(cards.indexOf('async function confirmFirst(ask, key) {'));
+  assert.match(confirm, /^async function confirmFirst\(ask, key\) \{\s*if \(workersBusy\) \{ w\.error\.textContent = STILL_SAVING; return false; \}/);
+  assert.ok(cards.includes('if (err.status === 400 && onField && isNameField(err.field)) onField(err.message);'));
+  assert.ok(cards.includes('if (x.id === me()?.id) renamedMe(p.value);'));
+});

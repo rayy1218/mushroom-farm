@@ -31,9 +31,9 @@ const TEMPLATE = `
     </div>
     <div class="iv-tools" data-tools hidden>
       <button type="button" class="primary" data-use>Record use</button>
-      <button type="button" data-purchase>Purchase</button>
-      <button type="button" data-edit>Edit</button>
-      <button type="button" data-archive>Archive</button>
+      <button type="button" data-purchase data-owner-only>Purchase</button>
+      <button type="button" data-edit data-owner-only>Edit</button>
+      <button type="button" data-archive data-owner-only>Archive</button>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -49,7 +49,7 @@ const TEMPLATE = `
       <h2 id="iv-lots-title">Lots</h2>
       <div class="us-table-wrap"><table class="us-table iv-lot-table">
         <caption class="sr-only">Lots</caption>
-        <thead><tr><th scope="col">From</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Left</th><th scope="col">Use by</th><th scope="col"><span class="sr-only">Action</span></th></tr></thead>
+        <thead><tr><th scope="col">From</th><th scope="col" class="num">Qty</th><th scope="col" class="num">Left</th><th scope="col">Use by</th><th scope="col" data-owner-only><span class="sr-only">Action</span></th></tr></thead>
         <tbody data-lots></tbody>
       </table></div>
     </section>
@@ -179,6 +179,7 @@ export function mount(container, { id }) {
       if (lp) useBy.append(pillNode(lp));
       else useBy.textContent = lot.useBy ? dayNear(lot.useBy, today) : '—';
       const action = el('td', 'iv-lot-action');
+      action.dataset.ownerOnly = ''; // ---- Login ---- Throw out is the owner's: a worker's table has no Action column
       if (lot.state) {
         const b = el('button', 'danger-text', 'Throw out');
         b.type = 'button';
@@ -205,6 +206,7 @@ export function mount(container, { id }) {
       } else {
         const b = el('button', 'iv-link bz-quiet iv-move-edit', line.edit === 'edit' ? 'Edit' : 'Delete');
         b.type = 'button';
+        b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner
         const throwOuts = it.moves.some((x) => x.lotId === m.id);
         b.addEventListener('click', () => (line.edit === 'edit'
           ? openMoveDialog({ move: m, item: it, suppliers: it.suppliers, reasons: it.reasons, throwOuts, onDone: done, onLost: showError, alive })

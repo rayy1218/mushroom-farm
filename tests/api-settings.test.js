@@ -16,7 +16,7 @@ const intervals = [];
 
 before(async () => {
   db = openDb(':memory:');
-  server = createApp(db, { poller: { setIntervalMs: (ms) => intervals.push(ms) } });
+  server = createApp(db, { login: false, poller: { setIntervalMs: (ms) => intervals.push(ms) } });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -37,7 +37,7 @@ const put = (body, headers = { 'content-type': 'application/json' }) =>
 // An app on a fresh database, without a poller.
 async function bareApp(t) {
   const fresh = openDb(':memory:');
-  const app = createApp(fresh);
+  const app = createApp(fresh, { login: false });
   await new Promise((resolve) => app.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
     await new Promise((resolve) => app.close(resolve));

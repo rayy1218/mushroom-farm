@@ -23,10 +23,10 @@ const TEMPLATE = `
     </div>
     <div class="iv-tools">
       <button type="button" class="primary" data-use disabled>Record use</button>
-      <button type="button" data-purchase disabled>Purchase</button>
+      <button type="button" data-purchase disabled data-owner-only>Purchase</button>
       <a class="button" data-count>Count stock</a>
-      <button type="button" data-add>Add item</button>
-      <a class="iv-sheet-link" data-sheet>myGAP 4-5 sheet</a>
+      <button type="button" data-add data-owner-only>Add item</button>
+      <a class="iv-sheet-link" data-sheet data-owner-only>myGAP 4-5 sheet</a>
     </div>
   </div>
   <div class="banner" role="alert" hidden>
@@ -41,7 +41,7 @@ const TEMPLATE = `
   <p class="none iv-all-archived" data-all-archived hidden>Every item is archived.</p>
   <section class="card iv-empty" data-empty hidden>
     <p class="none">No stock items yet.</p>
-    <button type="button" class="primary" data-add-empty>Add item</button>
+    <button type="button" class="primary" data-add-empty data-owner-only>Add item</button>
   </section>
   <p class="iv-archived" data-archived-line hidden><button type="button" class="iv-link" data-archived></button> <span class="muted" data-archived-said role="status"></span></p>
   </div>`;

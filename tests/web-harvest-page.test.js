@@ -30,7 +30,7 @@ test('the page: the period in the address, Export CSV and the myGAP sheet follow
   assert.ok(page.includes("history.replaceState(null, '', canonicalHash({ name: 'harvest', days: n }));"));
   assert.ok(page.includes('els.csv.href = `/api/harvest.csv?days=${period}`;'));
   assert.ok(page.includes('els.sheet.href = sheetHash(period);'));
-  assert.ok(page.includes('<a class="button" data-csv download>Export CSV</a>'));
+  assert.ok(page.includes('<a class="button" data-csv download data-owner-only>Export CSV</a>'));
   assert.ok(page.includes("color: 'var(--s-harvest)'"));
   assert.ok(page.includes("request('GET', `/api/harvest?days=${period}`)"));
 });
@@ -91,7 +91,7 @@ test("the Overview's Harvest card names the crops its expected value leaves out"
 });
 
 test('By room: the names on one line, the period over kg and RM and This run over the run\'s columns; a phone puts the run under the name (audit #7)', () => {
-  assert.ok(page.includes("{ label: `Last ${periodWords(farm.days)}`, span: 2 }, { label: 'This run', span: 2, className: 'hv-run-col' }"));
+  assert.ok(page.includes("{ label: `Last ${periodWords(farm.days)}`, span: money ? 2 : 1 }, { label: 'This run', span: 2, className: 'hv-run-col' }"));
   assert.ok(page.includes("if (r.run) th.append(el('span', 'hv-run-words', r.run));"));
   assert.match(css, /\.hv-farm-table \.hv-name \{[^}]*white-space: nowrap;/);
   assert.match(css, /@media \(max-width: 600px\) \{\n  \.hv-farm-table \.hv-run-col \{ display: none; \}/);

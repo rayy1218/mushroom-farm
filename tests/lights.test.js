@@ -378,7 +378,7 @@ test('upgrade 15 to 16: the light columns with their defaults, the machine log r
   t.after(() => db.close());
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 25);
   assert.deepEqual(check.prepare('SELECT * FROM machine_log ORDER BY id').all().map((r) => ({ ...r })), rows);
   assert.ok(check.prepare("SELECT 1 FROM sqlite_master WHERE name = 'machine_log_by_room'").get(), 'index kept');
   const room = db.getRoom(id);
@@ -407,7 +407,7 @@ test('upgrade 15 to 16: running it on an already upgraded file (or again) is har
   db.logMachine(id, 'lights', { on: true }, 'auto', 300);
   const check = new DatabaseSync(path, { readOnly: true });
   t.after(() => check.close());
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 24);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 25);
   assert.equal(check.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name LIKE 'machine_log%'").get().n, 2);
 });
 
@@ -419,7 +419,7 @@ test('API: lights fitted and power through the room routes; running lights taken
   const client = { async writeCoil(...a) { writes.push(a); }, async writeRegisters() {} };
   const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
   const machines = createMachines({ db, client, poller });
-  const server = createApp(db, { machines });
+  const server = createApp(db, { login: false, machines });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise((resolve) => server.close(resolve)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;

@@ -143,16 +143,22 @@ export function harvestLine(h, { mixed = false } = {}) {
   return { when: whenText(h.pickedAt), what, kg: kgText(h.kg, { exact: true }), who: h.worker ?? '', from: h.taskId ? 'from the harvest check' : '' };
 }
 
-// The Past runs table: a row per run, its dates first (the row's name, opening the run), then PAST_COLUMNS' figures.
-export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Energy per kg'];
+// ---- Login ---- whether a reply carries the money: a worker's leaves value out (spec 2026-11-06-login-design.md 4)
+export const hasMoney = (figures) => figures !== null && typeof figures === 'object' && 'value' in figures;
+const MONEY_COLUMNS = new Set(['Expected value', 'Energy per kg']);
+const columnsFor = (columns, money) => (money ? columns : columns.filter((c) => !MONEY_COLUMNS.has(c)));
 
-// A past run: { title: its dates, cells: the crops and blocks, kg, kg per block, BE, RM, cost per kg (a dash when unknown) }.
-export function pastRow(run) {
+// The Past runs table: a row per run, its dates first (the row's name, opening the run), then pastColumns(money)' figures.
+export const PAST_COLUMNS = ['Dates', 'Crops', 'kg', 'kg per block', 'BE', 'Expected value', 'Energy per kg'];
+export const pastColumns = (money = true) => columnsFor(PAST_COLUMNS, money);
+
+// A past run: { title: its dates, cells: the crops and blocks, kg, kg per block, BE, and with money the RM and cost per kg (a dash when unknown) }.
+export function pastRow(run, money = true) {
   const dates = dayRange(run.startedAt, run.endedAt ?? run.startedAt);
   return {
     title: run.partial ? `Recorded ${dates}` : dates,
     cells: [cropBlocks(run.crops).join(', '), kgText(run.kg), perBlockText(run.perBlock, { cell: true }), beText(run.be, { cell: true }),
-      rmText(run.value), costKgText(run.cost?.costPerKg)],
+      ...(money ? [rmText(run.value), costKgText(run.cost?.costPerKg)] : [])],
   };
 }
 
@@ -191,20 +197,22 @@ export function flushRows(run) {
   ]);
 }
 export const BY_CROP_COLUMNS = ['Crop', 'Blocks', 'kg', 'kg per block', 'BE', 'Expected value'];
+export const byCropColumns = (money = true) => columnsFor(BY_CROP_COLUMNS, money);
 
-// The By crop table of a mixed room, in BY_CROP_COLUMNS' order.
-export const byCropRows = (run) => (run.byCrop ?? []).map((c) => [
-  cropName(c.crop), blocksText(c.blocks), kgText(c.kg), perBlockText(c.perBlock, { cell: true }), beText(c.be, { cell: true }), rmText(c.value),
+// The By crop table of a mixed room, in byCropColumns(money)'s order.
+export const byCropRows = (run, money = true) => (run.byCrop ?? []).map((c) => [
+  cropName(c.crop), blocksText(c.blocks), kgText(c.kg), perBlockText(c.perBlock, { cell: true }), beText(c.be, { cell: true }),
+  ...(money ? [rmText(c.value)] : []),
 ]);
 
-// This run's tiles: [{ label, title? (the label in full: BE), value, line? }], named as the tables' heads name them.
+// This run's tiles: [{ label, title? (the label in full: BE), value, line? }], named as the tables' heads name them;
+// the expected value and energy tiles only when the reply has money.
 export function runTiles(run) {
   return [
     { label: 'kg', value: kgText(run.kg) },
     { label: 'kg per block', value: perBlockText(run.perBlock, { cell: true }) },
     { label: 'BE', title: 'Biological efficiency', value: beText(run.be, { cell: true }) },
-    valueTile(run.value, run.unpriced, kgIn(run.byCrop)),
-    costTile(run.cost),
+    ...(hasMoney(run) ? [valueTile(run.value, run.unpriced, kgIn(run.byCrop)), costTile(run.cost)] : []),
   ];
 }
 
@@ -334,8 +342,7 @@ export function overviewTiles(farm) {
 export function pageTiles(farm) {
   return [
     { label: 'kg', value: kgText(farm.totals?.kg) },
-    valueTile(farm.totals?.value, farm.totals?.unpriced, kgIn(farm.crops)),
-    costTile(farm.totals?.cost),
+    ...(hasMoney(farm.totals) ? [valueTile(farm.totals.value, farm.totals.unpriced, kgIn(farm.crops)), costTile(farm.totals.cost)] : []),
   ];
 }
 
@@ -390,6 +397,7 @@ export const emptyText = (days) => `No harvests in the last ${periodWords(days)}
 
 // By room: the rooms that picked in the range or have a run under way; kg and RM over the range, kg per block and BE the run's.
 export const ROOM_COLUMNS = ['Room', 'kg', 'Expected value', 'kg per block', 'BE'];
+export const roomColumns = (money = true) => columnsFor(ROOM_COLUMNS, money);
 // without: under a room's expected value that leaves out a crop with no price ("without Lion's mane"), else null. run: the run's
 // figures in words for a phone, where the two run columns give way to a line under the room's name, or null without a run.
 function runWords(current) {
@@ -397,16 +405,19 @@ function runWords(current) {
   const parts = [perBlockText(current.perBlock), ...(finite(current.be) ? [beText(current.be)] : [])];
   return `This run ${parts.join(DOT)}`;
 }
-export const roomRows = (farm) => (farm.rooms ?? []).filter((r) => r.kg > 0 || r.current).map((r) => ({
+export const roomRows = (farm, money = true) => (farm.rooms ?? []).filter((r) => r.kg > 0 || r.current).map((r) => ({
   id: r.id, name: r.name, crops: r.crops,
-  cells: [kgText(r.kg), rmText(r.value), perBlockText(r.current?.perBlock, { cell: true }), beText(r.current?.be, { cell: true })],
-  without: finite(r.value) && r.unpriced?.length ? `without ${names(r.unpriced)}` : null,
+  cells: [kgText(r.kg), ...(money ? [rmText(r.value)] : []), perBlockText(r.current?.perBlock, { cell: true }), beText(r.current?.be, { cell: true })],
+  without: money && finite(r.value) && r.unpriced?.length ? `without ${names(r.unpriced)}` : null,
   run: runWords(r.current),
 }));
 
 // By crop, most picked first (the server's order).
 export const CROP_COLUMNS = ['Crop', 'kg', 'Expected value'];
-export const cropRows = (farm) => (farm.crops ?? []).map((c) => ({ crop: c.crop, name: cropName(c.crop), cells: [kgText(c.kg), rmText(c.value)] }));
+export const cropColumns = (money = true) => columnsFor(CROP_COLUMNS, money);
+export const cropRows = (farm, money = true) => (farm.crops ?? []).map((c) => ({
+  crop: c.crop, name: cropName(c.crop), cells: [kgText(c.kg), ...(money ? [rmText(c.value)] : [])],
+}));
 
 // The myGAP sheet (form 4-6): its title and columns; sheetRows above fills them.
 export const SHEET_TITLE = `myGAP 4-6${DOT}Production and sales record (Rekod pengeluaran dan penjualan hasil)`;

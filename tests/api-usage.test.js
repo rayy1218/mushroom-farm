@@ -14,7 +14,7 @@ const intervals = [];
 
 before(async () => {
   db = openDb(':memory:');
-  server = createApp(db, { poller: { setIntervalMs: (ms) => intervals.push(ms) } });
+  server = createApp(db, { login: false, poller: { setIntervalMs: (ms) => intervals.push(ms) } });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${server.address().port}`;
 });

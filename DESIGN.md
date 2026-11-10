@@ -780,6 +780,22 @@ The room's picture keeps its representation: the air path, the condenser outside
 | Live | Asks again on the `batches`, `inventory`, `sales`, `costs` and `harvest` events, a room's crops or name, the stream's return and a 60 s timer; a repaint keeps the cursor on the same line by its focus key (a need's kind, a use-by's item, a run, a Retry's part), and on the page's title when that line is gone |
 | Styles | The `.sm-` block at the end of `styles.css`, tokens only; everything else is the other modules' classes |
 
+### Sign-in
+(2026-11-06 to 2026-11-10; spec `docs/superpowers/specs/2026-11-06-login-design.md`.) What a person meets before the app and what the app hides from a worker. Where each part lives:
+
+| Part | Design |
+|---|---|
+| View | One `card` at most 416 px wide, centred (`.login`), titled "Sign in" (the page title, focused on arrival), the lead "Who are you?" over the active names as full-width 44 px buttons (`.login-name`, left-aligned, `--fs-lg`), one per row, 8 px apart. Light and dark, phone and desk. The top bar's links, alarm button, theme switch and live mark wait (`html[data-signin]`) until someone is signed in |
+| Secret box | After a name: that name as the lead, one box for the PIN (6 digits, numeric keyboard) or the password, with a hint, then **Not you?** (back to the names) at the left and the one filled **Sign in** at the right, both 44 px. A hidden username field lets a password manager keep the name |
+| Errors | Said once, under the box, in a polite live line (the same words for an unknown and a wrong name: "That PIN is not right" / "That password is not right"; a lock says the time or "Locked: ask the owner to unlock you"). A failed names read says so with **Try again**; a browser that drops the cookie is told to allow cookies |
+| Top bar | The name signed in and **Sign out** (`.top-signout`: a link that is a button, no frame or fill); under 400 px the icons are 36 px wide so the live mark keeps its size |
+| Settings → Workers | A row is the name with its sign-in line (role, "Locked until …" or "Locked until the owner unlocks", "Signed in on N devices") over the row's buttons (Set PIN or Set password, Make owner or Make worker, Unlock, Sign out everywhere, Remove), which wrap; the quiet ones sit left so their words line up with the name. No Set password and no Remove on your own row |
+| Your password | The first card on Settings for an owner: current and new password, the rule in its hint |
+| Named rule | **The Owner-Only Rule.** `[data-owner-only]` marks an owner's control on a page a worker also sees (Add room, Purchase, Edit, Archive, a column of actions, the Settings link). `html[data-role="worker"] [data-owner-only]` hides it (`display: none !important`); it is marked, not removed from the markup, so the owner's page is unchanged. The server still refuses the call (403 "Ask the owner"): the hiding is the menu, never the lock |
+| A worker's figures | Where a reply leaves the money out, the tile, column or RM part is not drawn (not shown as a dash) |
+| Failure | A page that cannot load shows the load-fail page only after a real failure (or 90 s), not at the first slow file |
+| Styles | The `Login` block of `styles.css`, tokens only; everything else is the other modules' classes |
+
 ## Do's and Don'ts
 
 ### Do:
@@ -792,6 +808,7 @@ The room's picture keeps its representation: the air path, the condenser outside
 - **Do** write labels and states in plain English sentence case: name the machine, the number and the unit.
 - **Do** build a new page from the parts above (card, card head, rows, tiles, the data table, the segmented control, chips, folds, messages, empty states) before writing a new one; a module's CSS uses the tokens and these parts' classes and adds only what is its own.
 - **Do** set every size from the `--fs-*` steps and every corner from the six radius steps; every control 44 px on a phone.
+- **Do** mark an owner's control on a page a worker also sees with `data-owner-only`; never remove it from the markup, and never rely on it instead of the server's 403.
 
 ### Don't:
 - **Don't** put a card inside a card.
