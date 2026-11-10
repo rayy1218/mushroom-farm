@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   ECONOMICS_CROPS, WAYS, LEFT, FIGURES, figureOf, figuresFor, placeOf, checkFigure, researchOf, sizeOf, SOURCES,
 } from '../web/economics-defaults.js';
-import { compare } from '../web/economics-model.js';
+import { compare, inputsOf } from '../web/economics-model.js';
 
 const ROOM = { volume: 67.4, humidifierLH: 2 }; // a 40 ft container (section 11.2)
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -112,4 +112,13 @@ test('the room-size rules: a 20 ft up to 40 m³, a 40 ft above; humidifiers per 
   assert.equal(researchOf('yours.blocks', 'oyster', ROOM, null).value, 1482);
   assert.equal(researchOf('yours.blocks', 'oyster', small, null).value, 880);
   assert.equal(researchOf('import.landed', 'oyster', ROOM, 1), null, 'grey oyster is not imported');
+});
+
+test('every way of every crop gets finite inputs from the research defaults (a missing shed.* or warm.* key would show as "sells nothing")', () => {
+  for (const crop of ECONOMICS_CROPS) {
+    const values = researchValues(crop, { volume: 32.6 });
+    for (const way of WAYS[crop]) {
+      for (const [k, v] of Object.entries(inputsOf(values, way))) assert.ok(typeof v === 'number' && Number.isFinite(v), `${crop} ${way}: ${k} is ${v}`);
+    }
+  }
 });

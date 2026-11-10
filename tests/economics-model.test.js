@@ -91,7 +91,7 @@ const VALUES = {
 
 test('inputsOf: your container\'s kWh a month from kWh per block, its equipment summed; a house way per house; import its own', () => {
   const yours = inputsOf(VALUES, 'yours');
-  assert.equal(yours.kwhMonth, 0.4 * 1740 * 30.4 / 42);
+  assert.equal(r2(yours.kwhMonth), 503.77);
   assert.equal(yours.equipment, 35990);
   assert.deepEqual([yours.lifeMonths, yours.uphill, yours.blocks, yours.yieldG], [60, 0, 1740, 250.015]);
   const two = inputsOf({ ...VALUES, 'yours.blocks': 2001 }, 'highland');

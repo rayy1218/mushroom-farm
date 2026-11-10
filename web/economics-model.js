@@ -90,7 +90,7 @@ export function inputsOf(values, way) {
   return x;
 }
 
-// Every shown way's month, Your container first ('yours' must be in ways): [{ way, ...grow or trade }]. Import sells Your
+// Every shown way's month, Your container first (always, whether or not ways names it): [{ way, ...grow or trade }]. Import sells Your
 // container's kg (the model page's rule: the same volume, bought in).
 export function compare(values, ways) {
   const yours = grow(inputsOf(values, 'yours'));
