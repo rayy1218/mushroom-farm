@@ -73,10 +73,11 @@ test('the styles: one .ec- block, tokens only (no colour of its own), the phone\
   assert.ok(ecCss.includes('.ec-desk { display: none; }'));
   assert.ok(ecCss.includes('.ec-phone { display: grid; gap: 16px; }'));
   assert.ok(ecCss.includes('.ec-box { min-height: 44px; }'));
-  // a link on its own (Change in Settings, Rooms) is a 44 px row; a source's link in its sentence reaches 44 px by its padding
+  // a link on its own (Change in Settings, Rooms) is a 44 px row; a source's link in its sentence keeps its line (no padding:
+  // it would overlap the next line's link; WCAG 2.5.8's inline exception)
   assert.ok(ecCss.includes('.ec-fig-field { flex-wrap: wrap; }'));
   assert.ok(ecCss.includes('.ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }'));
-  assert.ok(ecCss.includes('.ec-note .co-link { padding-block: 14px; }'), 'a source\'s link in its sentence: 44 px by its padding (as Runs)');
+  assert.doesNotMatch(ecCss, /\.ec-note[^{]*\.co-link[^{]*\{[^}]*padding/, 'a source\'s link in its sentence has no padding over the next line');
   assert.doesNotMatch(ecCss, /accent/, 'the source tag is a neutral chip, the owner\'s too');
   assert.ok(ecCss.includes('.ec-block-label { display: block;'));
 });
