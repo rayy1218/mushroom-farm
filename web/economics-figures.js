@@ -5,10 +5,10 @@
 //   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint · likely
 //   · sourceItems
 
-import { checkFigure, figureOf, SOURCES, WAY_NAMES } from './economics-defaults.js';
+import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts } from './economics-defaults.js';
 import { compare } from './economics-model.js';
 import { figureText, rangeText } from './economics-math.js';
-import { moneyText, perKgText } from './costs-math.js';
+import { moneyText, perKgText, amountBox, amountOf } from './costs-math.js';
 import { kgText } from './harvest-math.js';
 import { grouped } from './overview-math.js';
 import { farmDate, farmTime, dayMonth } from './tasks-math.js';
@@ -107,7 +107,7 @@ export function noteParts(f, ctx) {
     const r = f.research;
     const sources = r.sources.map((id) => SOURCES[id]).filter(Boolean);
     out.push({
-      text: `Research, ${r.confidence} confidence: ${rangeText(f.key, r.low, r.high)}.${r.note ? ` ${r.note}.` : ''}`,
+      text: `${r.confidence[0].toUpperCase()}${r.confidence.slice(1)} confidence: ${rangeText(f.key, r.low, r.high)}.${r.note ? ` ${r.note}.` : ''}`, // the tag says Research
       ...(sources.length ? { sources } : {}),
     });
   }
@@ -156,15 +156,19 @@ export function sourcesLine(figures) {
 // The figures' values by key (the model's input), with the typed ones over them.
 export const valuesOf = (figures, typedValues = {}) => ({ ...Object.fromEntries(figures.map((f) => [f.key, f.value])), ...typedValues });
 
-// A figure as typed: { value } or { error } (the server's words, spec 4.2).
+// A figure as typed: { value } or { error } (the server's words, spec 4.2). Grouping commas and spaces are dropped, as
+// Costs' dialogs read an amount (its box shows them).
 export function typed(key, text) {
-  const t = String(text).trim();
-  const value = t === '' ? NaN : Number(t);
+  const value = amountOf(text);
   const error = checkFigure(key, value);
   return error ? { error } : { value };
 }
-// The box's text: the value without grouping ("1740", "38.23").
-export const boxText = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Math.round(v * 10_000) / 10_000) : '');
+// The box's text at rest, grouped as Costs' dialogs show an amount (the finish review): RM to 2 places ("38,100.00"),
+// any other figure grouped with up to 4 places ("1,482", "0.4018"). typed reads it back.
+export function boxText(key, v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '';
+  return unitParts(figureOf(key).unit).prefix ? amountBox(v) : v.toLocaleString('en-US', { maximumFractionDigits: 4 });
+}
 
 // The polite line after a save: "Saved: Selling price, RM 55.00 a kg, every room." With yours (the model's result for Your
 // container) the result follows, which is out of view at the box (the audit, #10): "Now RM 649.13 a month, break-even

@@ -52,10 +52,10 @@ const PAGE = `
       <h1 class="page-title" tabindex="-1">Economics</h1>
       <p class="page-sub">What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in.</p>
     </div>
-  </div>
-  <div class="ec-picks" data-picks hidden>
-    <div class="field ec-pick"><label for="ec-room">Room</label><select id="ec-room" data-room></select></div>
-    <div class="field ec-pick"><label for="ec-crop">Crop</label><select id="ec-crop" data-crop></select></div>
+    <div class="ec-picks" data-picks hidden>
+      <div class="field ec-pick"><label for="ec-room">Room</label><select id="ec-room" data-room></select></div>
+      <div class="field ec-pick"><label for="ec-crop">Crop</label><select id="ec-crop" data-crop></select></div>
+    </div>
   </div>
   <div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>
   <p class="sr-only" data-said aria-live="polite"></p>
@@ -81,7 +81,7 @@ const PAGE = `
       <p class="ec-now" data-now aria-hidden="true"></p>
       <p class="muted ec-intro">Change a figure and the page works it out again as you type; it is saved for every device when you leave the box.</p>
       <p class="ec-parts" data-parts hidden></p>
-      <div data-folds></div>
+      <div class="ec-folds" data-folds></div>
     </section>
   </div>`;
 
@@ -285,7 +285,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (!row) return;
     const box = row.querySelector('.ec-box');
     const typing = box && document.activeElement === box;
-    if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || refusals.has(f.key)) })) box.value = boxText(f.value);
+    if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || refusals.has(f.key)) })) box.value = boxText(f.key, f.value);
     const value = row.querySelector('.ec-fig-value');
     if (value) value.textContent = figureText(f.key, f.value);
     const tag = row.querySelector('.ec-tag');
@@ -480,7 +480,7 @@ export function mount(container, { room = null, crop = null } = {}) {
       // the box shows the figure it fell to (a repaint leaves a focused box alone), and keeps the cursor
       const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
       if (box) {
-        box.value = boxText(reply.figures.find((f) => f.key === key)?.value);
+        box.value = boxText(key, reply.figures.find((f) => f.key === key)?.value);
         box.focus({ preventScroll: true });
       }
       said(`${figureOf(key).label}: back to default.`);

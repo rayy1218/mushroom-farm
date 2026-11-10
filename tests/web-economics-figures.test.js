@@ -52,7 +52,7 @@ test('the tags, and where a figure applies', () => {
 
 test('the research note: confidence, range, its note and its sources (each a link)', () => {
   const [note] = noteParts(one('yours.yieldG'), ctx);
-  assert.equal(plain(note.text), "Research, low confidence: 150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g.");
+  assert.equal(plain(note.text), "Low confidence: 150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g.", "the tag says Research: the note does not repeat it");
   assert.deepEqual(note.sources.map((s) => `${s.title} ${s.year}`), ['October defaults 2026', 'Malaysiaaktif 2025', 'Nongji 2023', 'Europe PMC 2023', 'Stamets (archive.org) 1993']);
   assert.equal(note.sources[1].url, 'https://malaysiaaktif.my/2025/04/cendawan-kobis-bunga-tarik-perhatian-penduduk-seberang-perak');
   assert.equal(noteParts(one('import.buyHours'), ctx)[0].sources, undefined, 'a placeholder with no source');
@@ -85,7 +85,7 @@ test('the owner\'s, Settings\', a pending day, a part not read and a loss counte
   assert.deepEqual(notes(one('tariff', { source: 'settings', value: 0.55 })), [{ text: 'Settings → Electricity price; Costs uses it too.' }]);
   const pending = notes(one('yours.kwhBlock', { notes: ['pending'] }));
   assert.deepEqual(pending[0], { text: 'Your runs: working out the energy…' });
-  assert.match(pending[1].text, /^Research, medium confidence/);
+  assert.match(pending[1].text, /^Medium confidence/);
   assert.deepEqual(notes(one('price', { notes: ['not-read:harvest', 'not-read:sales'] })).slice(0, 2), [
     { text: "Couldn't read Harvest just now; using research.", tone: 'warn' }, { text: "Couldn't read Sales just now; using research.", tone: 'warn' },
   ]);
@@ -130,7 +130,19 @@ test('a typed figure: checked as the server checks it; the values with the typed
   assert.deepEqual(typed('yours.blocks', '1740.5'), { error: 'Blocks in the room must be a whole number from 1 to 100,000\u00a0blocks' });
   const values = valuesOf(figures(), { price: 60 });
   assert.deepEqual([values.price, values.wage, values['yours.blocks']], [60, 10, 1482]);
-  assert.deepEqual([boxText(1740), boxText(38.23), boxText(0.40177), boxText(null)], ['1740', '38.23', '0.4018', '']);
+  assert.deepEqual([boxText('yours.blocks', 1740), boxText('yours.kwhBlock', 0.40177), boxText('price', null)], ['1,740', '0.4018', '']);
+});
+
+test('a box at rest is grouped as Costs\' dialogs show it (money to 2 places); a typed figure takes its grouping back', () => {
+  assert.deepEqual([boxText('yours.blocks', 1482), boxText('yours.container', 38100), boxText('yours.racks', 1037.4), boxText('price', 48)],
+    ['1,482', '38,100.00', '1,037.40', '48.00']);
+  assert.deepEqual([boxText('yours.yieldG', 214.3), boxText('shrink', 10), boxText('yours.kwhBlock', 0.551)], ['214.3', '10', '0.551']);
+  assert.deepEqual(typed('yours.blocks', '1,482'), { value: 1482 });
+  assert.deepEqual(typed('yours.container', '38,100.50'), { value: 38100.5 });
+  assert.deepEqual(typed('yours.container', ' 38 100 '), { value: 38100 }, 'spaces too, as Costs');
+  assert.deepEqual(typed('yours.blocks', '1,4,8,2'), { value: 1482 }, 'Costs drops every comma');
+  assert.deepEqual(typed('yours.blocks', boxText('yours.blocks', 1482)), { value: 1482 }, 'its own text reads back');
+  assert.ok(typed('yours.blocks', '1.482,5').error, 'a decimal comma is not a figure');
 });
 
 test('the saved line, and the line of a part not read', () => {

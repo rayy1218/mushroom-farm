@@ -123,7 +123,7 @@ test('the spec review\'s notes: replies through createReplies; a save that paint
   // a save's reply that a read already painted (the economics event comes first) repaints the tag itself
   assert.ok(page.includes("if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…"));
   // the box: kept while focused, unsaved or refused
-  assert.ok(page.includes('if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || refusals.has(f.key)) })) box.value = boxText(f.value);'));
+  assert.ok(page.includes('if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || refusals.has(f.key)) })) box.value = boxText(f.key, f.value);'));
   // the phone's block head: the way's name with "Profit a month" over its profit
   assert.ok(page.includes("profitNode.prepend(el('span', 'ec-block-label', profitRow.label));"));
 });
@@ -212,10 +212,16 @@ test('the audit #2 #6 #12 #14 #20 #22 #26: fold heads h3; an unusual figure chec
 
 test('the audit\'s styles: fold heads at card size, the measure, the empty card, the notes\' lines on a phone, the picks\' gap, the run\'s focus ring, one sub-line rule', () => {
   assert.ok(ecCss.includes('.ec-fold-head { font-size: var(--fs-md);'));
-  assert.ok(ecCss.includes('.ec-page, .ec-picks { max-width: 1040px; }'), 'Inventory\'s item page\'s measure');
+  // the finish review: the page spans the main column as the other Business pages; only the Figures rows keep the measure
+  assert.ok(ecCss.includes('.ec-folds { max-width: 1040px; }'), 'Inventory\'s item page\'s measure, the rows only');
+  assert.doesNotMatch(ecCss, /\.ec-(page|picks)[^{]*\{[^}]*max-width/);
+  assert.ok(page.includes('<div class="ec-folds" data-folds></div>'));
   assert.ok(ecCss.includes('.ec-empty { background: transparent; border-style: dashed; border-color: var(--border-strong); box-shadow: none; }'));
   assert.ok(ecCss.includes('.ec-note-line { line-height: 1.75; }'));
-  assert.ok(ecCss.includes('.ec-picks { display: flex; flex-wrap: wrap; gap: 12px 16px;'));
+  // the finish review: Room and Crop in the page head, at its right from 900 px, as Runs' Crop; stacked full width on a phone
+  assert.ok(ecCss.includes('.ec-picks { display: flex; flex-wrap: wrap; gap: 12px 16px; margin-left: auto; }'));
+  assert.ok(page.indexOf('data-picks') > page.indexOf('class="page-sub"') && page.indexOf('data-picks') < page.indexOf('<div class="banner"'), 'inside the page head');
+  assert.ok(ecCss.includes('.ec-picks { flex: 1 1 100%; margin-left: 0; }'));
   assert.ok(ecCss.includes('.ec-sim [data-sim-line]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }'));
   assert.ok(ecCss.includes('.ec-way-room, .ec-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }'));
   assert.ok(ecCss.includes('.ec-note > .ec-note-line { flex-basis: 100%; }'));

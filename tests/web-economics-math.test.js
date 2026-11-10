@@ -95,7 +95,7 @@ test('the rows at the golden inputs: the cold room and import, a loss with "Loss
   const [cold, , imp, warm] = compare(GOLDEN, WAYS.lionsmane);
   const table = rows([cold, imp, warm]);
   const at = (key) => table.find((x) => x.key === key);
-  assert.deepEqual(table.map((x) => x.label), ['Blocks started a month', 'kg sold a month', 'Income', 'Blocks, or mushrooms bought', 'Electricity', 'Labour',
+  assert.deepEqual(table.map((x) => x.label), ['Blocks started, or kg bought, a month', 'kg sold a month', 'Income', 'Blocks, or mushrooms bought', 'Electricity', 'Labour',
     'Packing and delivery', 'Transport', 'Rent', 'Equipment written off', 'Costs', 'Profit a month', 'Break-even', 'Equipment',
     'Pays back, equipment only', 'Pays back, with the first fill']);
   const cells = (key) => plain(at(key).cells.map((c) => c.text));

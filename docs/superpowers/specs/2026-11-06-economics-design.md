@@ -314,7 +314,7 @@ events, harvests, batches, simulations })` → the route handler; `server/api.js
 
 | Part | Design |
 |---|---|
-| Head | "Economics", under it "What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in." Document title "Economics · Mushroom farm". Under the line two labelled selects (Calendar's): **Room** (each room's name) and **Crop** (Grey oyster, Pink oyster, Black jelly, Lion's mane); side by side, stacked under 600 px |
+| Head | "Economics", under it "What one of your rooms makes a month with a crop, against the other ways to grow it or buy it in." Document title "Economics · Mushroom farm". Two labelled selects (Calendar's) in the head: **Room** (each room's name) and **Crop** (Grey oyster, Pink oyster, Black jelly, Lion's mane); side by side at the head's right from 900 px as Runs' Crop (the finish review), stacked full width under the line on a phone |
 | Headline card | No card title; the sentence of 8.2 in the lead size (`fs-lg`, 600), the second sentence under it in `fs-md` `ink-2`, then one muted `fs-sm` line on the figures' sources: "From your runs: yield, selling price · Simulator: electricity · You set: 2 · The rest is research." ("All research: set your own figures below." when none is real). Your runs, the simulator and Settings list their figures in the order yield, selling price, block price, electricity; the blocks are not counted, so a new farm with a planted room still reads "All research" |
 | Compared | Card title "A month, each way". A table (caption the title): a column per shown way, headed "Your container" (with the room's name under it, muted), "Lowland shed", "Highland grower", "Import and resell", "Warm strain"; rows 8.3. Under it, muted `fs-sm` lines: the first fill (8.3), "Every way is sized to Container 1's 1,740 blocks; a shed or a highland house holds up to 2,000." and the not compared line (8.4) |
 | Figures | Card title "Figures", under it muted: "Change a figure and the page works it out again as you type; it is saved for every device when you leave the box." Folds (DESIGN's): **Shared by every way** and **Your container** open; then one per other shown way, closed, its head "Lowland shed · 13 figures · all research" ("· 2 you set"). A row per figure (8.5) |
@@ -362,7 +362,7 @@ by their figures as shown (to the sen).
 
 | Row | Growing way cell | Import and resell cell |
 |---|---|---|
-| Blocks started a month | "1,259" | "283.4 kg bought" |
+| Blocks started, or kg bought, a month | "1,259" | "283.4 kg bought" |
 | kg sold a month | "255.0 kg" | "255.0 kg" |
 | Income | "RM 12,752.48" | as growing |
 | Blocks, or mushrooms bought | "RM 7,556.57" | "RM 11,648.60" |
@@ -413,7 +413,7 @@ by their figures as shown (to the sen).
 
 | Source or state | Note |
 |---|---|
-| Research | "Research, low confidence: 150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g. Sources: Malaysiaaktif 2025, Nongji 2023." (the appendix's note and range; each source its link, opening in a new tab) |
+| Research | "Low confidence: 150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g. Sources: Malaysiaaktif 2025, Nongji 2023." (the appendix's note and range; each source its link, opening in a new tab) |
 | Your runs, yield | "Your runs: 4 finished runs of Lion's mane in Container 1, 12 Aug – 30 Oct: 1,592.0 kg from 7,000 blocks put in (227 g a block, lost blocks counted)." |
 | Your runs, price | "Your runs: 1,480.0 kg sold for RM 81,400.00." Farm-wide: "Your sales: Lion's mane sold farm-wide 12 Aug – 13 Nov, 1,480.0 kg for RM 81,400.00 (no sale was tied to these runs)." |
 | Your runs, block price | "Your runs: 7,000 blocks in 5 batches." With some unpriced: "… · 2 batches without a price left out." |
@@ -529,7 +529,7 @@ cold room; reproduced on 2026-11-06 by running both the page's `model()` and thi
 | Output | Your container | Highland grower | Warm strain | Import and resell |
 |---|---|---|---|---|
 | Block life | 42 days | 42 days | 42 days | — |
-| Blocks started a month | 1,259.43 | 1,259.43 | 1,259.43 | 283.39 kg bought |
+| Blocks started, or kg bought, a month | 1,259.43 | 1,259.43 | 1,259.43 | 283.39 kg bought |
 | kg sold a month | 255.05 | 255.05 | 126.50 | 255.05 |
 | Income | 12,752.48 | 12,752.48 | 6,324.85 | 12,752.48 |
 | Blocks, or mushrooms bought | 7,556.57 | 7,556.57 | 7,556.57 | 11,648.60 |
@@ -656,6 +656,7 @@ the spec was open; the build's reviews settled the rest. The sections named are 
 | Links on a phone (8.1; DESIGN's 44 px Rule) | A link inside a note's sentence (a research note's sources, the expected price's "Settings") keeps its line, with no padding: padding made it overlap the next line's link (WCAG 2.5.8's inline exception). A link that stands alone ("Change in Settings", "Rooms, to add one") keeps 44 px. The lead's decision, the owner to confirm |
 | The headline (8.2) | `headline(results, { room, crop, life })`; a profit that shows as RM 0.00 "breaks even" and is never a loss |
 | A figure's row (8.5, 9.1) | No answer or a 5xx keeps the typed figure, "Not saved" with Retry; only a 4xx is a refusal. A refused box keeps its text, its refusal and `aria-invalid`, the sums on the last valid figure. The You set tag is a neutral chip. The boxes on the shared field rules (40 px, 44 px on a phone). Another room or crop clears what was typed. A save's reply drops only the value it saved. Stale replies dropped: a read asked before an action, an older action's reply, a reply for a room or crop no longer picked. Focus after a repaint stays in its row (Back to default, else the box; Work it out's line when its button goes). Work it out's refusals show in its row in the warning tone and are said |
+| The finish review (8.1, 8.3, 8.5, 8.6) | Room and Crop sit in the page head at its right, as Runs' Crop; only the Figures rows keep the 1,040 px measure. A box at rest is grouped as Costs' dialogs show an amount ("1,482", "38,100.00"; RM to 2 places) and a typed figure drops grouping commas and spaces (Costs' `amountOf`). A research note opens with its confidence ("Low confidence: 5–20 %."): the tag already says Research. The table's first row reads "Blocks started, or kg bought, a month" |
 | Numbers (8.7) | `keepTogether` joins a number to its unit and keeps a range whole on a phone; `tests/web-economics-units.test.js` guards it. Dates in farm time (`farmDate`, `farmTime`), as the other Business pages |
 | The result while typing (8.1, 8.5; the audit's P1) | The headline's first sentence sits again atop Figures (`.ec-now`), sticky under the top bar while the card scrolls, its loss in words with the figure in `critical-text`; hidden from a reader (`aria-hidden`), who hears the result in the saved line |
 | A set figure's note (8.6) | Keeps the research range beside the real figure: "You set this on 10 Nov · Your runs: RM 48.00 a kg · Research: RM 30.00–70.00 a kg." with Back to default on its line |
@@ -664,4 +665,4 @@ the spec was open; the build's reviews settled the rest. The sections named are 
 | The saved line (8.5) | Says the result: "Saved: Selling price, RM 55.00 a kg, every room. Now RM 649.13 a month, break-even RM 48.58 a kg." |
 | Units in a box (8.5) | An RM figure's "RM" sits inside its box before the figure (DESIGN's unit inside the box); the rest of the unit beside it ("a kg", "a block") |
 | A refusal's words (4.2) | RM first and grouped: "Selling price must be a number from RM 0 to RM 1,000 a kg"; "from 1 to 100,000 blocks" |
-| The audit's smaller notes | Fold heads at Card title's size with a heading inside; the page at most 1,040 px wide; the no-rooms card is DESIGN's empty card; the strip scrolls its current tab into view on a phone; a part not read is also warned in the headline card; a box's unit and tag are its description; a source opening a new tab says so to a reader, and two pages of one name are told apart ("Shroomy 2026 (2)"); the room's planted blocks are tagged "Crop tab"; "break-even" never breaks at its hyphen; a cell's "Never" is capitalised; Work it out's end is said once; the gone line is a status line; Work it out's line takes the accent focus ring |
+| The audit's smaller notes | Fold heads at Card title's size with a heading inside; the Figures rows at most 1,040 px wide (the finish review: the head, the headline and the table span the main column as the other Business pages); the no-rooms card is DESIGN's empty card; the strip scrolls its current tab into view on a phone; a part not read is also warned in the headline card; a box's unit and tag are its description; a source opening a new tab says so to a reader, and two pages of one name are told apart ("Shroomy 2026 (2)"); the room's planted blocks are tagged "Crop tab"; "break-even" never breaks at its hyphen; a cell's "Never" is capitalised; Work it out's end is said once; the gone line is a status line; Work it out's line takes the accent focus ring |

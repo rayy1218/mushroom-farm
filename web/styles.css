@@ -2964,13 +2964,13 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 /* ---- end Login ---- */
 
 /* ---- Economics (spec 2026-11-06-economics-design.md 8) ---- */
-/* the room and crop: Calendar's labelled selects, side by side, stacked under 600 px */
-.ec-picks { display: flex; flex-wrap: wrap; gap: 12px 16px; margin: 0 0 16px; }
+/* the room and crop: Calendar's labelled selects in the page head at its right as Runs' Crop (the finish review); stacked under the title on a phone */
+.ec-picks { display: flex; flex-wrap: wrap; gap: 12px 16px; margin-left: auto; }
 .ec-pick { margin: 0; min-width: 200px; }
 .ec-gone { margin: 0 0 12px; font-size: var(--fs-sm); }
 .ec-page { display: grid; gap: 16px; align-items: start; }
-/* a measure, as Inventory's item page: a label stays within reach of its box (the audit, #3) */
-.ec-page, .ec-picks { max-width: 1040px; }
+/* only the Figures rows keep a measure (Inventory's item page's): a label within reach of its box (the audit #3; the finish review) */
+.ec-folds { max-width: 1040px; }
 /* no rooms: DESIGN's empty card (a dashed edge, no fill or shadow) */
 .ec-empty { background: transparent; border-style: dashed; border-color: var(--border-strong); box-shadow: none; }
 :root[data-theme="light"] .card.ec-empty { box-shadow: none; }
@@ -3025,6 +3025,7 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 .ec-sim [data-sim-line]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ec-foot { margin: 10px 0 0; font-size: var(--fs-sm); }
 @media (max-width: 600px) {
+  .ec-picks { flex: 1 1 100%; margin-left: 0; }
   .ec-pick { flex: 1 1 100%; }
   /* the comparison: a block a way, Your container first, its head the way's name with its profit */
   .ec-desk { display: none; }

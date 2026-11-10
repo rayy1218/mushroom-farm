@@ -126,7 +126,7 @@ const money = (v) => ({ text: moneyText(v) });
 const cellMonths = (v) => (v === Infinity ? 'Never' : monthsText(v)); // a cell starts with a capital, as "No equipment" (the audit, #23)
 const growOr = (grow, trade) => (r) => (r.kind === 'trade' ? trade(r) : grow(r));
 export const ROWS = [
-  { key: 'blocks', label: 'Blocks started a month', cell: growOr((r) => ({ text: grouped(Math.round(r.blocksM), 0) }), (r) => ({ text: `${kgText(r.kgBought)} bought` })) },
+  { key: 'blocks', label: 'Blocks started, or kg bought, a month', cell: growOr((r) => ({ text: grouped(Math.round(r.blocksM), 0) }), (r) => ({ text: `${kgText(r.kgBought)} bought` })) },
   { key: 'kg', label: 'kg sold a month', cell: (r) => ({ text: kgText(r.kgSold) }) },
   { key: 'income', label: 'Income', cell: (r) => money(r.income) },
   { key: 'bought', label: 'Blocks, or mushrooms bought', cell: (r) => money(r.cost.blocks) },
