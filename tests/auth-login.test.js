@@ -95,7 +95,7 @@ test('5 wrong tries in a row from one address lock the account for that address 
   const { db, auth, ali, req, at } = await setup(t);
   const a = from('100.64.0.9');
   for (let i = 0; i < 4; i++) assert.deepEqual(await auth.login(req(a), { ...WRONG, id: ali }), wrongReply(i + 1));
-  const locked = { status: 429, body: { error: 'Too many tries. Try again at 10:15, or ask the owner to unlock you', retryAt: T + 15 * MIN } };
+  const locked = { status: 429, body: { error: 'Too many tries. Try again at 10:15, or ask the owner to unlock you', retryAt: T + 15 * MIN, retryInMs: 15 * MIN } };
   assert.deepEqual(await auth.login(req(a), { ...WRONG, id: ali }), locked);
   assert.deepEqual(await auth.login(req(a), { id: ali, secret: '482913' }), locked, 'the right PIN from there waits too');
   assert.deepEqual([db.account(ali).failedTries, db.account(ali).lockedUntil], [0, null], 'nothing stored: the account is not locked');
@@ -129,7 +129,7 @@ test("a right PIN from another address does not start this address's count again
 test("an owner's lock says when, without the owner's Unlock; the tries left are not said when the daily cap is nearer", async (t) => {
   const { auth, ali, ray, req } = await setup(t);
   for (let i = 0; i < 4; i++) await auth.login(req(), { id: ray, secret: 'not the password' });
-  const locked = { status: 429, body: { error: 'Too many tries. Try again at 10:15', retryAt: T + 15 * MIN } };
+  const locked = { status: 429, body: { error: 'Too many tries. Try again at 10:15', retryAt: T + 15 * MIN, retryInMs: 15 * MIN } };
   assert.deepEqual(await auth.login(req(), { id: ray, secret: 'not the password' }), locked);
   assert.deepEqual(await auth.login(req(), { id: ray, secret: 'long enough password' }), locked, 'the right password from there waits too');
   // 17 wrong from other addresses (4 each, so none locks): the 18th, 19th and 20th from one address reach the daily cap first
@@ -262,7 +262,7 @@ test('a sign-in in flight when the PIN changes: the same 401 as a wrong PIN, no 
 test('20 tries in 15 minutes from one address; the 21st is refused, another address is not', async (t) => {
   const { auth, ali, req, at } = await setup(t);
   for (let i = 0; i < 20; i++) assert.equal((await auth.login(req(), { id: 9999, secret: '000001' })).status, 401, `try ${i + 1}`);
-  const limited = { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes', retryAt: T + 15 * MIN } };
+  const limited = { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes', retryAt: T + 15 * MIN, retryInMs: 15 * MIN } };
   assert.deepEqual(await auth.login(req(), { id: ali, secret: '482913' }), limited);
   assert.equal((await auth.login(req({ address: '100.64.0.10' }), { id: ali, secret: '482913' })).status, 200);
   at(T + 15 * MIN);
@@ -453,7 +453,7 @@ test('the internet budget: 600 checked tries in 15 minutes over all accounts; th
   const { auth, ali, ray, req, at, lines } = await setup(t, { check });
   const internet = (i) => req({ address: '127.0.0.1', forwarded: `198.51.${Math.floor(i / 20)}.${i % 20}` });
   for (let i = 0; i < 600; i++) assert.equal((await auth.login(internet(i), { id: 9999, secret: 'fast wrong' })).status, 401, `try ${i + 1}`);
-  const spent = { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes', retryAt: T + 15 * MIN } };
+  const spent = { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes', retryAt: T + 15 * MIN, retryInMs: 15 * MIN } };
   assert.deepEqual(await auth.login(internet(1000), { id: ray, secret: 'long enough password' }), spent);
   assert.match(lines.at(-1), / budget$/);
   assert.equal((await auth.login(req(from('100.64.22.1')), { id: ray, secret: 'long enough password' })).status, 200, 'the tailnet');

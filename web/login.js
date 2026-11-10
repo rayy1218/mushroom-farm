@@ -95,7 +95,7 @@ export function mount(container, { onSignedIn }) {
     if (moving) {
       els.input.focus();
       liveTimer = setTimeout(() => els.error.setAttribute('aria-live', 'polite'), LIVE_BACK_MS);
-    }
+    } else els.error.setAttribute('aria-live', 'polite'); // a quiet spell cut short by this error must not stay quiet
   }
 
   function release() {
@@ -174,7 +174,7 @@ export function mount(container, { onSignedIn }) {
       }
     } catch (err) {
       if (alive) {
-        const until = lockedUntil(err.status, err.retryAt, Date.now());
+        const until = lockedUntil(err.status, err.retryAt, Date.now(), err.retryInMs);
         if (until) hold(until);
         showError(failText(err.status, err.message));
         afterFail();

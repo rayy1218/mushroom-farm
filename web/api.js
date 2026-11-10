@@ -14,6 +14,7 @@ export class ApiError extends Error {
     this.status = status; // 0 when the server could not be reached
     this.field = data?.field;
     this.retryAt = data?.retryAt; // a lock's end (ms), on a sign-in's 429
+    this.retryInMs = data?.retryInMs; // and how long from now by the server's clock
   }
 }
 

@@ -235,7 +235,7 @@ test("the confirms' words: a role, Sign out everywhere, removing an owner; your 
   assert.deepEqual(removeConfirm('Ali', { role: 'worker', hasSecret: true, sessions: 0 }), worker, 'a PIN');
   assert.deepEqual(removeConfirm('Ali', { role: 'worker', hasSecret: false, sessions: 1 }), worker, 'signed in somewhere');
   assert.equal(removeConfirm('Ali', null), null, 'the accounts failed to load');
-  assert.deepEqual(removeConfirm('Ali', { role: 'owner' }), { title: 'Remove Ali', text: 'Ali is an owner: removing them signs them out everywhere.', go: 'Remove', danger: true });
+  assert.deepEqual(removeConfirm('Ali', { role: 'owner' }), { title: 'Remove Ali', text: 'Ali is an owner: removing them signs them out everywhere, and their password goes; bringing them back needs a new one.', go: 'Remove', danger: true });
 });
 
 test("the Workers card's line after a sign-in change", () => {

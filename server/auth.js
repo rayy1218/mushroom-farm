@@ -197,10 +197,14 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     const more = left ? `. ${left} more ${left === 1 ? 'try' : 'tries'}, then a ${LOCK.ms / 60_000}-minute wait` : '';
     return { status: 401, body: { error: what + more, field: 'secret' } };
   };
-  // retryAt (ms): when the sign-in view may let the person try again.
+  // retryAt (ms): when the sign-in view may let the person try again; retryInMs: how long from now, by this server's clock
+  // (the view waits that long, so a phone whose clock is off neither holds too long nor lets go early).
   const lockedReply = (until, role) => ({
     status: 429,
-    body: { error: `Too many tries. Try again at ${localTime(until)}${role === 'owner' ? '' : ', or ask the owner to unlock you'}`, retryAt: until },
+    body: {
+      error: `Too many tries. Try again at ${localTime(until)}${role === 'owner' ? '' : ', or ask the owner to unlock you'}`,
+      retryAt: until, retryInMs: Math.max(0, until - now()),
+    },
   });
   const lockedTodayReply = () => ({ status: 429, body: { error: 'Locked: ask the owner to unlock you' } });
   const accountExpired = (e, t) => (e.lockedUntil ?? e.seen + DAY_MS) <= t;
@@ -320,7 +324,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
       return reply;
     };
     if (overLimit(address, t)) {
-      return refuse('address-limited', { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes', retryAt: tries.get(address).until } });
+      return refuse('address-limited', { status: 429, body: { error: 'Too many tries from here. Try again in 15 minutes', retryAt: tries.get(address).until, retryInMs: tries.get(address).until - t } });
     }
     if (checking >= MAX_CHECKING || (internet && internetChecking >= INTERNET.checking)) {
       return refuse('busy', { status: 503, body: { error: 'The farm app is busy. Try again in a moment' } });
@@ -337,7 +341,7 @@ export function createAuth({ db, now = Date.now, log = (line) => console.log(lin
     if (internet) {
       if (budget.until <= t) budget = { count: 0, until: t + INTERNET.ms };
       if (budget.count >= INTERNET.tries) {
-        return refuse('budget', { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes', retryAt: budget.until } });
+        return refuse('budget', { status: 429, body: { error: 'The farm app is getting too many sign-ins. Try again in 15 minutes', retryAt: budget.until, retryInMs: budget.until - t } });
       }
       budget.count += 1;
     }

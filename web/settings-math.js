@@ -279,7 +279,7 @@ export const signOutConfirm = (name, self) => (self
 // Removing an owner, or a worker with a PIN or signed in somewhere, asks first (the server clears a removed one's secret);
 // a worker who cannot sign in goes at once. → the words (danger: the go button is the red one), or null.
 export function removeConfirm(name, a) {
-  if (a?.role === 'owner') return { title: `Remove ${name}`, text: `${name} is an owner: removing them signs them out everywhere.`, go: 'Remove', danger: true };
+  if (a?.role === 'owner') return { title: `Remove ${name}`, text: `${name} is an owner: removing them signs them out everywhere, and their password goes; bringing them back needs a new one.`, go: 'Remove', danger: true };
   if (a?.hasSecret || a?.sessions > 0) {
     return { title: `Remove ${name}?`, text: 'They can no longer sign in, and bringing them back needs a new PIN.', go: 'Remove', danger: true };
   }

@@ -30,8 +30,15 @@ export const pinComplete = (kind, value, busy) => kind === 'pin' && !busy && /^[
 // After a wrong try a password stays in its box, selected (one slip in a long password is retyped, not the whole); a PIN is cleared.
 export const keepsSecret = (kind) => kind === 'password';
 
-// A lock's reply (429) may say when it ends (retryAt, ms): Sign in waits until then. → that time, or null (nothing held).
-export const lockedUntil = (status, retryAt, now) => (status === 429 && Number.isFinite(retryAt) && retryAt > now ? retryAt : null);
+// A lock's reply (429) says how long it lasts (retryInMs, by the server's clock) and when it ends (retryAt): Sign in waits
+// that long from now, so a phone whose clock is off still waits the right time; never longer than a lock lasts (15 minutes).
+// retryAt alone (an older server) counts by the phone's clock. → the time to wait until, or null (nothing held).
+const MAX_HOLD_MS = 15 * 60_000;
+export function lockedUntil(status, retryAt, now, retryInMs) {
+  if (status !== 429) return null;
+  const wait = Number.isFinite(retryInMs) ? retryInMs : Number.isFinite(retryAt) ? retryAt - now : 0;
+  return wait > 0 ? now + Math.min(wait, MAX_HOLD_MS) : null;
+}
 
 // The top bar's Sign out: the first name beside its icon (the CSS cuts a long one at 8 ch), its initial where there is no room.
 export const firstName = (name) => String(name ?? '').trim().split(/\s+/)[0];

@@ -75,6 +75,11 @@ test("a lock's reply with retryAt holds Sign in until then; without it (or in th
   assert.equal(lockedUntil(429, now - 1, now), null);
   assert.equal(lockedUntil(429, 'soon', now), null);
   assert.equal(lockedUntil(401, now + 60_000, now), null, 'only a lock');
+  // retryInMs (how long, by the server's clock) wins over retryAt: a phone whose clock is off still waits the right time
+  assert.equal(lockedUntil(429, now - 5 * 60_000, now, 60_000), now + 60_000, 'a phone clock 6 minutes fast');
+  assert.equal(lockedUntil(429, now + 3_600_000, now, 60_000), now + 60_000, 'a phone clock an hour slow');
+  assert.equal(lockedUntil(429, undefined, now, 3_600_000), now + 15 * 60_000, 'never held longer than a lock lasts');
+  assert.equal(lockedUntil(429, undefined, now, 0), null);
 });
 
 test("the top bar's name: the first name (the CSS cuts it at 8 ch), its initial where there is no room; Sign out's name says whose", async () => {
@@ -115,7 +120,7 @@ test('the sign-in view: the 6th digit sends; a wrong password is kept and select
   const login = src('login.js');
   assert.ok(login.includes('if (picked && pinComplete(picked.kind, els.input.value, busy)) els.form.requestSubmit();'));
   assert.ok(login.includes('if (keepsSecret(picked.kind)) els.input.select();'));
-  assert.ok(login.includes('const until = lockedUntil(err.status, err.retryAt, Date.now());'));
+  assert.ok(login.includes('const until = lockedUntil(err.status, err.retryAt, Date.now(), err.retryInMs);'));
   assert.ok(login.includes('if (busy || held || !picked) return;'));
   assert.ok(login.includes('els.submit.disabled = Boolean(held);'));
   // the back button is never held by a lock
