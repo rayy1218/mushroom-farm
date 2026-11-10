@@ -10,7 +10,7 @@ import { ECONOMICS_CROPS, WAYS, figuresFor, researchOf } from '../web/economics-
 
 const NB = '\u00a0';
 // The words as the spec writes them: a number keeps its unit with a no-break space (the Units Rule), read here as a space.
-const plain = (v) => (typeof v === 'string' ? v.replaceAll(NB, ' ').replaceAll('\u2060', '') : Array.isArray(v) ? v.map(plain) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)])) : v);
+const plain = (v) => (typeof v === 'string' ? v.replaceAll(NB, ' ').replaceAll('\u2060', '').replaceAll('\u2011', '-') : Array.isArray(v) ? v.map(plain) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)])) : v);
 const text = (h) => plain([h.first.map((p) => (typeof p === 'string' ? p : p.text)).join(''), h.second].filter(Boolean).join(' '));
 
 // The model page's inputs (section 11.1) as figures.
@@ -110,8 +110,8 @@ test('the rows at the golden inputs: the cold room and import, a loss with "Loss
   assert.deepEqual(plain(at('profit').cells), [{ text: 'RM 3,003.16' }, { text: '−RM 269.27', tone: 'loss', sub: 'Loss' }, { text: '−RM 2,403.95', tone: 'loss', sub: 'Loss' }]);
   assert.deepEqual(cells('be'), ['RM 38.23 a kg', 'RM 51.06 a kg', 'RM 69.00 a kg']);
   assert.deepEqual(cells('equipment'), ['RM 35,990.00', 'None', 'RM 9,800.00']);
-  assert.deepEqual(cells('payback'), ['10 months', 'No equipment', 'never']);
-  assert.deepEqual(cells('paybackAll'), ['13 months', 'No equipment', 'never']);
+  assert.deepEqual(cells('payback'), ['10 months', 'No equipment', 'Never'], 'a cell starts with a capital, as No equipment');
+  assert.deepEqual(cells('paybackAll'), ['13 months', 'No equipment', 'Never']);
   assert.equal(rows([grow({ ...inputs, yieldG: 0 })])[12].cells[0].text, '—', 'nothing sold: no break-even');
 });
 
@@ -180,4 +180,12 @@ test('the code review: a loss is decided as moneyText decides its sign (half a s
   assert.deepEqual(plain(rows([{ ...r('yours', -0.005), cost: {} }]).find((x) => x.key === 'profit').cells[0]), { text: '−RM 0.01', tone: 'loss', sub: 'Loss' });
   assert.equal(rangeText('price', NaN, 13), '—');
   assert.equal(plain(fillLine({ fill: 100, rampCost: 5 }, { room: 'R', blocks: 10, first: 1 })).includes('1 day in'), true);
+});
+
+test('the audit: break-even never breaks at its hyphen; a sentence keeps "never pays back"', () => {
+  const r = (way, profit, more = {}) => ({ way, kind: 'grow', profit, be: 18.68, payback: Infinity, paybackAll: Infinity, kgSold: 100, equipment: 1000, ...more });
+  const h = headline([r('yours', -1400.38)], { room: 'Container 1', crop: 'oyster', life: 60 });
+  const words = h.first.map((p) => (typeof p === 'string' ? p : p.text)).join('');
+  assert.ok(words.includes('break\u2011even'), 'a non-breaking hyphen');
+  assert.ok(words.includes('never pays back'));
 });

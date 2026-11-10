@@ -2,12 +2,13 @@
 // figure's tag, where it applies, its note, the simulator's line, the headline's sources line, and a typed figure checked
 // before it is sent. Pure: the figures are the server's view (server/economics.js), the words follow the One Format Rule.
 //   foldsOf · foldHead · tagText · appliesText · noteParts · simText · sourcesLine · valuesOf · typed · boxText · savedText
-//   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint
+//   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint · likely
+//   · sourceItems
 
 import { checkFigure, figureOf, SOURCES, WAY_NAMES } from './economics-defaults.js';
 import { compare } from './economics-model.js';
 import { figureText, rangeText } from './economics-math.js';
-import { moneyText } from './costs-math.js';
+import { moneyText, perKgText } from './costs-math.js';
 import { kgText } from './harvest-math.js';
 import { grouped } from './overview-math.js';
 import { farmDate, farmTime, dayMonth } from './tasks-math.js';
@@ -37,6 +38,7 @@ export function foldHead(fold) {
 // The source tag: never colour alone (a neutral chip with its words).
 export function tagText(f) {
   if (f.source === 'owner') return 'You set';
+  if (f.source === 'runs' && f.runs?.from === 'crop') return 'Crop tab'; // the planted blocks: no run gave them (the audit, #24)
   if (f.source === 'runs') return f.runs?.count ? `Your runs${DOT}${plural(f.runs.count, 'run', 'runs')}` : 'Your runs';
   return { simulator: 'Simulator', settings: 'Settings', research: 'Research' }[f.source];
 }
@@ -87,8 +89,11 @@ export function noteParts(f, ctx) {
   }
   if (f.notes.includes('pending')) out.push({ text: 'Your runs: working out the energy…' });
   if (f.source === 'owner') {
+    // what it was set against stays beside it: the real figure and the research range (the audit, #5); Back to default
+    // goes on this line (back)
     const real = f.real ? `${DOT}${SOURCE_WORDS[f.real.source]}: ${figureText(f.key, f.real.value)}` : '';
-    out.push({ text: `You set this on ${dateText(f.at)}${real}.` });
+    const research = f.research ? `${DOT}Research: ${rangeText(f.key, f.research.low, f.research.high)}` : '';
+    out.push({ text: `You set this on ${dateText(f.at)}${real}${research}.`, back: true });
   } else if (f.source === 'runs' && f.key === 'yours.loss') {
     out.push({ text: 'Counted in your yield: your runs\' kg a block is over every block put in.' });
   } else if (f.source === 'runs') {
@@ -161,11 +166,54 @@ export function typed(key, text) {
 // The box's text: the value without grouping ("1740", "38.23").
 export const boxText = (v) => (typeof v === 'number' && Number.isFinite(v) ? String(Math.round(v * 10_000) / 10_000) : '');
 
-// The polite line after a save: "Saved: Selling price, RM 55.00 a kg, every room."
-export function savedText(key, value, room, crop) {
+// The polite line after a save: "Saved: Selling price, RM 55.00 a kg, every room." With yours (the model's result for Your
+// container) the result follows, which is out of view at the box (the audit, #10): "Now RM 649.13 a month, break-even
+// RM 48.58 a kg."
+export function savedText(key, value, room, crop, yours = null) {
   const f = figureOf(key);
   const where = { farm: 'every room and crop', crop: 'every room', room: `${room}, every crop`, roomCrop: `${room} and ${cropShortName(crop)}` }[f.scope];
-  return `Saved: ${f.label}, ${figureText(key, value)}, ${where}.`;
+  const saved = `Saved: ${f.label}, ${figureText(key, value)}, ${where}.`;
+  if (!yours) return saved;
+  const loss = Math.round(yours.profit * 100) < 0 ? ' loss' : '';
+  const be = Number.isFinite(yours.be) ? `, break\u2011even ${perKgText(yours.be)} a${NB}kg` : '';
+  return `${saved} Now ${moneyText(yours.profit)} a${NB}month${loss}${be}.`;
+}
+
+// A figure the owner typed or set that is allowed but unlikely (the audit, #6; DESIGN's check): outside its research
+// range, or under half or over twice the real figure (your runs', the simulator's, Settings'). → the warning's words, or
+// null. "Unusual: research gives RM 30.00–70.00 a kg; your runs give RM 48.00 a kg."
+const GIVE = { runs: 'your runs give', simulator: 'the simulator gives', settings: 'Settings gives' };
+export function likely(f, value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const real = f.source === 'owner' ? f.real : GIVE[f.source] ? { source: f.source, value: f.value } : null;
+  const r = f.research;
+  const outside = r ? value < r.low || value > r.high : false;
+  const far = real && real.value > 0 ? value < real.value / 2 || value > real.value * 2 : false;
+  if (!outside && !far) return null;
+  const who = f.key === 'yours.blocks' && f.runs?.from === 'crop' && real?.source === 'runs' ? 'the Crop tab gives' : GIVE[real?.source];
+  const parts = [
+    r ? `research gives ${rangeText(f.key, r.low, r.high)}` : null,
+    real ? `${who} ${figureText(f.key, real.value)}` : null,
+  ].filter(Boolean);
+  return `Unusual: ${parts.join('; ')}.`;
+}
+
+// A note's sources as links (the audit, #15): one link a page (two ids of one address, its #part aside, are one), and two
+// pages of one name told apart ("Shroomy 2026", "Shroomy 2026 (2)"). → [{ words, url (null: no link) }].
+export function sourceItems(sources) {
+  const pages = new Set();
+  const named = new Map();
+  const out = [];
+  for (const s of sources) {
+    const page = s.url ? s.url.split('#')[0] : null;
+    if (page && pages.has(page)) continue;
+    if (page) pages.add(page);
+    const words = [s.title, s.year].filter(Boolean).join(NB);
+    const n = (named.get(words) ?? 0) + 1;
+    named.set(words, n);
+    out.push({ words: n > 1 ? `${words}${NB}(${n})` : words, url: s.url ?? null });
+  }
+  return out;
 }
 
 // The warning at the top of Figures when a part was not read (spec 9.2), or null.

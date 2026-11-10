@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ECONOMICS_CROPS, WAYS, LEFT, FIGURES, figureOf, figuresFor, placeOf, checkFigure, researchOf, sizeOf, SOURCES,
+  ECONOMICS_CROPS, WAYS, LEFT, FIGURES, figureOf, figuresFor, placeOf, checkFigure, researchOf, sizeOf, SOURCES, unitParts,
 } from '../web/economics-defaults.js';
 import { compare, inputsOf } from '../web/economics-model.js';
 
@@ -90,9 +90,9 @@ test('the figures: the shared ones, Your container\'s, then each shown way\'s; s
 
 test('checkFigure: a number in range passes; out of range, not a number or not whole is refused in the Settings rule\'s words', () => {
   assert.equal(checkFigure('price', 55), null);
-  assert.equal(checkFigure('price', 1001), 'Selling price must be a number from 0 to 1000\u00a0RM/kg');
-  assert.equal(checkFigure('price', '55'), 'Selling price must be a number from 0 to 1000\u00a0RM/kg');
-  assert.equal(checkFigure('yours.blocks', 1.5), 'Blocks in the room must be a whole number from 1 to 100000\u00a0blocks');
+  assert.equal(checkFigure('price', 1001), 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg');
+  assert.equal(checkFigure('price', '55'), 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg');
+  assert.equal(checkFigure('yours.blocks', 1.5), 'Blocks in the room must be a whole number from 1 to 100,000\u00a0blocks');
   assert.equal(checkFigure('yours.flushes', 0), 'Flushes per block must be a whole number from 1 to 10');
   assert.equal(checkFigure('yours.loss', 100), 'Blocks lost must be a number from 0 to 90\u00a0%');
   assert.equal(checkFigure('yours.loss', 90), null);
@@ -139,11 +139,28 @@ test('researchOf: racks fall back to the room\'s own blocks; blocks are capped a
 });
 
 test('checkFigure: the edges of a range, and what is not a finite number', () => {
-  const priceError = 'Selling price must be a number from 0 to 1000\u00a0RM/kg';
+  const priceError = 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg';
   for (const v of [NaN, null, undefined, Infinity, -Infinity]) assert.equal(checkFigure('price', v), priceError, String(v));
   assert.equal(checkFigure('price', -0.01), priceError);
   assert.equal(checkFigure('price', 0), null);
   assert.equal(checkFigure('yours.turn', 0), null);
   assert.equal(checkFigure('yours.blocks', 100000), null);
-  assert.equal(checkFigure('yours.blocks', 100001), 'Blocks in the room must be a whole number from 1 to 100000\u00a0blocks');
+  assert.equal(checkFigure('yours.blocks', 100001), 'Blocks in the room must be a whole number from 1 to 100,000\u00a0blocks');
+});
+
+test('a unit split for a box: RM before the figure (inside the box), the rest after it', () => {
+  assert.deepEqual(unitParts('RM/kg'), { prefix: 'RM', after: 'a kg' });
+  assert.deepEqual(unitParts('RM a block'), { prefix: 'RM', after: 'a block' });
+  assert.deepEqual(unitParts('RM an hour'), { prefix: 'RM', after: 'an hour' });
+  assert.deepEqual(unitParts('RM'), { prefix: 'RM', after: '' });
+  assert.deepEqual(unitParts('%'), { prefix: null, after: '%' });
+  assert.deepEqual(unitParts(''), { prefix: null, after: '' });
+});
+
+test('a refusal in the app\'s money words: RM first, the figures grouped', () => {
+  const NB = ' ';
+  assert.equal(checkFigure('price', -1), `Selling price must be a number from RM${NB}0 to RM${NB}1,000${NB}a${NB}kg`);
+  assert.equal(checkFigure('yours.container', -1), `Container, delivered must be a number from RM${NB}0 to RM${NB}10,000,000`);
+  assert.equal(checkFigure('yours.blocks', 0), `Blocks in the room must be a whole number from 1 to 100,000${NB}blocks`);
+  assert.equal(checkFigure('yours.loss', 91), `Blocks lost must be a number from 0 to 90${NB}%`);
 });

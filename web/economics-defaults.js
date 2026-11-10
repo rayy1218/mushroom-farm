@@ -2,7 +2,7 @@
 // 2026-11-06-economics-defaults.md, section 1, gives every value, range, confidence and source). Pure: imported by the farm
 // server (which resolves each figure's source) and by the page (which checks a typed figure before it is sent).
 //   ECONOMICS_CROPS · WAYS · LEFT · WAY_NAMES · FIGURES · figureOf(key) · figuresFor(crop) · placeOf(key, roomId, crop)
-//   checkFigure(key, value) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES · keepTogether(text)
+//   checkFigure(key, value) · unitParts(unit) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES · keepTogether(text)
 
 // A number keeps its unit at a wrap and RM or USD its number (a no-break space), and a range of numbers never breaks at its
 // dash (word joiners around it): the Units Rule, as text-math.js's keepUnits does for the climate's units. Every research
@@ -99,13 +99,27 @@ export function placeOf(key, roomId, crop) {
   return { roomId: scope === 'room' || scope === 'roomCrop' ? roomId : 0, crop: scope === 'crop' || scope === 'roomCrop' ? crop : '' };
 }
 
-// null when value is a figure the key may take, else the refusal (spec 4.2, the Settings rule's words).
+// A unit split for a box (the audit, #12): RM goes before the figure, inside the box; the rest after it ("a kg").
+// → { prefix: 'RM' or null, after }.
+const RM_AFTER = { 'RM/kg': 'a kg', 'RM/kWh': 'a kWh' };
+export function unitParts(unit) {
+  if (unit === 'RM' || unit.startsWith('RM ') || RM_AFTER[unit]) return { prefix: 'RM', after: RM_AFTER[unit] ?? unit.slice(3) };
+  return { prefix: null, after: unit };
+}
+
+// null when value is a figure the key may take, else the refusal (spec 4.2, the Settings rule's words), in the app's money
+// words: "from RM 0 to RM 1,000 a kg", "from 1 to 100,000 blocks" (the audit, #25).
+const grouped = (v) => v.toLocaleString('en-US', { maximumFractionDigits: 4 });
+const spaced = (text) => text.replaceAll(' ', NB);
 export function checkFigure(key, value) {
   const f = figureOf(key);
   if (!f) return 'Unknown figure';
   if (f.settings) return `${f.label} is set in Settings`;
   const ok = typeof value === 'number' && Number.isFinite(value) && value >= f.min && value <= f.max && (!f.whole || Number.isInteger(value));
-  return ok ? null : `${f.label} must be ${f.whole ? 'a whole number' : 'a number'} from ${f.min} to ${f.max}${f.unit ? `${NB}${f.unit}` : ''}`;
+  if (ok) return null;
+  const { prefix, after } = unitParts(f.unit);
+  const at = (v) => (prefix ? `RM${NB}${grouped(v)}` : grouped(v));
+  return `${f.label} must be ${f.whole ? 'a whole number' : 'a number'} from ${at(f.min)} to ${at(f.max)}${after ? `${NB}${spaced(after)}` : ''}`;
 }
 
 // ---- The research defaults (appendix section 1) ----

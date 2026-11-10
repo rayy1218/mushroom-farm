@@ -13,6 +13,7 @@ import { HOUSE_BLOCKS } from './economics-model.js';
 const NB = '\u00a0'; // a number keeps its unit at a wrap (the Units Rule)
 const DASH = '—';
 const RANGE_DASH = '\u2060–\u2060';
+const BREAK_EVEN = 'break\u2011even'; // a non-breaking hyphen: a narrow phone never ends a line on "break-" (the audit, #19)
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const cents = (v) => Math.sign(v) * Math.round(Math.abs(v) * 100); // a figure as it shows, its sign decided as moneyText decides it
 const beText = (v) => `${perKgText(v)} a${NB}kg`;
@@ -98,12 +99,12 @@ export function headline(results, { room, crop, life }) {
       ? [`${name} sells nothing at these figures: `, loss(yours.profit), ` a${NB}month loss.`]
       : [`${name} sells nothing at these figures: ${moneyText(yours.profit)} a${NB}month.`];
   } else if (cents(yours.profit) < 0) {
-    first = [`${name}: `, loss(yours.profit), ` a${NB}month loss, break-even ${beText(yours.be)}, never pays back.`];
+    first = [`${name}: `, loss(yours.profit), ` a${NB}month loss, ${BREAK_EVEN} ${beText(yours.be)}, never pays back.`];
   } else {
     const pays = yours.paybackAll === Infinity
       ? `but it doesn't pay back ${within(life)}.`
       : `pays back in ${monthsText(yours.paybackAll)}.`;
-    first = [`${name}: ${moneyText(yours.profit)} a${NB}month, break-even ${beText(yours.be)}, ${pays}`];
+    first = [`${name}: ${moneyText(yours.profit)} a${NB}month, ${BREAK_EVEN} ${beText(yours.be)}, ${pays}`];
   }
   if (!others.length) return { first, second: null };
   const best = others.reduce((a, b) => (cents(b.profit) > cents(a.profit) ? b : a));
@@ -122,6 +123,7 @@ export function headline(results, { room, crop, life }) {
 
 // The rows of "A month, each way" (spec 8.3): [{ key, label, cell(result) → { text, tone?, sub? } }].
 const money = (v) => ({ text: moneyText(v) });
+const cellMonths = (v) => (v === Infinity ? 'Never' : monthsText(v)); // a cell starts with a capital, as "No equipment" (the audit, #23)
 const growOr = (grow, trade) => (r) => (r.kind === 'trade' ? trade(r) : grow(r));
 export const ROWS = [
   { key: 'blocks', label: 'Blocks started a month', cell: growOr((r) => ({ text: grouped(Math.round(r.blocksM), 0) }), (r) => ({ text: `${kgText(r.kgBought)} bought` })) },
@@ -138,8 +140,8 @@ export const ROWS = [
   { key: 'profit', label: 'Profit a month', cell: (r) => (cents(r.profit) < 0 ? { text: moneyText(r.profit), tone: 'loss', sub: 'Loss' } : money(r.profit)) },
   { key: 'be', label: 'Break-even', cell: (r) => ({ text: !finite(r.be) ? DASH : beText(r.be) }) },
   { key: 'equipment', label: 'Equipment', cell: growOr((r) => money(r.equipment), () => ({ text: 'None' })) },
-  { key: 'payback', label: 'Pays back, equipment only', cell: growOr((r) => ({ text: monthsText(r.payback) }), () => ({ text: 'No equipment' })) },
-  { key: 'paybackAll', label: 'Pays back, with the first fill', cell: growOr((r) => ({ text: monthsText(r.paybackAll) }), () => ({ text: 'No equipment' })) },
+  { key: 'payback', label: 'Pays back, equipment only', cell: growOr((r) => ({ text: cellMonths(r.payback) }), () => ({ text: 'No equipment' })) },
+  { key: 'paybackAll', label: 'Pays back, with the first fill', cell: growOr((r) => ({ text: cellMonths(r.paybackAll) }), () => ({ text: 'No equipment' })) },
 ];
 // Every row with its cells, a column per result: [{ key, label, cells }].
 export const rows = (results) => ROWS.map(({ key, label, cell }) => ({ key, label, cells: results.map(cell) }));

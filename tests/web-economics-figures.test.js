@@ -6,12 +6,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, valuesOf, typed, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint,
+  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems,
 } from '../web/economics-figures.js';
-import { figuresFor, researchOf } from '../web/economics-defaults.js';
+import { figuresFor, researchOf, SOURCES } from '../web/economics-defaults.js';
+import { rangeText } from '../web/economics-math.js';
 
 const NB = ' ';
-const plain = (v) => JSON.parse(JSON.stringify(v).replaceAll(NB, ' ').replaceAll('\u2060', '')); // a range's word joiners too
+const plain = (v) => JSON.parse(JSON.stringify(v).replaceAll(NB, ' ').replaceAll('\u2060', '').replaceAll('\u2011', '-')); // a range's word joiners, break-even's hyphen
 const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)), h - 8);
 const ctx = { room: 'Container 1', crop: 'lionsmane' };
 
@@ -44,7 +45,7 @@ test('the tags, and where a figure applies', () => {
   assert.deepEqual(plain([
     tagText({ source: 'owner' }), tagText({ source: 'runs', runs: { count: 4 } }), tagText({ source: 'runs', runs: { count: 1 } }),
     tagText({ source: 'runs', runs: { from: 'crop' } }), tagText({ source: 'simulator' }), tagText({ source: 'settings' }), tagText({ source: 'research' }),
-  ]), ['You set', 'Your runs · 4 runs', 'Your runs · 1 run', 'Your runs', 'Simulator', 'Settings', 'Research']);
+  ]), ['You set', 'Your runs · 4 runs', 'Your runs · 1 run', 'Crop tab', 'Simulator', 'Settings', 'Research'], 'the planted blocks: the Crop tab, not runs');
   assert.deepEqual(['wage', 'price', 'yours.rent', 'yours.yieldG'].map((k) => appliesText(one(k), 'Container 1', 'lionsmane')),
     ['Every room and crop', "Every room, Lion's mane", 'Container 1, every crop', "Container 1, Lion's mane"]);
 });
@@ -75,9 +76,11 @@ test('Your runs\' notes: yield, price tied and farm-wide, block price with batch
 
 test('the owner\'s, Settings\', a pending day, a part not read and a loss counted twice', () => {
   const notes = (f) => plain(noteParts(f, ctx));
+  const range = (key) => plain(rangeText(key, one(key).research.low, one(key).research.high));
   assert.deepEqual(notes(one('yours.yieldG', { source: 'owner', value: 250, at: at('2026-11-06'), real: { value: 227.4, source: 'runs' } })),
-    [{ text: 'You set this on 6 Nov · Your runs: 227 g.' }]);
-  assert.deepEqual(notes(one('wage', { source: 'owner', value: 12, at: at('2026-11-06') })), [{ text: 'You set this on 6 Nov.' }]);
+    [{ text: `You set this on 6 Nov · Your runs: 227 g · Research: ${range('yours.yieldG')}.`, back: true }], 'a set figure keeps the research range');
+  assert.deepEqual(notes(one('wage', { source: 'owner', value: 12, at: at('2026-11-06') })), [{ text: `You set this on 6 Nov · Research: ${range('wage')}.`, back: true }]);
+  assert.deepEqual(notes(one('wage', { source: 'owner', value: 12, at: at('2026-11-06'), research: null })), [{ text: 'You set this on 6 Nov.', back: true }]);
   assert.deepEqual(notes(one('price', { source: 'settings', value: 55 })), [{ text: 'Your expected price in Settings → Yield.', link: { text: 'Settings', href: '#/settings' } }]);
   assert.deepEqual(notes(one('tariff', { source: 'settings', value: 0.55 })), [{ text: 'Settings → Electricity price; Costs uses it too.' }]);
   const pending = notes(one('yours.kwhBlock', { notes: ['pending'] }));
@@ -87,7 +90,7 @@ test('the owner\'s, Settings\', a pending day, a part not read and a loss counte
     { text: "Couldn't read Harvest just now; using research.", tone: 'warn' }, { text: "Couldn't read Sales just now; using research.", tone: 'warn' },
   ]);
   assert.deepEqual(notes(one('yours.loss', { source: 'owner', value: 5, at: at('2026-11-06'), real: { value: 0, source: 'runs' }, notes: ['loss-twice'] })), [
-    { text: 'You set this on 6 Nov · Your runs: 0 %.' },
+    { text: `You set this on 6 Nov · Your runs: 0 % · Research: ${range('yours.loss')}.`, back: true },
     { text: "Your runs' yield already counts lost blocks; a loss here counts them twice.", tone: 'warn' },
   ]);
 });
@@ -122,9 +125,9 @@ test('the sources line: what is real named, the owner\'s counted; all research',
 
 test('a typed figure: checked as the server checks it; the values with the typed ones over the saved', () => {
   assert.deepEqual(typed('price', ' 55 '), { value: 55 });
-  assert.deepEqual(typed('price', ''), { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg' });
-  assert.deepEqual(typed('price', 'abc'), { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg' });
-  assert.deepEqual(typed('yours.blocks', '1740.5'), { error: 'Blocks in the room must be a whole number from 1 to 100000\u00a0blocks' });
+  assert.deepEqual(typed('price', ''), { error: 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg' });
+  assert.deepEqual(typed('price', 'abc'), { error: 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg' });
+  assert.deepEqual(typed('yours.blocks', '1740.5'), { error: 'Blocks in the room must be a whole number from 1 to 100,000\u00a0blocks' });
   const values = valuesOf(figures(), { price: 60 });
   assert.deepEqual([values.price, values.wage, values['yours.blocks']], [60, 10, 1482]);
   assert.deepEqual([boxText(1740), boxText(38.23), boxText(0.40177), boxText(null)], ['1740', '38.23', '0.4018', '']);
@@ -132,6 +135,12 @@ test('a typed figure: checked as the server checks it; the values with the typed
 
 test('the saved line, and the line of a part not read', () => {
   assert.equal(plain(savedText('price', 55, 'Container 1', 'lionsmane')), 'Saved: Selling price, RM 55.00 a kg, every room.');
+  assert.equal(plain(savedText('price', 55, 'Container 1', 'lionsmane', { profit: 649.13, be: 48.58 })),
+    'Saved: Selling price, RM 55.00 a kg, every room. Now RM 649.13 a month, break-even RM 48.58 a kg.', 'the result, which is out of view');
+  assert.equal(plain(savedText('price', 5, 'Container 1', 'lionsmane', { profit: -1400.38, be: 48.58 })),
+    'Saved: Selling price, RM 5.00 a kg, every room. Now −RM 1,400.38 a month loss, break-even RM 48.58 a kg.');
+  assert.equal(plain(savedText('price', 0, 'Container 1', 'lionsmane', { profit: -10, be: Infinity })),
+    'Saved: Selling price, RM 0.00 a kg, every room. Now −RM 10.00 a month loss.', 'no break-even when nothing sells');
   assert.equal(plain(savedText('wage', 12, 'Container 1', 'lionsmane')), 'Saved: Labour cost, RM 12.00 an hour, every room and crop.');
   assert.equal(plain(savedText('yours.rent', 300, 'Container 1', 'lionsmane')), 'Saved: Rent, RM 300.00 a month, Container 1, every crop.');
   assert.equal(plain(savedText('yours.yieldG', 230, 'Container 1', 'lionsmane')), "Saved: Yield per good block, all flushes, 230 g, Container 1 and Lion's mane.");
@@ -150,9 +159,9 @@ test('the draft: typing a figure recalculates at once; one that is not a figure 
   assert.deepEqual(draft.type('price', '55'), { value: 55 });
   assert.ok(profit() > 2183.70 + 1000, 'RM 5 more a kg over 217 kg');
   const at55 = profit();
-  assert.deepEqual(draft.type('price', '55x'), { error: 'Selling price must be a number from 0 to 1000\u00a0RM/kg' });
+  assert.deepEqual(draft.type('price', '55x'), { error: 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg' });
   assert.equal(profit(), at55, 'the last valid figure stays in the sums');
-  assert.equal(draft.error('price'), 'Selling price must be a number from 0 to 1000\u00a0RM/kg');
+  assert.equal(draft.error('price'), 'Selling price must be a number from RM\u00a00 to RM\u00a01,000\u00a0a\u00a0kg');
   assert.equal(draft.unsaved('price'), true);
   draft.use({ ...reply, figures: figures().map((f) => (f.key === 'wage' ? { ...f, value: 12, source: 'owner' } : f)) });
   assert.equal(draft.values().price, 55, 'a new reply keeps the typed figure');
@@ -169,7 +178,7 @@ test('the draft: a new room or crop clears what was typed; a save drops only the
   draft.type('price', '60');
   draft.type('wage', 'abc');
   draft.use({ ...reply, figures: list.slice() });
-  assert.deepEqual([draft.values().price, draft.error('wage')], [60, 'Labour cost must be a number from 0 to 200\u00a0RM an hour'], 'the same room and crop keeps it');
+  assert.deepEqual([draft.values().price, draft.error('wage')], [60, 'Labour cost must be a number from RM\u00a00 to RM\u00a0200\u00a0an\u00a0hour'], 'the same room and crop keeps it');
   draft.use({ ...reply, crop: 'pink' });
   assert.deepEqual([draft.unsaved('price'), draft.error('wage'), draft.values().price], [false, null, 50], 'a new crop clears it');
   draft.use({ ...reply, crop: 'pink' });
@@ -284,4 +293,30 @@ test('a refusal of Work it out stands until the run moves on (it starts, ends or
   assert.equal(simMoved(null, working), true);
   assert.equal(simMoved({ status: 'done', at: 2 }, { status: 'done', at: 3 }), true, 'worked out again');
   assert.equal(simMoved(null, null), false);
+});
+
+test('an unusual figure: outside its research range, or under half or over twice the real one, is questioned, not refused', () => {
+  const price = one('price', { source: 'runs', value: 48 }); // research RM 30.00–70.00 a kg for lion's mane
+  const r = price.research;
+  const words = (f, v) => plain(likely(f, v));
+  assert.equal(likely(price, 48), null);
+  assert.equal(likely(price, r.low), null, 'the range\'s ends are usual');
+  assert.equal(words(price, 5), `Unusual: research gives ${plain(rangeText('price', r.low, r.high))}; your runs give RM 48.00 a kg.`);
+  assert.equal(words(one('price', { source: 'owner', value: 20, real: { source: 'runs', value: 48 } }), 20),
+    `Unusual: research gives ${plain(rangeText('price', r.low, r.high))}; your runs give RM 48.00 a kg.`, 'a set figure: against its real one');
+  const blocks = one('yours.blocks', { source: 'runs', value: 1482, runs: { from: 'crop' }, research: { ...one('yours.blocks').research, low: 100, high: 5000 } });
+  assert.equal(words(blocks, 148), 'Unusual: research gives 100–5,000 blocks; the Crop tab gives 1,482 blocks.', 'under half the real one, inside the range');
+  assert.equal(words(blocks, 3000), 'Unusual: research gives 100–5,000 blocks; the Crop tab gives 1,482 blocks.', 'over twice it');
+  assert.equal(words(one('yours.kwhBlock', { source: 'simulator', value: 0.55 }), 0.1), `Unusual: research gives ${plain(rangeText('yours.kwhBlock', 0.4, 1.63))}; the simulator gives 0.55 kWh.`);
+  assert.equal(likely(blocks, 900), null);
+  assert.equal(words(one('wage'), 50), `Unusual: research gives ${plain(rangeText('wage', 8.72, 12))}.`, 'research alone');
+  assert.equal(likely(one('wage', { research: null }), 50), null, 'nothing to check against');
+});
+
+test('a note\'s sources: one link a page, and two pages of one name told apart', () => {
+  const items = (ids) => plain(sourceItems(ids.map((id) => SOURCES[id])));
+  assert.deepEqual(items(['L36', 'G10']), [{ words: 'Shroomy 2026', url: SOURCES.L36.url }, { words: 'Shroomy 2026 (2)', url: SOURCES.G10.url }]);
+  assert.deepEqual(items(['L09', 'G13', 'G14']).map((x) => x.words), ['Tridge 2026', 'Tridge 2026 (2)'], 'the same page (its #part aside) once');
+  assert.deepEqual(items(['S16', 'G04']), [{ words: 'Harga Sekilo 2026', url: SOURCES.S16.url }], 'two ids of one page: one link');
+  assert.deepEqual(items(['L01', 'APP']).map((x) => [x.words, x.url]), [['October defaults 2026', null], ["This app's simulation 2026", null]]);
 });
