@@ -1,11 +1,12 @@
 // Live updates (spec 2026-10-26-live-alarms-outdoor-design.md section 3): the GET /api/events stream, and the places that
 // publish the farm's change events (section 2) that no route or job publishes itself.
-//   createSse({ events }) → { handler(req, res), clients(), close() }
+//   createSse({ events, check }) → { handler(req, res), clients(), close() }
 //   createLive({ db, events, machines, controller }) → { afterCycle() }: after each poll cycle and the controller's run
 //   alarmCount(db) · watchAlarms(db, events) → unsubscribe
 
 export const PING_MS = 25_000;
 export const MAX_CLIENTS = 20;
+export const MAX_PER_SESSION = 3; // one sign-in must not take every place (a phone and a computer, with a tab to spare)
 export const MAX_BACKLOG = 64 * 1024; // bytes waiting for a client that does not read: it is dropped (the browser reconnects)
 const KEEPALIVE_MS = 30_000;
 
@@ -24,12 +25,20 @@ const json = (res, status, data) => {
   res.end(JSON.stringify(data));
 };
 
-// The event stream. pingMs and maxClients are only replaced by tests.
-export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, now = Date.now }) {
-  const open = new Set(); // { res, off, ping }
+// The event stream. check(req) → true while the request's sign-in still holds (auth.alive: the session is there, not
+// expired, its worker active); asked at every ping, and false ends the stream (the browser's reconnect then meets the
+// gate's 401). With sign-in on, req.who.sessionId (the gate's) counts the streams of each sign-in. Without sign-in (no
+// check, no req.who) neither applies. pingMs and maxClients are only replaced by tests.
+export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, check = null, now = Date.now }) {
+  const open = new Set(); // { res, off, ping, session }
+  const perSession = new Map(); // session id → its open streams
 
   function handler(req, res) {
     if (req.method !== 'GET') return json(res, 404, { error: 'Not found' });
+    const session = req.who?.sessionId ?? null;
+    if (session !== null && (perSession.get(session) ?? 0) >= MAX_PER_SESSION) {
+      return json(res, 429, { error: 'Too many live connections for this sign-in' });
+    }
     if (open.size >= maxClients) return json(res, 503, { error: 'Too many live connections' });
     req.socket.setTimeout(0);
     req.socket.setNoDelay(true);
@@ -41,22 +50,40 @@ export function createSse({ events, pingMs = PING_MS, maxClients = MAX_CLIENTS, 
       'x-accel-buffering': 'no', // a proxy in front must not hold the events back
     });
     res.flushHeaders();
-    const client = { res, off: null, ping: null };
+    const client = { res, off: null, ping: null, session };
     open.add(client);
+    if (session !== null) perSession.set(session, (perSession.get(session) ?? 0) + 1);
     const write = (text) => {
       res.write(text);
       if (res.writableLength > MAX_BACKLOG) res.destroy(); // a client that does not read must not fill the memory
     };
     write(`event: hello\ndata: ${JSON.stringify({ at: now() })}\n\n`);
     client.off = events.subscribe((type, data) => write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));
-    client.ping = setInterval(() => write(': ping\n\n'), pingMs);
+    client.ping = setInterval(() => {
+      let holds = true;
+      try {
+        holds = !check || check(req);
+      } catch (err) {
+        console.error(err);
+        holds = false; // a check that cannot answer does not keep the stream
+      }
+      if (!holds) {
+        drop(client);
+        res.end();
+        return;
+      }
+      write(': ping\n\n');
+    }, pingMs);
     res.on('close', () => drop(client));
   }
 
   function drop(client) {
     clearInterval(client.ping);
     client.off?.();
-    open.delete(client);
+    if (!open.delete(client) || client.session === null) return;
+    const left = perSession.get(client.session) - 1;
+    if (left > 0) perSession.set(client.session, left);
+    else perSession.delete(client.session);
   }
 
   return {

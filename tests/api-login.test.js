@@ -20,15 +20,15 @@ async function farm(t) {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
-  const call = async (method, path, body, cookie) => {
-    const headers = {};
+  const call = async (method, path, body, cookie, extra = {}) => {
+    const headers = { ...extra };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (cookie) headers.cookie = cookie;
     const res = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await res.text();
     let parsed = text;
     try { parsed = text ? JSON.parse(text) : null; } catch { /* a page or a CSV */ }
-    return { status: res.status, body: parsed, cookie: res.headers.get('set-cookie') };
+    return { status: res.status, body: parsed, cookie: res.headers.get('set-cookie'), headers: res.headers };
   };
   db.setWorkers([{ name: 'Ali', active: true }]);
   const ali = db.listWorkers()[0].id;
@@ -156,7 +156,8 @@ test('ROUTES has a row for every route the server sources answer, and no row for
 test('without a session every /api route is 401 but the sign-in routes; the page files are open', async (t) => {
   const { call, ali, ray } = await farm(t);
   for (const [m, p] of [...ROUTES, ['GET', '/api/events'], ['GET', '/api/session']]) {
-    assert.deepEqual(await call(m, p), { status: 401, body: { error: 'Sign in' }, cookie: null }, `${m} ${p}`);
+    const { status, body, cookie } = await call(m, p);
+    assert.deepEqual({ status, body, cookie }, { status: 401, body: { error: 'Sign in' }, cookie: null }, `${m} ${p}`);
   }
   assert.deepEqual((await call('GET', '/api/login/names')).body, { names: [{ id: ali, name: 'Ali', kind: 'pin' }, { id: ray, name: 'Ray', kind: 'password' }] });
   assert.equal((await call('GET', '/')).status, 200);
@@ -209,7 +210,8 @@ test('a worker undoes only their own Done or Skip', async (t) => {
   const today = (await call('GET', `/api/rooms/${room}/tasks`, undefined, owner)).body.today;
   const [mine, theirs] = today.filter((x) => x.ruleKey === 'footbath' || x.ruleKey === 'floorClean');
   assert.equal((await call('POST', `/api/tasks/${theirs.id}/done`, { worker: 'Ray' }, owner)).status, 200);
-  assert.deepEqual(await call('POST', `/api/tasks/${theirs.id}/undo`, undefined, worker), { status: 403, body: { error: 'Ask the owner' }, cookie: null });
+  const undone = await call('POST', `/api/tasks/${theirs.id}/undo`, undefined, worker);
+  assert.deepEqual([undone.status, undone.body, undone.cookie], [403, { error: 'Ask the owner' }, null]);
   assert.equal((await call('POST', `/api/tasks/${mine.id}/done`, {}, worker)).body.worker, 'Ali');
   assert.equal((await call('POST', `/api/tasks/${mine.id}/undo`, undefined, worker)).status, 200);
 });
@@ -309,4 +311,53 @@ test('the server closes its sign-in timer on its own (closeAuth), before the dat
   const off = createApp(bare, { login: false });
   off.closeAuth(); // without sign-in: nothing to close
   bare.close();
+});
+
+// ---- Writes only from the app's own pages; the API's headers (security review M2, M4) ----
+
+const ASK = { error: 'Ask from the farm app' };
+const site = (value) => ({ 'sec-fetch-site': value });
+
+test('a write whose Sec-Fetch-Site is not same-origin (or none) is 403, sign-in and sign-out too; same-origin, none or no header is as before', async (t) => {
+  const { call, db, ali, owner } = await farm(t);
+  for (const value of ['cross-site', 'same-site']) {
+    const login = await call('POST', '/api/login', { id: ali, secret: '482913' }, undefined, site(value));
+    assert.deepEqual([login.status, login.body, login.cookie], [403, ASK, null], value);
+    const put = await call('PUT', '/api/settings', { gateway: 'x' }, owner, site(value));
+    assert.deepEqual([put.status, put.body], [403, ASK], value);
+    for (const [m, p] of [['POST', '/api/rooms'], ['DELETE', '/api/rooms/1'], ['POST', '/api/logout'], ['POST', '/api/workers/1/sign-out']]) {
+      assert.deepEqual((await call(m, p, undefined, owner, site(value))).status, 403, `${value} ${m} ${p}`);
+    }
+    // a read is not a write: as before
+    assert.equal((await call('GET', '/api/rooms', undefined, owner, site(value))).status, 200, value);
+    assert.equal((await call('GET', '/api/login/names', undefined, undefined, site(value))).status, 200, value);
+  }
+  assert.equal((await call('GET', '/api/session', undefined, owner)).status, 200, 'the cross-site sign-out did not sign out');
+  for (const extra of [site('same-origin'), site('none'), {}]) {
+    assert.equal((await call('POST', '/api/login', { id: ali, secret: '482913' }, undefined, extra)).status, 200, JSON.stringify(extra));
+    assert.equal((await call('POST', '/api/rooms', { ...ROOM, name: `Room ${db.listRooms().length + 1}` }, owner, extra)).status, 201, JSON.stringify(extra));
+  }
+});
+
+test('every /api reply carries nosniff, DENY, no-referrer and no-store: a JSON reply, a 401, a 403 and the sign-in routes', async (t) => {
+  const { call, owner, worker } = await farm(t);
+  const replies = {
+    json: await call('GET', '/api/rooms', undefined, owner),
+    session: await call('GET', '/api/session', undefined, worker),
+    signIn: await call('GET', '/api/login/names'),
+    401: await call('GET', '/api/rooms'),
+    403: await call('PUT', '/api/settings', {}, worker),
+    'not the app': await call('POST', '/api/rooms', ROOM, owner, site('cross-site')),
+    404: await call('GET', '/api/nothing-here', undefined, owner),
+  };
+  for (const [what, r] of Object.entries(replies)) {
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff', what);
+    assert.equal(r.headers.get('x-frame-options'), 'DENY', what);
+    assert.equal(r.headers.get('referrer-policy'), 'no-referrer', what);
+    assert.equal(r.headers.get('cache-control'), 'no-store', what);
+  }
+  assert.deepEqual([replies[401].status, replies[403].status, replies['not the app'].status, replies[404].status], [401, 403, 403, 404]);
+  assert.match(replies.json.headers.get('content-type'), /^application\/json/);
+  // the page files keep their own caching
+  assert.notEqual((await call('GET', '/')).headers.get('cache-control'), 'no-store');
 });
