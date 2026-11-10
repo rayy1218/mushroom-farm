@@ -267,6 +267,8 @@ export const simMoved = (before, after) => (before?.status ?? null) !== (after?.
 // since a source is cited by many rows and its address and words would find another row's.
 export const noteLinkKey = (key, line, i) => `note:${key}:${line}:${i}`;
 // Where the cursor goes after a repaint took it out of its figure's row (a research note's source link that a save turned
-// into "You set"): null to leave keepFocus's choice (it was not in a row, the row was rebuilt, or it is still in it), else
-// 'back' (the row's Back to default) or 'box'. Never the page's title.
-export const focusAfterRepaint = ({ inRow, rowKept, stillInRow, hasBack }) => (!inRow || !rowKept || stillInRow ? null : hasBack ? 'back' : 'box');
+// into "You set"; Work it out's button gone once the run started): null to leave keepFocus's choice (it was not in a row,
+// the row was rebuilt, or it is still in it), else 'sim' (Work it out's line, when it was there: never a box, whose
+// keyboard would open on a phone), 'back' (the row's Back to default) or 'box'. Never the page's title.
+export const focusAfterRepaint = ({ inRow, rowKept, stillInRow, hasBack, inSim = false }) => (
+  !inRow || !rowKept || stillInRow ? null : inSim ? 'sim' : hasBack ? 'back' : 'box');

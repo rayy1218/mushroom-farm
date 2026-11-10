@@ -338,6 +338,7 @@ export function mount(container, { room = null, crop = null } = {}) {
   // The Electricity per block row's Work it out line (spec 6.3).
   let workingOut = false; // a Work it out request not yet answered
   let simSaid = null; // the run "Working it out" was said for
+  let simJustSaid = false; // "Working it out" was said in this paint
   let simRefused = null; // the words of the last Work it out the server refused or never answered
   function paintSim(node, f) {
     const values = draft.values();
@@ -346,6 +347,8 @@ export function mount(container, { room = null, crop = null } = {}) {
     });
     const p = el('p', `ec-note-line${s.tone === 'warn' ? ' ec-warn' : ' muted'}`, s.text);
     p.dataset.simLine = '';
+    p.tabIndex = -1; // the cursor's place when its button goes (the run started)
+    p.dataset.focusKey = `sim:${f.key}`;
     const parts = [p];
     if (simRefused) parts.push(el('p', 'ec-note-line ec-warn', simRefused));
     if (s.action) {
@@ -360,13 +363,14 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (working && simSaid !== reply.sim.simId) {
       simSaid = reply.sim.simId;
       said('Working it out');
+      simJustSaid = true;
     }
   }
   // The line alone (typing changes the block life it names; the live progress), the cursor kept.
   function paintSimRow() {
     const node = els.folds.querySelector('[data-key="yours.kwhBlock"] .ec-sim');
     const f = reply.figures.find((x) => x.key === 'yours.kwhBlock');
-    if (node && f) keepFocus(container, () => paintSim(node, f));
+    if (node && f) keepRowFocus(() => paintSim(node, f));
   }
 
   // ---- Typing, saving, back to default, Work it out ----
@@ -479,20 +483,28 @@ export function mount(container, { room = null, crop = null } = {}) {
     }
     els.crop.value = reply.crop;
   }
-  // A repaint, the cursor kept (keepFocus); one a repaint took out of its figure's row (a research note's link gone once the
-  // figure is the owner's) goes to the row's Back to default, else its box, never the page's title.
-  function repaint() {
+  // A paint, the cursor kept (keepFocus); one a paint took out of its figure's row goes to the row's place for it
+  // (focusAfterRepaint: Work it out's line when its button went, Back to default when a research note's link went, else the
+  // box), never the page's title.
+  function keepRowFocus(paint) {
     const active = document.activeElement;
     const row = container.contains(active) ? active.closest('.ec-fig') : null;
-    keepFocus(container, () => {
+    const inSim = Boolean(active?.closest('.ec-sim'));
+    simJustSaid = false;
+    keepFocus(container, paint);
+    const to = focusAfterRepaint({
+      inRow: Boolean(row), rowKept: Boolean(row?.isConnected), stillInRow: Boolean(row?.contains(document.activeElement)),
+      hasBack: Boolean(row?.querySelector('.ec-back')), inSim,
+    });
+    const target = { back: '.ec-back', box: '.ec-box', sim: '[data-sim-line]' }[to];
+    if (target) row.querySelector(target)?.focus({ preventScroll: true });
+    if (to === 'sim' && simJustSaid) said(''); // the focused line says it; the polite line would say it twice
+  }
+  function repaint() {
+    keepRowFocus(() => {
       paintMoney();
       paintFigures();
     });
-    const to = focusAfterRepaint({
-      inRow: Boolean(row), rowKept: Boolean(row?.isConnected), stillInRow: Boolean(row?.contains(document.activeElement)),
-      hasBack: Boolean(row?.querySelector('.ec-back')),
-    });
-    if (to) (to === 'back' ? row.querySelector('.ec-back') : row.querySelector('.ec-box'))?.focus({ preventScroll: true });
   }
   // A reply: shown at once (an action's: how { act }, its number) or from a read (how { asked }: its note of the actions
   // before it).

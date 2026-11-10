@@ -265,6 +265,9 @@ test('a note\'s links are keyed by their row; after a repaint the cursor stays i
   assert.equal(focusAfterRepaint({ inRow: true, rowKept: false, stillInRow: false, hasBack: true }), null, 'the row is gone (another room)');
   assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: false, hasBack: true }), 'back', 'a research link gone: Back to default');
   assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: false, hasBack: false }), 'box');
+  // Work it out's button gone (the run started): its line, never a figure box (a phone's keyboard would open)
+  assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: false, hasBack: true, inSim: true }), 'sim');
+  assert.equal(focusAfterRepaint({ inRow: true, rowKept: true, stillInRow: true, hasBack: true, inSim: true }), null, 'the button stayed');
 });
 
 test('a repaint leaves a box alone while it is focused, unsaved or refused (the refused text stays with its refusal)', () => {

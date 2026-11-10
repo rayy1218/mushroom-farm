@@ -60,7 +60,7 @@ test('typing works the money out at once; a save on leaving the box; a refusal u
 
 test('a repaint keeps the cursor and never rewrites a box the owner is typing in', () => {
   assert.ok(page.includes('const typing = box && document.activeElement === box;'));
-  assert.ok(page.includes('keepFocus(container, () => {'));
+  assert.ok(page.includes('keepFocus(container, paint);'));
   assert.ok(page.includes("box.dataset.focusKey = `box:${f.key}`;"));
   assert.ok(page.includes('if (next !== shape) {'), 'the rows are rebuilt only for another room, crop or set of figures');
 });
@@ -145,7 +145,7 @@ test('the code review\'s notes: the cursor kept in its row; one Work it out at a
   // a note's links keyed by their row; a repaint that took the cursor out of its row puts it on Back to default, else the box
   assert.ok(page.includes('a.dataset.focusKey = noteLinkKey(key, line, i);'));
   assert.ok(page.includes('const to = focusAfterRepaint({'));
-  assert.ok(page.includes("(to === 'back' ? row.querySelector('.ec-back') : row.querySelector('.ec-box'))?.focus({ preventScroll: true });"));
+  assert.ok(page.includes('if (target) row.querySelector(target)?.focus({ preventScroll: true });'));
   // Work it out: one request at a time
   assert.ok(page.includes('if (workingOut) return; // one request at a time'));
   assert.ok(page.includes('workingOut = false;'));
@@ -163,4 +163,15 @@ test('the code review\'s notes: the cursor kept in its row; one Work it out at a
   // the folds worked out once a repaint
   const paintFigures = page.slice(page.indexOf('  function paintFigures('), page.indexOf('\n  }\n', page.indexOf('  function paintFigures(')));
   assert.equal(paintFigures.split('foldsOf(reply)').length - 1, 1);
+});
+
+test('the code re-review: Work it out\'s line keeps the cursor when its button goes, said once', () => {
+  assert.ok(page.includes("p.tabIndex = -1;"));
+  assert.ok(page.includes("p.dataset.focusKey = `sim:${f.key}`;"));
+  assert.ok(page.includes("const target = { back: '.ec-back', box: '.ec-box', sim: '[data-sim-line]' }[to];"));
+  // the progress repaint goes through the same keeper
+  const simRow = page.slice(page.indexOf('  function paintSimRow('), page.indexOf('\n  }\n', page.indexOf('  function paintSimRow(')));
+  assert.ok(simRow.includes('keepRowFocus(() => paintSim(node, f));'));
+  // focus reads the line: the polite "Working it out" said in the same paint is taken back, so it is said once
+  assert.ok(page.includes("if (to === 'sim' && simJustSaid) said(''); // the focused line says it; the polite line would say it twice"));
 });
