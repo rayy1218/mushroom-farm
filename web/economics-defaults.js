@@ -105,18 +105,21 @@ export function checkFigure(key, value) {
 const r = (value, low, high, confidence, sources, note = '') => ({ value, low, high, confidence, sources, note });
 const perCrop = (entries) => ({ perCrop: entries });
 const LIONS_42 = 'Set so the block life is the owner\'s earlier 42 days (35–56)';
-// The highland grower's and the warm strain's block life and handling (lion's mane only; appendix 1.6 and 1.7).
-const LIONS_HOUSE = {
-  flushes: r(2, 1, 3, 'low', ['L01', 'L13', 'L28'], 'First flush largest; a 42-day block life, assumed'),
+// The highland grower's and the warm strain's block life and handling (lion's mane only; appendix 1.6 and 1.7). The
+// two cite different sources for the block life's rows and the humidifier, so each way builds its own.
+const lionsHouse = (cycle, humidifier) => ({
+  flushes: r(2, 1, 3, 'low', cycle, 'First flush largest; a 42-day block life, assumed'),
   loss: r(10, 5, 25, 'low', ['L01']),
-  first: r(12, 10, 14, 'low', ['L01', 'L02', 'L06'], 'A 42-day block life, assumed'),
-  interval: r(14, 10, 18, 'low', ['L01', 'L15'], '"14 days apart"'),
-  turn: r(16, 9, 30, 'low', ['L01'], LIONS_42),
+  first: r(12, 10, 14, 'low', cycle, 'A 42-day block life, assumed'),
+  interval: r(14, 10, 18, 'low', cycle, '"14 days apart"'),
+  turn: r(16, 9, 30, 'low', cycle, LIONS_42),
   labourMin: r(2.52, 1.26, 5.04, 'low', ['L01'], '1 h per 1,000 blocks a day over 42 days'),
   rent: r(0, 0, 4000, 'low', ['L01']),
   house: r(5000, 1300, 10_000, 'low', ['L01', 'G20', 'G21', 'G22', 'G23']),
-  humidifier: r(1500, 900, 3000, 'low', ['L01', 'S42']),
-};
+  humidifier: r(1500, 900, 3000, 'low', humidifier),
+});
+const LIONS_HIGHLAND = lionsHouse(['L01', 'L02', 'L15'], ['L01', 'S42']);
+const LIONS_WARM = lionsHouse(['L01'], ['L01']);
 const SHED = {
   'shed.yieldG': perCrop({
     oyster: r(170, 100, 300, 'medium', ['S06', 'S07', 'S08', 'S09', 'S10', 'S11', 'S12', 'S15', 'G07'], 'Farm data 100–150 g; guides 250–640 g; a Jerantut grower\'s 400 g is an outlier'),
@@ -162,7 +165,7 @@ const SHED = {
 };
 const HIGHLAND = {
   'highland.yieldG': r(250, 150, 400, 'low', ['L01', 'L16'], 'Copies your container\'s although Cameron Highlands averages 17.9 °C, just below 18–24 °C'),
-  ...Object.fromEntries(Object.entries(LIONS_HOUSE).map(([k, v]) => [`highland.${k}`, v])),
+  ...Object.fromEntries(Object.entries(LIONS_HIGHLAND).map(([k, v]) => [`highland.${k}`, v])),
   'highland.kwhHouse': r(146, 126, 146, 'low', ['L37'], 'Fans 120 W all day (88 kWh) + a 2 L/h humidifier (58 kWh)'),
   'highland.transport': r(2, 1, 4, 'low', [], 'Placeholder to Klang Valley buyers; no source'),
   'highland.uphill': r(0, 0, 1, 'low', [], 'Placeholder; no source'),
@@ -170,13 +173,13 @@ const HIGHLAND = {
 };
 const WARM = {
   'warm.yieldG': r(124, 93, 155, 'low', ['L02', 'L17', 'L28'], 'An assumed 80 g first flush (60–100) × 1.55, below Perak\'s "can reach" 150 g'),
-  ...Object.fromEntries(Object.entries(LIONS_HOUSE).map(([k, v]) => [`warm.${k}`, v])),
+  ...Object.fromEntries(Object.entries(LIONS_WARM).map(([k, v]) => [`warm.${k}`, v])),
   'warm.kwhHouse': r(146, 126, 146, 'low', ['L37'], 'As the highland grower\'s'),
   'warm.transport': r(0, 0, 2, 'low', []),
   'warm.fans': r(3300, 1700, 7500, 'low', ['L01']),
 };
 const RESEARCH = {
-  tariff: r(0.5515, 0.515, 0.596, 'medium', ['L18', 'L19', 'G01', 'G19'], 'LV non-domestic 50.68 sen + AFA 3.60 sen (Nov 2026) × 1.016 (KWTBB)'),
+  tariff: r(0.55, 0.515, 0.596, 'medium', ['L18', 'L19', 'G01', 'G19'], 'LV non-domestic 50.68 sen + AFA 3.60 sen (Nov 2026) × 1.016 (KWTBB) = 55.15 sen; high: TNB\'s December forecast AFA +7.98 = 59.6 sen'),
   fixedTnb: r(20, 10, 20, 'medium', ['L18', 'S35'], 'RM 10 on the Specific Agriculture tariff if the farm qualifies (unverified)'),
   wage: r(10, 8.72, 12, 'medium', ['L21', 'G17', 'G18'], 'RM 8.72/h minimum plus about 15 % employer contributions'),
   life: r(60, 36, 96, 'low', ['L01'], 'The owner\'s earlier estimate; no interest'),
