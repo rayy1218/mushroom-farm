@@ -57,7 +57,8 @@ DESIGN.md's Hierarchy: a card names its contents in Card title (14 px), a thing'
 | Part | Now | To |
 |---|---|---|
 | Segmented control | `.range-bar` (History, Exchange, Harvest) and `.seg` (Auto \| Manual), the same rules twice | one class (`.seg`), `aria-pressed` on both |
-| Level chip | `.al-level` (2 × 8 px, pill), `.ov-chip` (1 × 8 px, 10 px corners), `.cp-mark` (2 × 10 px, 700) | one `.chip` with `data-level` and `data-kind="mark"`; `.alarm-chip` and `.nav-badge` are dead CSS (no JS renders them): delete |
+| Level chip | `.al-level` (2 × 8 px, pill), `.ov-chip` (1 × 8 px, 10 px corners), `.cp-mark` (2 × 10 px, 700), `.ec-tag` (Economics' source tag, the Mark chip at 600: 2026-11-10 audit #16) | one `.chip` with `data-level` and `data-kind="mark"`; `.alarm-chip` and `.nav-badge` are dead CSS (no JS renders them): delete |
+| Sub-line | A muted line under a figure or a name, the same rule restated: `.co-sub`, `.co-source`, `.iv-sub`, `.hv-without`, `.ec-way-room` and `.ec-sub` (`display: block`, `muted`, `fs-sm`; Economics' `.ec-block-label` at `fs-xs`) (2026-11-10, the Economics audit #17) | one `.sub` rule |
 | Count | `.tab-count` and `.top-count`, the same rules twice | one `.count` |
 | On/Off switch | `button.toggle` (76 × 40 px: Setup, aircon panel, Task rules) and `.mc-switch` (64 × 36 px: Now tab) | one `.switch` at DESIGN.md's 64 × 36 px (44 px on a phone), `aria-pressed` |
 | Link as a button | `a.button` on `surface`, 40 px, 8 × 16 px | the button's own look: `raised`, 36 px, 7 × 14 px (44 px on a phone) |
