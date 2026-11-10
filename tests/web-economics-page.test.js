@@ -219,4 +219,6 @@ test('the audit\'s styles: fold heads at card size, the measure, the empty card,
   assert.ok(ecCss.includes('.ec-sim [data-sim-line]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }'));
   assert.ok(ecCss.includes('.ec-way-room, .ec-sub { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; }'));
   assert.ok(ecCss.includes('.ec-note > .ec-note-line { flex-basis: 100%; }'));
+  // a phone: the tag beside the label, the box and its unit a row of their own (at 360 px "a kg" fell under the box)
+  assert.ok(ecCss.includes('.ec-fig-label { grid-column: 1; grid-row: 1; }\n  .ec-tag { grid-column: 2; grid-row: 1; }\n  .ec-fig-field { grid-column: 1 / -1; grid-row: 2; }'));
 });

@@ -3036,10 +3036,13 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
   .ec-now { margin: 0 -16px 8px; padding: 8px 16px; font-size: var(--fs-sm); }
   .ec-box { scroll-margin-top: 112px; }
   .ec-block-table tbody th { font-weight: 400; color: var(--ink-2); }
-  /* a figure: its label over its box; the tag beside the box */
+  /* a figure: its label with its tag beside it, then the box and its unit a row of their own (at 360 px "a kg" fell under
+     a box sharing its row with the tag) */
   .ec-fig { grid-template-columns: minmax(0, 1fr) auto; }
   .ec-unit { min-width: 0; }
-  .ec-fig-label { grid-column: 1 / -1; }
+  .ec-fig-label { grid-column: 1; grid-row: 1; }
+  .ec-tag { grid-column: 2; grid-row: 1; }
+  .ec-fig-field { grid-column: 1 / -1; grid-row: 2; }
   /* the tariff's value and its link wrap rather than squeeze; a link on its own is a 44 px row */
   .ec-fig-field { flex-wrap: wrap; }
   .ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }
