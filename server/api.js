@@ -26,6 +26,7 @@ import { createRunRoutes } from './runs-api.js'; // ---- Runs ----
 import { createBusinessRoutes } from './business-api.js'; // ---- Summary ----
 import { createEconomicsRoutes } from './economics-api.js'; // ---- Economics ----
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
+import { heldOf } from './alarms.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -82,7 +83,7 @@ const noRoom = () => new HttpError(404, 'Room not found');
 // without them the machine or control routes do not exist. poller (from createPoller), when given,
 // gets a new reading interval at once. farmGateway: the farm's gateway text (FARM_GATEWAY). tasks: from createTasks.
 export function createApi(db, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null,
-  farmGateway = DEFAULT_GATEWAY, tasks = null, { onUnlock, addressLocks } = {}) {
+  farmGateway = DEFAULT_GATEWAY, tasks = null, { onUnlock, addressLocks, log = (line) => console.log(line) } = {}) {
   const publishRoom = (id, part) => events?.publish('room', { id, part }); // the live pages ask again (spec 2026-10-26 section 2)
   const simulationRoutes = simulations && createSimulationRoutes({ db, simulations });
   // The tasks (spec 2026-10-30-tasks-design.md): main.js passes the one the controller also uses; tests may leave it out.
@@ -138,6 +139,32 @@ export function createApi(db, machines = null, controller = null, poller = null,
 
   const crop = createCropApi({ db });
   const accountRoutes = createAccountRoutes({ db, onUnlock, addressLocks }); // ---- Login ---- (spec 2026-11-06-login-design.md 5)
+
+  // ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 4, 7) ----
+  // The rooms behind the same gateway as room (null: the farm's).
+  const sameGatewayAs = (room) => db.listRooms().filter((r) => (r.gateway ?? null) === null ? (room.gateway ?? null) === null : sameGateway(r.gateway, room.gateway));
+  // A gateway or relay module alarm that is on gets what it holds: [{ roomId, roomName, machines, sensors }] by name.
+  function withHeld(alarms) {
+    return alarms.map((a) => {
+      if (a.clearedAt !== null || (a.key !== 'gateway' && a.key !== 'relayNoAnswer')) return a;
+      const room = db.getRoom(a.roomId);
+      if (!room) return a;
+      const rooms = a.key === 'gateway' ? sameGatewayAs(room) : [room];
+      const held = rooms.map((r) => {
+        const h = heldOf(r);
+        return a.key === 'gateway' ? { roomId: r.id, roomName: r.name, ...h } : { roomId: r.id, roomName: r.name, machines: h.machines.filter((m) => m !== 'Aircon'), sensors: [] };
+      }).filter((h) => h.machines.length + h.sensors.length > 0);
+      return { ...a, held };
+    });
+  }
+  // The gateway alarm that is on in another room behind the same gateway (its lowest room has it).
+  function sharedGatewayAlarms(roomId) {
+    const room = db.getRoom(roomId);
+    return sameGatewayAs(room).filter((r) => r.id !== roomId)
+      .flatMap((r) => db.activeAlarms(r.id).filter((a) => a.key === 'gateway'));
+  }
+  // Who acknowledged an alarm: kept on the alarm (acked_by, database 27) and a line in the app's log.
+  const ackLog = (req, a) => log(`Alarm ${a.id} (${a.roomName}, ${a.key}) acknowledged${req.who ? ` by ${req.who.name}` : ''}`);
 
   const settingsReply = () => ({ ...settingsView(db, telegram?.status()), farmGateway }); // the farm's gateway: read only
 
@@ -213,16 +240,30 @@ export function createApi(db, machines = null, controller = null, poller = null,
       }
       throw notFound();
     }
-    // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 5) ----
+    // ---- Alarms (spec 2026-10-19-safety-and-history-design.md section 5; 2026-11-12-alarms-triage-design.md 4, 5, 7) ----
     if (path === '/api/alarms') {
       if (req.method !== 'GET') throw notFound();
-      return send(res, 200, db.currentAlarms());
+      return send(res, 200, withHeld(db.currentAlarms()));
+    }
+    if (path === '/api/alarms/ack') {
+      if (req.method !== 'POST') throw notFound();
+      const { ids } = await readJson(req) ?? {};
+      if (!Array.isArray(ids) || ids.length < 1 || ids.length > 500 || !ids.every((id) => Number.isSafeInteger(id) && id > 0)) {
+        throw new HttpError(400, 'ids must be a list of 1 to 500 alarm ids', 'ids');
+      }
+      const unique = [...new Set(ids)];
+      const before = unique.map((id) => db.getAlarm(id)).filter((a) => a && a.ackedAt === null);
+      const acked = db.ackAlarms(unique, Date.now(), req.who?.name ?? null);
+      for (const a of before) ackLog(req, a);
+      return send(res, 200, { acked });
     }
     const alarmAck = /^\/api\/alarms\/([1-9][0-9]{0,14})\/ack$/.exec(path);
     if (alarmAck) {
       if (req.method !== 'POST') throw notFound();
-      const alarm = db.ackAlarm(Number(alarmAck[1]), Date.now());
+      const was = db.getAlarm(Number(alarmAck[1]));
+      const alarm = db.ackAlarm(Number(alarmAck[1]), Date.now(), req.who?.name ?? null);
       if (!alarm) throw new HttpError(404, 'Alarm not found');
+      if (was.ackedAt === null) ackLog(req, alarm);
       return send(res, 200, alarm);
     }
     const roomAlarms = /^\/api\/rooms\/([1-9][0-9]{0,14})\/alarms(\/ack)?$/.exec(path);
@@ -230,7 +271,14 @@ export function createApi(db, machines = null, controller = null, poller = null,
       const roomId = Number(roomAlarms[1]);
       if (req.method !== (roomAlarms[2] ? 'POST' : 'GET')) throw notFound();
       if (!db.getRoom(roomId)) throw noRoom();
-      return send(res, 200, roomAlarms[2] ? { acked: db.ackRoomAlarms(roomId, Date.now()) } : db.roomAlarms(roomId));
+      if (roomAlarms[2]) {
+        const open = db.currentAlarms(roomId).filter((a) => a.ackedAt === null);
+        const acked = db.ackRoomAlarms(roomId, Date.now(), req.who?.name ?? null);
+        for (const a of open) ackLog(req, a);
+        return send(res, 200, { acked });
+      }
+      const { current, history } = db.roomAlarms(roomId);
+      return send(res, 200, { current: withHeld([...current, ...sharedGatewayAlarms(roomId)]), history });
     }
     // ---- end of alarms ----
 
@@ -240,6 +288,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
       if (req.method !== 'GET') throw notFound();
       const now = Date.now();
       const reply = db.overview(now);
+      reply.alarms = withHeld(reply.alarms);
       for (const room of reply.rooms) {
         room.filterPa = lastCounted(db, db.getRoom(room.id), now)?.pa ?? null;
         room.crop = crop.summary(room.id); // the crop and stage on the room's card (spec 2026-11-03-pictures-design.md 4)

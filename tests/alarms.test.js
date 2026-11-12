@@ -138,17 +138,19 @@ test('clears with hysteresis, at once', (t) => {
     assert.deepEqual(s.keys(), [key], `${key} stays while between the limits`);
     s.tick(5000, readings(clear));
     assert.deepEqual(s.keys(), [], `${key} clears`);
-    assert.equal(s.db.currentAlarms(s.room.id)[0].clearedAt, s.at());
+    assert.equal(s.db.currentAlarms(s.room.id, s.at())[0].clearedAt, s.at());
   }
 });
 
-test('no alarm from a bad sensor: a missing value stops the count and keeps an active alarm', (t) => {
+test('no alarm from a bad sensor: a missing value pauses the count (it is kept) and keeps an active alarm', (t) => {
+  // review 2026-11-12: a missing reading had restarted the 5 min count, so gaps more often than every 5 min hid the alarm
   const s = setup(t);
   s.tick(0, readings({ co2: 900 }));
   s.tick(4 * MIN, readings({ co2: 900 }));
-  s.tick(10_000, readings({ co2: null })); // sensor not usable: the count is dropped
-  s.tick(2 * MIN, readings({ co2: 900 }));
+  s.tick(10_000, readings({ co2: null })); // no reading this time: the count waits
   assert.deepEqual(s.keys(), []);
+  s.tick(MIN, readings({ co2: 900 }));
+  assert.deepEqual(s.keys(), ['co2High']);
   s.tick(5 * MIN, readings({ co2: 900 }));
   assert.deepEqual(s.keys(), ['co2High']);
   s.tick(MIN, readings({ co2: null, t: null }));
@@ -272,11 +274,11 @@ test('after a clear the same condition can raise a new alarm; the old one stays 
   s.tick(5000, readings({ t: 22 }));
   s.tick(0, readings({ t: 25 }));
   s.tick(5 * MIN, readings({ t: 26 }));
-  const list = s.db.roomAlarms(s.room.id);
+  const list = s.db.roomAlarms(s.room.id, s.at());
   assert.equal(list.history.length, 2);
   assert.equal(list.current.length, 2, 'the cleared one is not acknowledged yet');
   s.db.ackRoomAlarms(s.room.id, s.at());
-  assert.equal(s.db.currentAlarms(s.room.id).length, 1, 'cleared and acknowledged leaves the current list');
+  assert.equal(s.db.currentAlarms(s.room.id, s.at()).length, 1, 'cleared and acknowledged leaves the current list');
 });
 
 test('forget drops the delay counts of a room', (t) => {
@@ -352,4 +354,56 @@ test('humidifier too small: not from a faulty humidity probe or a humidifier tha
   const t2 = setup(t);
   for (let i = 0; i < 40; i++) t2.tick(MIN, { ...readings({ rh: 80 }), machines: humidifier('on'), clear: { rh: true } });
   assert.deepEqual(t2.keys(), []);
+});
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 4): one alarm for a relay module that does not answer, and the
+// device alarms held while the room's gateway is down ----
+const deadRelay = (fitted = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights']) => {
+  const view = machineView(Object.fromEntries(['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights']
+    .map((k) => [k, fitted.includes(k) ? 'no-answer' : 'not-fitted'])));
+  view.relay.address = 3;
+  return view;
+};
+
+test('a relay module that does not answer: one alarm after 60 s, none per machine; it clears on an answer', (t) => {
+  const s = setup(t);
+  s.tick(0, { machines: deadRelay() });
+  s.tick(59_000, { machines: deadRelay() });
+  assert.deepEqual(s.keys(), []);
+  s.tick(1000, { machines: deadRelay() });
+  assert.deepEqual(s.keys(), ['relayNoAnswer']);
+  const a = s.db.activeAlarms(s.room.id)[0];
+  assert.deepEqual([a.level, a.text], ['serious', 'Relay module not answering: 6 machines get no commands. Check its power and wires (address 3)']);
+  s.tick(5 * MIN, { machines: deadRelay() });
+  assert.deepEqual(s.keys(), ['relayNoAnswer']);
+  s.tick(5000, { machines: machineView() });
+  assert.deepEqual(s.keys(), []);
+  const one = setup(t);
+  one.tick(0, { machines: deadRelay(['intake']) });
+  one.tick(MIN, { machines: deadRelay(['intake']) });
+  assert.equal(one.db.activeAlarms(one.room.id)[0].text, 'Relay module not answering: 1 machine gets no commands. Check its power and wires (address 3)');
+});
+
+test('a machine alarm already on stays while its relay module is not answering', (t) => {
+  const s = setup(t);
+  s.tick(0, { machines: machineView({ exhaust: 'not-running' }) });
+  s.tick(MIN, { machines: machineView({ exhaust: 'not-running' }) });
+  s.tick(0, { machines: deadRelay() });
+  s.tick(MIN, { machines: deadRelay() });
+  assert.deepEqual(s.keys().sort(), ['machine.exhaust', 'relayNoAnswer']);
+});
+
+test('held (the gateway is down): no sensor fault, relay module or machine alarm is raised; one already on stays; the readings pause', (t) => {
+  const s = setup(t);
+  s.tick(0, { machines: machineView({ exhaust: 'not-running' }) });
+  s.tick(MIN, { machines: machineView({ exhaust: 'not-running' }) });
+  const held = { held: true, faults: { trh: 'no reading', co2: 'no reading' }, machines: deadRelay(), readings: { t: null, rh: null, co2: null } };
+  for (let i = 0; i < 10; i++) s.tick(MIN, held);
+  assert.deepEqual(s.keys(), ['machine.exhaust']);
+  // the gateway answers again, the probe still faulty: after 10 min held, its fault must hold a minute first (final review
+  // 2026-11-12: a fault left over from the outage had raised and cleared at once)
+  s.tick(5000, { faults: { trh: 'no reading', co2: null }, machines: machineView() });
+  assert.deepEqual(s.keys(), [], 'the exhaust runs again: its alarm clears; the fault waits')
+  s.tick(MIN, { faults: { trh: 'no reading', co2: null }, machines: machineView() });
+  assert.deepEqual(s.keys().sort(), ['sensorTrh']);
 });

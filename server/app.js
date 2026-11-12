@@ -37,14 +37,15 @@ const foreignWrite = (req) => {
 
 // gateway: the farm's gateway text (FARM_GATEWAY), shown by GET /api/settings. tasks: from createTasks (one is made when
 // left out). login: false only in tests that are not about signing in; every request is then the owner's. loginNotify(text):
-// the owner's note of a sign-in lock (by default a Telegram message to the alarms' chat, when Telegram is set up).
+// the owner's note of a sign-in lock (by default a Telegram message to the alarms' chat, when Telegram is set up). log(line):
+// the API's notes (who acknowledged an alarm); the console by default.
 export function createApp(db, {
   webDir = WEB_DIR, machines = null, controller = null, poller = null, simulations = null, telegram = null, events = null, ssePingMs,
-  gateway = DEFAULT_GATEWAY, tasks = null, login = true, loginNotify = createLoginNotify({ db }),
+  gateway = DEFAULT_GATEWAY, tasks = null, login = true, loginNotify = createLoginNotify({ db }), log,
 } = {}) {
   const auth = login ? createAuth({ db, notify: loginNotify }) : null;
   const api = createApi(db, machines, controller, poller, simulations, telegram, events, gateway, tasks, {
-    onUnlock: (id) => auth?.unlocked(id), addressLocks: () => auth?.addressLocks() ?? new Map(),
+    onUnlock: (id) => auth?.unlocked(id), addressLocks: () => auth?.addressLocks() ?? new Map(), log,
   });
   // the stream ends once its sign-in has ended or its role is no longer the one it opened with
   const sse = events && createSse({ events, pingMs: ssePingMs, check: auth && ((req) => auth.alive(req) === req.who.role) });

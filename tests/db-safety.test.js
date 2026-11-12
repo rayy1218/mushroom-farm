@@ -92,8 +92,8 @@ function indexes(raw) {
 }
 
 function checkVersion7(raw) {
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 26);
-  assert.deepEqual(columns(raw, 'alarms'), ['id', 'room_id', 'key', 'level', 'text', 'raised_at', 'cleared_at', 'acked_at']);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 27);
+  assert.deepEqual(columns(raw, 'alarms'), ['id', 'room_id', 'key', 'level', 'text', 'raised_at', 'cleared_at', 'acked_at', 'acked_by', 'gateway']);
   assert.deepEqual(columns(raw, 'machine_log'), ['id', 'room_id', 'machine', 'at', 'on_', 'setpoint', 'mode', 'fan', 'source']);
   for (const name of Object.keys(NEW_CONTROL_COLUMNS)) assert.ok(columns(raw, 'room_controls').includes(name), name);
   assert.equal(raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'readings_by_time'").get().sql.replace(/\s+/g, ' '),

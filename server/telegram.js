@@ -1,5 +1,5 @@
 // Phone alarms through a Telegram bot (spec 2026-10-26-live-alarms-outdoor-design.md section 5): listens to the alarm
-// changes of the database and sends a message for the chosen levels, when an alarm clears, and as a repeat while a
+// changes of the database and sends a message for the chosen levels (raised, or turned Serious or Critical), when an alarm clears, and as a repeat while a
 // critical alarm is on and not acknowledged. Messages go one at a time; a failed one is retried and then dropped.
 // Nothing here may break the control loop, and the bot token never reaches a log line or the page.
 
@@ -25,6 +25,8 @@ const base = (a, now) => `${a.roomName} · ${a.text} · ${formatWhen(now)}`;
 
 export const raiseText = (a) => `${ICONS[a.level]} ${LEVEL_NAMES[a.level]} · ${a.roomName} · ${a.text} · ${formatWhen(a.raisedAt)}`;
 export const clearedText = (a) => `✅ Cleared after ${minutes(a.clearedAt - a.raisedAt)} min · ${base(a, a.clearedAt)}`;
+// A tier change (spec 2026-11-12-alarms-triage-design.md 2): as a raise, at its new level, with the time of the change.
+export const escalatedText = (a, now) => raiseText({ ...a, raisedAt: now });
 export const repeatText = (a, now) => `🔁 Still on for ${minutes(now - a.raisedAt)} min, not acknowledged · ${base(a, now)}`;
 
 // The real transport: POST sendMessage. Resolves { ok: true } or { ok: false, description } (Telegram answered with an
@@ -160,6 +162,14 @@ export function createTelegram({
       const entry = { alarm, timer: null, lastAt: now() };
       sent.set(alarm.id, entry);
       if (alarm.level === 'critical') scheduleRepeat(entry);
+    } else if (change === 'escalated') {
+      if (!s.telegramLevels.includes(alarm.level)) return;
+      if (!enqueue(escalatedText(alarm, now()))) return;
+      const entry = sent.get(alarm.id) ?? { alarm, timer: null, lastAt: now() };
+      entry.alarm = alarm;
+      entry.lastAt = now();
+      sent.set(alarm.id, entry);
+      if (alarm.level === 'critical') scheduleRepeat(entry);
     } else if (change === 'cleared') {
       if (!sent.has(alarm.id)) return;
       stopRepeat(alarm.id);
@@ -167,6 +177,11 @@ export function createTelegram({
     } else if (change === 'acked') {
       const entry = sent.get(alarm.id);
       if (entry?.timer) { clearTimer(entry.timer); entry.timer = null; }
+    } else if (change === 'acked-many') {
+      for (const id of event.ids) {
+        const entry = sent.get(id);
+        if (entry?.timer) { clearTimer(entry.timer); entry.timer = null; }
+      }
     } else if (change === 'acked-room') {
       for (const entry of sent.values()) {
         if (entry.alarm.roomId === event.roomId && entry.timer) { clearTimer(entry.timer); entry.timer = null; }

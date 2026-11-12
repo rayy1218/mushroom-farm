@@ -20,7 +20,7 @@ Built for one farm in lowland Malaysia. The owner and the workers each sign in, 
 | Problem | What the app does |
 |---|---|
 | A room runs too hot, too dry or too stuffy for a few hours, and a crop is lost | It reads every room every 5 seconds and runs the fans, humidifier, dehumidifier, aircon and lights to keep the room inside the crop's bands. Each crop stage (spawn run, pinning, fruiting, rest) has its own bands |
-| Nobody notices a problem until the morning | Alarms show on every page, with a count in the menu. Telegram messages reach a phone (optional) |
+| Nobody notices a problem until the morning | Alarms show on every page, with a count in the menu, and reach a phone through Telegram (optional). A room out of band turns Serious after 30 min and Critical past the crop's own limits, so the phone rings for what matters. A gateway outage is one alarm, not one per machine, and cleared alarms fold away |
 | Outside air is free cooling, but only some hours | An outdoor probe tells the app when outside air can cool or dry a room, so the aircon runs less |
 | Workers forget a task, or do it on the wrong day | The Today page lists each room's tasks for the stage it is in, plus upkeep that is due. Workers tick them off on a phone |
 | You don't know what a kilogram costs to grow | Energy (kWh and RM) and water (L) per room, harvests per room and crop, costs and sales give a profit per run and per kg |
@@ -144,7 +144,7 @@ Open http://localhost:8080 and sign in. Then:
 | 2 | Farm app, room page, Setup tab | Give a room the same addresses |
 | 3 | Device page | For a live-looking room, add a simulated room, link its sensors and machines, and enable it |
 
-The database is created at `data/v2.db` on the first start and moved up to the current version by itself. Copy it first when you update an existing farm. It never moves back down.
+The database is created at `data/v2.db` on the first start and moved up to the current version by itself. Copy it first when you update an existing farm (for example to `data/v2-before-update.db`). It never moves back down.
 
 ### Configuration
 

@@ -20,9 +20,9 @@ test('the owner-only parts are marked', () => {
   for (const attr of ['data-purchase', 'data-edit', 'data-archive']) assert.match(src('inventory-item.js'), new RegExp(`${attr}[^>]*data-owner-only`), attr);
   assert.match(src('harvest-page.js'), /data-csv[^>]*data-owner-only/);
   assert.match(src('harvest-page.js'), /data-sheet[^>]*data-owner-only/);
-  // a worker reads a room's alarms and filter changes, but Acknowledge and Filter changed are the owner's
-  assert.ok(src('alarms.js').includes("b.dataset.ownerOnly = ''") && src('alarms.js').includes("ackAll.dataset.ownerOnly = ''"));
-  assert.ok(src('overview.js').includes("ack.dataset.ownerOnly = ''"));
+  // a worker reads a room's alarms and filter changes and acknowledges alarms (spec 2026-11-12-alarms-triage-design.md 7); Filter
+  // changed is the owner's
+  assert.ok(!src('alarms.js').includes('ownerOnly') && !/ack\.dataset\.ownerOnly/.test(src('overview.js')));
   assert.ok(src('filter-card.js').includes("changed.dataset.ownerOnly = ''"));
   // Add room and the way to the crops' editor (a live look as a worker)
   assert.match(src('overview.js'), /data-add data-owner-only>Add room</);
@@ -41,7 +41,9 @@ test('"Doing the rounds as" is gone: who did it is the signed-in name', () => {
 
 test("a worker's pages ask only for what they may read (no 403 on the room page, Today or the Overview)", () => {
   const room = src('room-detail.js');
-  assert.ok(room.includes("isOwner() ? request('GET', `/api/rooms/${id}/control`).catch(() => null) : null,"), 'the control settings');
+  // the control settings: a worker reads them for the bands (spec 2026-11-12-alarms-triage-design.md 7), the card is the owner's
+  assert.ok(room.includes("request('GET', `/api/rooms/${id}/control`).catch(() => null),"), 'the control settings');
+  assert.ok(room.includes('if (controlData && !isOwner()) {'), 'no Automatic control card for a worker');
   assert.ok(room.includes('if (isOwner()) simulationsCard ??= createSimulationsCard('), 'the Simulations card');
   assert.ok(src('today-page.js').includes('const stopBatches = isOwner() ? todayWaiting(container) : () => {};'), 'Blocks waiting');
   assert.ok(src('overview.js').includes('const wantUsage = isOwner() && Date.now() - usageAt >= USAGE_REFRESH_MS;'), "the farm's usage");
@@ -63,7 +65,9 @@ const METHODS = ['GET', 'POST', 'PUT', 'DELETE'];
 
 const PAGES_OF_A_WORKER = ['route.js', "const WORKER_PAGES = new Set(['today', 'calendar', 'overview', 'detail', 'harvest', 'inventory', 'inventoryItem', 'inventoryCount']);"];
 const NO_SETUP_TAB = ['route.js', "export const OWNER_TABS = ['simulations', 'setup'];"];
-const NO_CONTROL = ['room-detail.js', "isOwner() ? request('GET', `/api/rooms/${id}/control`).catch(() => null) : null,"]; // no Auto/Manual, no switches
+// no switches: a worker reads the control settings for the bands only (spec 2026-11-12-alarms-triage-design.md 7)
+const NO_SWITCHES = ['room-detail.js', 'manual: inManual && isOwner(),'];
+const NO_CONTROL_CARD = ['room-detail.js', 'if (controlData && !isOwner()) {'];
 const SIGN_IN = (path) => ['../server/auth-api.js', `if (path === '${path}') {`]; // served before the gate, to anyone
 
 // The worker's pages and the page's entry; every module they import (static or import()) is swept, but for these.
@@ -134,18 +138,14 @@ const EXCEPTIONS = [
   ['task-dialogs.js', 'POST', '/api/rooms/1/tasks', ['tasks-card.js', "add.dataset.ownerOnly = ''"], PAGES_OF_A_WORKER], // Add; Plan this (Suggest page)
   ['task-dialogs.js', 'PUT', '/api/rooms/1', ['task-dialogs.js', 'const update = isOwner() ? setupUpdate(row.source, room) : null;']],
   ['tasks-card.js', 'GET', '/api/rooms/1/tasks/log.csv', ['tasks-card.js', "csvLine.dataset.ownerOnly = ''"]],
-  ['room-detail.js', 'GET', '/api/rooms/1/control', NO_CONTROL],
   ['usage.js', 'GET', '/api/rooms/1/usage', ['room-detail.js', 'if (isOwner()) usageCard = createUsageCard(']], // the Overview: its tiles only
   ['overview.js', 'GET', '/api/usage', ['overview.js', 'const wantUsage = isOwner() && Date.now() - usageAt >= USAGE_REFRESH_MS;']],
-  ['overview.js', 'POST', '/api/alarms/1/ack', ['overview.js', "ack.dataset.ownerOnly = ''"]],
-  ['alarms.js', 'POST', '/api/alarms/1/ack', ['alarms.js', "b.dataset.ownerOnly = ''"]],
-  ['alarms.js', 'POST', '/api/rooms/1/alarms/ack', ['alarms.js', "ackAll.dataset.ownerOnly = ''"]],
   ['filter-card.js', 'POST', '/api/rooms/1/filter/changed', ['filter-card.js', "changed.dataset.ownerOnly = ''"],
     ['room-detail.js', "if (isOwner()) { // ---- Login ---- the Intake filter card is the Setup tab's"]], // and the card is the Setup tab's
   ['harvest-page.js', 'GET', '/api/harvest.csv', ['harvest-page.js', 'data-csv download data-owner-only']],
   ['harvest-page.js', 'GET', '/api/sales/range', PAGES_OF_A_WORKER], // the myGAP sheet
-  ['machines.js', 'PUT', '/api/rooms/1/machines/1', NO_CONTROL], ['machines.js', 'PUT', '/api/rooms/1/machines/ac', NO_CONTROL],
-  ['control.js', 'PUT', '/api/rooms/1/control', NO_CONTROL],
+  ['machines.js', 'PUT', '/api/rooms/1/machines/1', NO_SWITCHES], ['machines.js', 'PUT', '/api/rooms/1/machines/ac', NO_SWITCHES],
+  ['control.js', 'PUT', '/api/rooms/1/control', NO_CONTROL_CARD, NO_SETUP_TAB],
 ];
 
 const importsOf = (file, read = src) => [...read(file).matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)['"]\.\/([\w.-]+\.js)['"]/g)].map((m) => m[1]);

@@ -16,7 +16,7 @@ test('a new database (version 25 and on) has the sign-in columns on workers and 
   const file = fileOf();
   openDb(file).close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 26);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 27);
   const cols = raw.prepare('PRAGMA table_info(workers)').all().map((c) => c.name);
   assert.deepEqual(cols, ['id', 'name', 'active', 'role', 'secret_hash', 'failed_tries', 'locked_until']);
   assert.match(raw.prepare("SELECT sql FROM sqlite_master WHERE name = 'sessions'").get().sql, /STRICT/);

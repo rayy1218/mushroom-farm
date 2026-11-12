@@ -8,7 +8,7 @@ import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 import { readSources } from './costs-sources.js'; // ---- Costs ----
 
-const VERSION = 26;
+const VERSION = 27;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -495,6 +495,9 @@ const accountRow = (r) => ({
   lockedUntil: r.locked_until,
 });
 
+// How long a cleared alarm nobody acknowledged stays among the current ones (spec 2026-11-12-alarms-triage-design.md 5).
+export const ALARM_REVIEW_MS = 12 * 3_600_000;
+
 const ALARMS = `
 CREATE TABLE alarms (
   id         INTEGER PRIMARY KEY,
@@ -504,7 +507,9 @@ CREATE TABLE alarms (
   text       TEXT    NOT NULL,
   raised_at  INTEGER NOT NULL,
   cleared_at INTEGER,
-  acked_at   INTEGER
+  acked_at   INTEGER,
+  acked_by   TEXT,
+  gateway    TEXT
 ) STRICT;
 CREATE INDEX alarms_by_room ON alarms (room_id, id);
 CREATE UNIQUE INDEX alarms_active ON alarms (room_id, key) WHERE cleared_at IS NULL;`;
@@ -662,7 +667,8 @@ const LEVEL_RANK = { critical: 3, serious: 2, warning: 1 };
 
 const alarmRow = (r) => ({
   id: r.id, roomId: r.room_id, roomName: r.room_name, key: r.key, level: r.level, text: r.text,
-  raisedAt: r.raised_at, clearedAt: r.cleared_at, ackedAt: r.acked_at,
+  raisedAt: r.raised_at, clearedAt: r.cleared_at, ackedAt: r.acked_at, ackedBy: r.acked_by ?? null,
+  ...(r.key === 'gateway' ? { gatewayAddress: r.gateway ?? null } : {}),
 });
 
 // The upgrade to version 20 (spec 2026-11-04-harvest-design.md 2.2): each room with crops gets an open partial run, and its
@@ -849,6 +855,13 @@ function migrate(db) {
       db.exec(LOGIN);
     }
     if (version < 26) db.exec(ECONOMICS); // ---- Economics ---- (spec 2026-11-06-economics-design.md 3)
+    // Who acknowledged an alarm, and the address a gateway alarm was raised for (spec 2026-11-12-alarms-triage-design.md 4, 7);
+    // a table made above by ALARMS has the columns.
+    if (version < 27) {
+      const have = new Set(db.prepare('PRAGMA table_info(alarms)').all().map((c) => c.name));
+      if (!have.has('acked_by')) db.exec('ALTER TABLE alarms ADD COLUMN acked_by TEXT');
+      if (!have.has('gateway')) db.exec('ALTER TABLE alarms ADD COLUMN gateway TEXT');
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -969,7 +982,8 @@ const filterValues = (given, old = null) => FILTER.map(({ field, default: d }) =
 function toAlarm(row) {
   return {
     id: row.id, roomId: row.room_id, roomName: row.room_name, key: row.key, level: row.level, text: row.text,
-    raisedAt: row.raised_at, clearedAt: row.cleared_at, ackedAt: row.acked_at,
+    raisedAt: row.raised_at, clearedAt: row.cleared_at, ackedAt: row.acked_at, ackedBy: row.acked_by ?? null,
+    ...(row.key === 'gateway' ? { gatewayAddress: row.gateway ?? null } : {}), // the owner's only (roles.js)
   };
 }
 
@@ -1079,19 +1093,21 @@ export function openDb(path, { log = console.error } = {}) {
                             WHERE EXISTS (SELECT 1 FROM rooms WHERE id = ? AND
                               CASE ? WHEN 'trh' THEN trh_address WHEN 'co2' THEN co2_address END = ?)`),
     // Alarms (spec 2026-10-19-safety-and-history-design.md section 3): the queries of the alarm module and routes.
-    insertAlarm: db.prepare('INSERT INTO alarms (room_id, key, level, text, raised_at) VALUES (?, ?, ?, ?, ?)'),
+    insertAlarm: db.prepare('INSERT INTO alarms (room_id, key, level, text, raised_at, gateway) VALUES (?, ?, ?, ?, ?, ?)'),
     clearAlarm: db.prepare('UPDATE alarms SET cleared_at = ? WHERE room_id = ? AND key = ? AND cleared_at IS NULL'),
     alarm: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id WHERE a.id = ?`),
     activeAlarms: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id
                               WHERE a.room_id = ? AND a.cleared_at IS NULL ORDER BY a.id`),
-    // Current = active, or cleared and not acknowledged. Critical first, then newest.
+    // Current = active, or cleared since ?2 and not acknowledged (spec 2026-11-12-alarms-triage-design.md 5). Active first,
+    // critical first, then newest.
     currentAlarms: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id
-                               WHERE (a.cleared_at IS NULL OR a.acked_at IS NULL) AND (?1 IS NULL OR a.room_id = ?1)
-                               ORDER BY a.level = 'critical' DESC, a.raised_at DESC, a.id DESC`),
+                               WHERE (a.cleared_at IS NULL OR (a.acked_at IS NULL AND a.cleared_at >= ?2)) AND (?1 IS NULL OR a.room_id = ?1)
+                               ORDER BY a.cleared_at IS NULL DESC, a.level = 'critical' DESC, a.raised_at DESC, a.id DESC`),
+    escalateAlarm: db.prepare('UPDATE alarms SET level = ?, text = ?, acked_at = NULL, acked_by = NULL WHERE id = ? AND cleared_at IS NULL'),
     alarmHistory: db.prepare(`SELECT a.*, r.name AS room_name FROM alarms a JOIN rooms r ON r.id = a.room_id
                               WHERE a.room_id = ? ORDER BY a.id DESC LIMIT 50`),
-    ackAlarm: db.prepare('UPDATE alarms SET acked_at = COALESCE(acked_at, ?) WHERE id = ?'),
-    ackRoomAlarms: db.prepare('UPDATE alarms SET acked_at = ? WHERE room_id = ? AND acked_at IS NULL'), // all of those are current
+    ackAlarm: db.prepare('UPDATE alarms SET acked_by = CASE WHEN acked_at IS NULL THEN ? ELSE acked_by END, acked_at = COALESCE(acked_at, ?) WHERE id = ?'),
+    ackRoomAlarms: db.prepare('UPDATE alarms SET acked_at = ?, acked_by = ? WHERE room_id = ? AND acked_at IS NULL'),
     // Stream B: machine log (spec 2026-10-19-safety-and-history-design.md 4).
     logLast: db.prepare(MACHINE_LOG_SQL.last),
     logAdd: db.prepare(`INSERT INTO machine_log (room_id, machine, at, on_, setpoint, mode, fan, source)
@@ -1101,8 +1117,8 @@ export function openDb(path, { log = console.error } = {}) {
     logBefore: db.prepare('SELECT * FROM machine_log WHERE room_id = ? AND machine = ? AND at < ? ORDER BY at DESC, id DESC LIMIT 1'),
     overviewActive: db.prepare(`SELECT room_id, level FROM alarms WHERE cleared_at IS NULL`),
     overviewAlarms: db.prepare(`SELECT alarms.*, rooms.name AS room_name FROM alarms JOIN rooms ON rooms.id = alarms.room_id
-                               WHERE cleared_at IS NULL OR acked_at IS NULL
-                               ORDER BY (level = 'critical') DESC, raised_at DESC, alarms.id DESC LIMIT 10`),
+                               WHERE cleared_at IS NULL OR (acked_at IS NULL AND cleared_at >= ?)
+                               ORDER BY cleared_at IS NULL DESC, (level = 'critical') DESC, raised_at DESC, alarms.id DESC LIMIT 200`),
     // Energy meter, outdoor probe and usage queries (spec 2026-10-20-energy-water-outdoor-design.md).
     wiredMeters: db.prepare('SELECT id AS roomId, meter_address AS address, gateway FROM rooms WHERE meter_address IS NOT NULL ORDER BY id'),
     addMeterReading: db.prepare(`INSERT INTO meter_readings (room_id, address, at, ok, power_w, energy_kwh, error)
@@ -1571,8 +1587,9 @@ export function openDb(path, { log = console.error } = {}) {
     // An alarm is { id, roomId, roomName, key, level, text, raisedAt, clearedAt, ackedAt }.
 
     // Raises an alarm and returns its id. Throws when the room already has an active alarm with that key.
-    raiseAlarm(roomId, key, level, text, at) {
-      const id = Number(q.insertAlarm.run(roomId, key, level, text, at).lastInsertRowid);
+    // gateway: the address a gateway alarm is about, kept as it was when raised (History shows it to the owner).
+    raiseAlarm(roomId, key, level, text, at, { gateway = null } = {}) {
+      const id = Number(q.insertAlarm.run(roomId, key, level, text, at, gateway).lastInsertRowid);
       tellAlarm('raised', () => this.getAlarm(id));
       return id;
     },
@@ -1585,7 +1602,7 @@ export function openDb(path, { log = console.error } = {}) {
       return cleared;
     },
 
-    // Calls fn({ change: 'raised' | 'cleared' | 'acked' | 'acked-room', alarm?, roomId? }) after every alarm change; returns
+    // Calls fn({ change: 'raised' | 'escalated' | 'cleared' | 'acked' | 'acked-room' | 'acked-many', alarm?, roomId?, ids? }) after every alarm change; returns
     // the unsubscribe. A listener that throws is logged and does not stop the change (spec 2026-10-26 section 2).
     onAlarmChange(fn) {
       alarmListeners.add(fn);
@@ -1602,27 +1619,53 @@ export function openDb(path, { log = console.error } = {}) {
       return q.activeAlarms.all(roomId).map(toAlarm);
     },
 
-    // Active alarms, and cleared ones not yet acknowledged: of one room, or of every room. Critical first, then newest.
-    currentAlarms(roomId = null) {
-      return q.currentAlarms.all(roomId).map(toAlarm);
+    // Active alarms, and cleared ones not yet acknowledged that cleared in the last ALARM_REVIEW_MS: of one room, or of every
+    // room. Active first, critical first, then newest.
+    currentAlarms(roomId = null, now = Date.now()) {
+      return q.currentAlarms.all(roomId, now - ALARM_REVIEW_MS).map(toAlarm);
     },
 
     // { current, history }: history = the room's last 50 alarms of any state, newest first.
-    roomAlarms(roomId) {
-      return { current: this.currentAlarms(roomId), history: q.alarmHistory.all(roomId).map(toAlarm) };
+    roomAlarms(roomId, now = Date.now()) {
+      return { current: this.currentAlarms(roomId, now), history: q.alarmHistory.all(roomId).map(toAlarm) };
     },
 
-    // Acknowledging again keeps the first time. Returns the alarm, or null when there is none.
-    ackAlarm(id, at) {
-      if (q.ackAlarm.run(at, id).changes === 0) return null;
+    // A tier change of an active alarm (spec 2026-11-12-alarms-triage-design.md 2): its level and text, unacknowledged again.
+    // Returns true when the alarm was active.
+    escalateAlarm(id, level, text) {
+      if (q.escalateAlarm.run(level, text, id).changes === 0) return false;
+      tellAlarm('escalated', () => this.getAlarm(id));
+      return true;
+    },
+
+    // Acknowledges the alarms of ids (unknown ones skipped, an acknowledged one keeps its time). Returns how many were new.
+    // One transaction and one change for the batch (review 2026-11-12): { change: 'acked-many', ids } with the ids it acknowledged.
+    ackAlarms(ids, at, by = null) {
+      const done = [];
+      inTransaction(() => {
+        for (const id of ids) {
+          const before = q.alarm.get(id);
+          if (!before || before.acked_at !== null) continue;
+          q.ackAlarm.run(by, at, id);
+          done.push(id);
+        }
+      });
+      if (done.length) for (const fn of [...alarmListeners]) safe(() => fn({ change: 'acked-many', ids: done }));
+      return done.length;
+    },
+
+    // Acknowledging again keeps the first time and name. by: who acknowledged (null: not known). Returns the alarm, or null when
+    // there is none.
+    ackAlarm(id, at, by = null) {
+      if (q.ackAlarm.run(by, at, id).changes === 0) return null;
       const alarm = this.getAlarm(id);
       tellAlarm('acked', () => alarm);
       return alarm;
     },
 
-    // Acknowledges every unacknowledged alarm of the room (all of them are current). Returns how many.
-    ackRoomAlarms(roomId, at) {
-      const n = Number(q.ackRoomAlarms.run(at, roomId).changes);
+    // Acknowledges every unacknowledged alarm of the room (by: who). Returns how many.
+    ackRoomAlarms(roomId, at, by = null) {
+      const n = Number(q.ackRoomAlarms.run(at, by, roomId).changes);
       if (n > 0) for (const fn of [...alarmListeners]) safe(() => fn({ change: 'acked-room', roomId }));
       return n;
     },
@@ -1735,7 +1778,7 @@ export function openDb(path, { log = console.error } = {}) {
           },
         };
       });
-      return { rooms, alarms: q.overviewAlarms.all().map(alarmRow) };
+      return { rooms, alarms: q.overviewAlarms.all(now - ALARM_REVIEW_MS).map(alarmRow) };
     },
 
     // Every wired relay module and aircon gateway: rooms by id, relay before ac, with the room's gateway (null: the farm's).

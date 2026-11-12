@@ -7,16 +7,26 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { openDb } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { createTasks } from '../server/tasks.js';
+import { createMachines } from '../server/machines.js';
+import { createController } from '../server/controller.js';
 import { hashSecret } from '../server/auth.js';
 import { MONEY_KEYS } from '../server/roles.js';
 import { localDate } from '../server/task-rules.js';
 
 const ROOM = { name: 'Room 1', length: 6, width: 4, height: 2.5 };
 
-async function farm(t) {
+async function farm(t, { withControl = false } = {}) {
   const db = openDb(':memory:');
   const now = Date.now();
-  const server = createApp(db, { tasks: createTasks({ db, now: () => now }) });
+  const lines = []; // the API's notes (who acknowledged an alarm)
+  // withControl: the machines and the controller, so the control routes exist
+  const control = {};
+  if (withControl) {
+    const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
+    control.machines = createMachines({ db, client: { async writeCoil() {}, async writeRegisters() {} }, poller });
+    control.controller = createController({ db, machines: control.machines });
+  }
+  const server = createApp(db, { tasks: createTasks({ db, now: () => now }), log: (line) => lines.push(line), ...control });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   t.after(async () => { await new Promise((r) => server.close(r)); db.close(); });
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -35,7 +45,7 @@ async function farm(t) {
   db.setSecret(ali, await hashSecret('482913'));
   const ray = db.setOwner('Ray', await hashSecret('long enough password'));
   const signIn = async (id, secret) => /^farm_session=[^;]+/.exec((await call('POST', '/api/login', { id, secret })).cookie)[0];
-  return { db, call, now, ali, ray, owner: await signIn(ray, 'long enough password'), worker: await signIn(ali, '482913') };
+  return { db, call, now, ali, ray, lines, owner: await signIn(ray, 'long enough password'), worker: await signIn(ali, '482913') };
 }
 
 // Every route the API answers, a sample path each, and whether a worker may use it.
@@ -44,9 +54,9 @@ const ROUTES = [
   ['GET', '/api/outdoor', true], ['GET', '/api/outdoor/history', true], ['GET', '/api/usage', false], ['GET', '/api/overview', true],
   ['GET', '/api/rooms', true], ['POST', '/api/rooms', false], ['GET', '/api/rooms/1', true], ['PUT', '/api/rooms/1', false],
   ['DELETE', '/api/rooms/1', false], ['GET', '/api/rooms/1/sensors', true], ['GET', '/api/rooms/1/usage', false],
-  ['GET', '/api/rooms/1/control', false], ['PUT', '/api/rooms/1/control', false], ['GET', '/api/rooms/1/crop', true],
+  ['GET', '/api/rooms/1/control', true], ['PUT', '/api/rooms/1/control', false], ['GET', '/api/rooms/1/crop', true],
   ['PUT', '/api/rooms/1/crop', false], ['GET', '/api/rooms/1/history', true], ['GET', '/api/rooms/1/machines', true],
-  ['PUT', '/api/rooms/1/machines/ac', false], ['GET', '/api/alarms', true], ['POST', '/api/alarms/1/ack', false],
+  ['PUT', '/api/rooms/1/machines/ac', false], ['GET', '/api/alarms', true], ['POST', '/api/alarms/1/ack', true], ['POST', '/api/alarms/ack', true],
   ['GET', '/api/rooms/1/tasks', true], ['POST', '/api/rooms/1/tasks', false], ['GET', '/api/rooms/1/tasks/log', true],
   ['GET', '/api/rooms/1/tasks/log.csv', false], ['GET', '/api/tasks/today', true], ['POST', '/api/tasks/1/done', true],
   ['POST', '/api/tasks/1/skip', true], ['POST', '/api/tasks/1/undo', true], ['POST', '/api/tasks/1/cancel', false],
@@ -63,7 +73,7 @@ const ROUTES = [
   ['GET', '/api/simulations/1', false], ['GET', '/api/sizing/1', false], ['GET', '/api/workers/accounts', false],
   ['POST', '/api/workers/1/secret', false], ['PUT', '/api/workers/1/role', false], ['POST', '/api/workers/1/unlock', false],
   ['POST', '/api/workers/1/sign-out', false],
-  ['GET', '/api/rooms/1/alarms', true], ['POST', '/api/rooms/1/alarms/ack', false], ['POST', '/api/rooms/1/filter/changed', false],
+  ['GET', '/api/rooms/1/alarms', true], ['POST', '/api/rooms/1/alarms/ack', true], ['POST', '/api/rooms/1/filter/changed', false],
   ['GET', '/api/rooms/1/filter/changes', true], ['POST', '/api/rooms/1/simulations', false], ['POST', '/api/rooms/1/sizing', false],
   ['GET', '/api/batches/stock-items', false], ['GET', '/api/batches/1', false], ['POST', '/api/batches/1/place', false],
   ['POST', '/api/batches/1/unplace', false], ['POST', '/api/batches/1/checks', false], ['POST', '/api/batches/1/loads', false],
@@ -362,4 +372,50 @@ test('every /api reply carries nosniff, DENY, no-referrer and no-store: a JSON r
   assert.match(replies.json.headers.get('content-type'), /^application\/json/);
   // the page files keep their own caching
   assert.notEqual((await call('GET', '/')).headers.get('cache-control'), 'no-store');
+});
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 7) ----
+test("a worker reads the bands and acknowledges alarms, named in the log; the control settings and the machines stay the owner's", async (t) => {
+  const { db, call, worker, lines } = await farm(t);
+  const room = db.createRoom({ ...ROOM, relayAddress: 3 }).id;
+  // past the gate (this app has no controller, so the route itself is missing: 404, not 403)
+  assert.equal((await call('GET', `/api/rooms/${room}/control`, undefined, worker)).status, 404);
+  assert.equal((await call('PUT', `/api/rooms/${room}/control`, { auto: false }, worker)).status, 403);
+  assert.equal((await call('PUT', `/api/rooms/${room}/machines/intake`, { on: true }, worker)).status, 403);
+  const x = db.raiseAlarm(room, 'tHigh', 'warning', 'x', Date.now());
+  const y = db.raiseAlarm(room, 'tLow', 'warning', 'y', Date.now());
+  const z = db.raiseAlarm(room, 'rhLow', 'warning', 'z', Date.now());
+  assert.equal((await call('POST', `/api/alarms/${x}/ack`, undefined, worker)).status, 200);
+  assert.deepEqual((await call('POST', '/api/alarms/ack', { ids: [x, y] }, worker)).body, { acked: 1 });
+  assert.deepEqual((await call('POST', `/api/rooms/${room}/alarms/ack`, undefined, worker)).body, { acked: 1 });
+  assert.notEqual(db.getAlarm(z).ackedAt, null);
+  assert.deepEqual([x, y, z].map((id) => db.getAlarm(id).ackedBy), ['Ali', 'Ali', 'Ali'], 'kept on the alarm (database 27)');
+  assert.deepEqual(lines, [`Alarm ${x} (Room 1, tHigh) acknowledged by Ali`, `Alarm ${y} (Room 1, tLow) acknowledged by Ali`, `Alarm ${z} (Room 1, rhLow) acknowledged by Ali`]);
+});
+
+test("a worker's GET of a room's control settings: 200 with the bands and no money key; changing them stays 403", async (t) => {
+  const { db, call, worker } = await farm(t, { withControl: true });
+  const room = db.createRoom({ ...ROOM, relayAddress: 3 }).id;
+  const r = await call('GET', `/api/rooms/${room}/control`, undefined, worker);
+  assert.equal(r.status, 200);
+  for (const k of ['tLow', 'tHigh', 'rhLow', 'rhHigh', 'co2Low', 'co2High', 'co2Safety']) assert.equal(typeof r.body[k], 'number', k);
+  assert.equal(typeof r.body.auto, 'boolean');
+  const keys = [];
+  const walk = (v) => { if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { keys.push(k); walk(x); } };
+  walk(r.body);
+  assert.deepEqual(keys.filter((k) => MONEY_KEYS.has(k)), []);
+  assert.equal((await call('PUT', `/api/rooms/${room}/control`, { tLow: 20 }, worker)).status, 403);
+});
+
+test("a worker's alarm replies carry no gateway address (the farm is on the internet); the owner's do", async (t) => {
+  const { db, call, worker, owner } = await farm(t);
+  const room = db.createRoom({ ...ROOM, trhAddress: 1, gateway: '127.0.0.1:1512' }).id;
+  db.raiseAlarm(room, 'gateway', 'serious', "Room 1's gateway not answering", Date.now(), { gateway: '127.0.0.1:1512' });
+  const has = (body) => JSON.stringify(body).includes('127.0.0.1:1512');
+  for (const path of ['/api/alarms', '/api/overview', `/api/rooms/${room}/alarms`]) {
+    const w = await call('GET', path, undefined, worker);
+    assert.equal(w.status, 200, path);
+    assert.equal(has(w.body), false, `${path}: worker`);
+    assert.equal(has((await call('GET', path, undefined, owner)).body), true, `${path}: owner`);
+  }
 });

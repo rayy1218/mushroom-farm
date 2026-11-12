@@ -78,3 +78,30 @@ test("a crop's short name: the crop list's name without a trailing (draft); the 
   assert.equal(cropShortName('nosuch'), 'nosuch', 'an unknown key as it is');
   assert.equal(cropShortName(undefined), '');
 });
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 3) ----
+import { roomLimits } from '../web/crops.js';
+
+test('every crop has a hot, a cold and a dry limit outside its good fruiting range', () => {
+  for (const key of CROP_KEYS) {
+    const { limits, range } = CROPS[key];
+    assert.ok(limits.hot > range.T[1], `${key} hot`);
+    assert.ok(limits.cold < range.T[0], `${key} cold`);
+    assert.ok(limits.dry < range.RH[0], `${key} dry`);
+  }
+  assert.deepEqual(CROPS.oyster.limits, { hot: 32, cold: 15, dry: 70 });
+});
+
+test('room limits: one crop, the strictest of a mix, never next to the band, none without crops', () => {
+  const bands = { tLow: 24, tHigh: 26, rhLow: 85, rhHigh: 91 };
+  assert.deepEqual(roomLimits([{ crop: 'oyster', blocks: 100 }], bands),
+    { hot: 32, cold: 15, dry: 70, hotFor: 'Grey oyster', coldFor: 'Grey oyster', dryFor: 'Grey oyster' });
+  // the lowest hot limit, the highest cold and dry limits, each named by the crop that sets it; the band's guard named null
+  assert.deepEqual(roomLimits([{ crop: 'pink', blocks: 10 }, { crop: 'lionsmane', blocks: 10 }, { crop: 'milky', blocks: 10 }], { ...bands, tHigh: 22, tLow: 20 }),
+    { hot: 26, cold: 17, dry: 75, hotFor: "Lion's mane", coldFor: null, dryFor: "Lion's mane" });
+  // a band set by hand: hot at least tHigh + 3, cold at most tLow − 3, dry at most rhLow − 10
+  assert.deepEqual(roomLimits([{ crop: 'oyster', blocks: 1 }], { tLow: 13, tHigh: 31, rhLow: 72, rhHigh: 80 }),
+    { hot: 34, cold: 10, dry: 62, hotFor: null, coldFor: null, dryFor: null });
+  assert.equal(roomLimits([], bands), null);
+  assert.equal(roomLimits(null, bands), null);
+});

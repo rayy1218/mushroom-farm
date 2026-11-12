@@ -3,17 +3,19 @@
 
 // Targets per stage: [temperature °C, RH %, CO₂ limit ppm]. range: the good fruiting range (T °C, RH %).
 // cool: a crop held well below the outdoor air (an insulated room and a larger aircon).
+// limits: past them an alarm turns Critical (spec 2026-11-12-alarms-triage-design.md 3): hot and cold °C in every stage, dry % RH
+// in pinning and fruiting.
 export const CROPS = {
-  oyster: { name: 'Grey oyster', spawn: [24, 70, 5000], pinning: [24, 92, 800], fruiting: [25, 88, 1000], rest: [25, 80, 2000], range: { T: [23, 27], RH: [85, 92] } },
-  black: { name: 'Black oyster', spawn: [25, 70, 5000], pinning: [23, 92, 800], fruiting: [23, 88, 900], rest: [24, 80, 2000], range: { T: [21, 25], RH: [85, 92] } },
-  pink: { name: 'Pink oyster', spawn: [27, 70, 5000], pinning: [26, 92, 800], fruiting: [26, 88, 1000], rest: [27, 80, 2000], range: { T: [24, 29], RH: [85, 92] } },
-  abalone: { name: 'Abalone oyster', spawn: [27, 70, 5000], pinning: [26, 90, 1000], fruiting: [27, 87, 1000], rest: [27, 80, 2000], range: { T: [25, 30], RH: [85, 90] } },
-  golden: { name: 'Golden oyster', spawn: [26, 70, 5000], pinning: [24, 92, 700], fruiting: [24, 88, 800], rest: [25, 80, 2000], range: { T: [22, 26], RH: [85, 92] } },
-  woodear: { name: 'Black jelly (wood ear)', spawn: [27, 70, 5000], pinning: [26, 92, 1500], fruiting: [26, 90, 1500], rest: [27, 80, 3000], range: { T: [24, 29], RH: [88, 95] } },
-  reishi: { name: 'Reishi (lingzhi)', spawn: [28, 70, 5000], pinning: [27, 90, 1000], fruiting: [27, 88, 1000], rest: [27, 80, 2000], range: { T: [25, 30], RH: [85, 92] } },
-  milky: { name: 'Milky (Calocybe indica)', spawn: [30, 70, 5000], pinning: [30, 90, 1000], fruiting: [30, 85, 1000], rest: [30, 80, 2000], range: { T: [28, 34], RH: [80, 90] } },
+  oyster: { name: 'Grey oyster', spawn: [24, 70, 5000], pinning: [24, 92, 800], fruiting: [25, 88, 1000], rest: [25, 80, 2000], limits: { hot: 32, cold: 15, dry: 70 }, range: { T: [23, 27], RH: [85, 92] } },
+  black: { name: 'Black oyster', spawn: [25, 70, 5000], pinning: [23, 92, 800], fruiting: [23, 88, 900], rest: [24, 80, 2000], limits: { hot: 30, cold: 12, dry: 70 }, range: { T: [21, 25], RH: [85, 92] } },
+  pink: { name: 'Pink oyster', spawn: [27, 70, 5000], pinning: [26, 92, 800], fruiting: [26, 88, 1000], rest: [27, 80, 2000], limits: { hot: 34, cold: 15, dry: 70 }, range: { T: [24, 29], RH: [85, 92] } },
+  abalone: { name: 'Abalone oyster', spawn: [27, 70, 5000], pinning: [26, 90, 1000], fruiting: [27, 87, 1000], rest: [27, 80, 2000], limits: { hot: 34, cold: 18, dry: 70 }, range: { T: [25, 30], RH: [85, 90] } },
+  golden: { name: 'Golden oyster', spawn: [26, 70, 5000], pinning: [24, 92, 700], fruiting: [24, 88, 800], rest: [25, 80, 2000], limits: { hot: 32, cold: 15, dry: 70 }, range: { T: [22, 26], RH: [85, 92] } },
+  woodear: { name: 'Black jelly (wood ear)', spawn: [27, 70, 5000], pinning: [26, 92, 1500], fruiting: [26, 90, 1500], rest: [27, 80, 3000], limits: { hot: 34, cold: 15, dry: 75 }, range: { T: [24, 29], RH: [88, 95] } },
+  reishi: { name: 'Reishi (lingzhi)', spawn: [28, 70, 5000], pinning: [27, 90, 1000], fruiting: [27, 88, 1000], rest: [27, 80, 2000], limits: { hot: 35, cold: 18, dry: 70 }, range: { T: [25, 30], RH: [85, 92] } },
+  milky: { name: 'Milky (Calocybe indica)', spawn: [30, 70, 5000], pinning: [30, 90, 1000], fruiting: [30, 85, 1000], rest: [30, 80, 2000], limits: { hot: 38, cold: 22, dry: 65 }, range: { T: [28, 34], RH: [80, 90] } },
   // Draft: fruits at 16–22 °C; needs an insulated room and a larger aircon than the tropical crops.
-  lionsmane: { name: "Lion's mane (draft)", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000], range: { T: [16, 22], RH: [85, 92] }, cool: true },
+  lionsmane: { name: "Lion's mane (draft)", spawn: [23, 80, 5000], pinning: [17, 92, 1000], fruiting: [20, 90, 1000], rest: [21, 80, 2000], limits: { hot: 26, cold: 10, dry: 75 }, range: { T: [16, 22], RH: [85, 92] }, cool: true },
 };
 export const CROP_KEYS = Object.keys(CROPS);
 
@@ -113,6 +115,26 @@ export function validateCrops(list, { allowEmpty = false } = {}) {
     }
   }
   return null;
+}
+
+// The room's Critical limits from its crops [{ crop }] and bands: the lowest hot limit, the highest cold and dry limits, each
+// with the crop that sets it (…For); never next to the band: hot at least tHigh + 3 °C, cold at most tLow − 3 °C, dry at most
+// rhLow − 10 % RH (…For null when the band sets it). null without crops.
+export function roomLimits(crops, bands) {
+  const known = (crops ?? []).filter((c) => CROPS[c?.crop]);
+  if (!known.length) return null;
+  const pick = (field, better) => known.reduce((a, c) => (better(CROPS[c.crop].limits[field], CROPS[a.crop].limits[field]) ? c : a));
+  const hot = pick('hot', (x, y) => x < y);
+  const cold = pick('cold', (x, y) => x > y);
+  const dry = pick('dry', (x, y) => x > y);
+  const out = {};
+  for (const [field, crop, guard, keep] of [['hot', hot, bands.tHigh + 3, (v, g) => v >= g], ['cold', cold, bands.tLow - 3, (v, g) => v <= g], ['dry', dry, bands.rhLow - 10, (v, g) => v <= g]]) {
+    const v = CROPS[crop.crop].limits[field];
+    const own = keep(v, guard);
+    out[field] = own ? v : round1(guard);
+    out[`${field}For`] = own ? cropShortName(crop.crop) : null;
+  }
+  return { hot: out.hot, cold: out.cold, dry: out.dry, hotFor: out.hotFor, coldFor: out.coldFor, dryFor: out.dryFor };
 }
 
 export const blocksOf = (crops) => crops.reduce((sum, c) => sum + c.blocks, 0);

@@ -442,6 +442,8 @@ Rhythm runs on 4 px: 4, 8, 12, 16, 20, 24, 32. Cards gap 16 px (12 px on a phone
 
 **The Readings First Rule.** On a phone the order is readings, alarms, control, machines, the drawing, then the crop: the question "is the room OK" is answered before any scroll.
 
+**The Alarm Triage Rule.** (2026-11-12, the audits: 33 cleared alarms at full volume taught people to ignore red.) Red and amber are for alarms that are on. An alarm card lists the active alarms first; the cleared ones nobody acknowledged fold into one neutral line ("8 cleared to review · Review"), grouped by room and cause (a room's silent devices are one row, "No answer (6 machines, 2 sensors)"), each group a grey "Cleared" chip with one Acknowledge, under **Acknowledge all cleared**; a phone shows five groups and "Show all N". With nothing active the card is that one 44 px line, its title in front ("Alarms  8 cleared to review  Review"), and the toggle stays put when it opens. A cleared alarm leaves the lists 12 h after it cleared (History keeps it). The status line's count is the active rows. On a room's Now tab from 1100 px the card spans both columns above the readings; off Now one 44 px line stands in for it ("1 active alarm · 7 cleared to review ›", the cleared part grey, one line with an ellipsis). **Acknowledge all** reaches only the active alarms, and after any Acknowledge the focus goes to the next cleared group, the fold's toggle or the card's title, never to another active alarm's button. An outage alarm leads with the place and says what to check ("Container 3's gateway not answering: … Check its power and network cable"), with what waits under it in a sub-line ("Waiting on it: Intake fan, …").
+
 ## Elevation & Depth
 
 Flat by default. Depth comes from tone (`surface` cards on the darker `page`) and a hairline edge, not shadows. The dark theme uses no card shadows at all; the light theme gives cards a single 1 px soft shadow so white cards separate from the pale page.
@@ -503,7 +505,7 @@ A pill says a state; a chip says a level or a mark; a count says how many. One s
 
 | Kind | Look | Where |
 |---|---|---|
-| Level chip | Outlined in its colour, no fill, 2 × 8 px: warning `warning-text`, serious `critical-text`; critical a solid `critical` fill with white words; acknowledged a `border-strong` outline in `ink-2` | An alarm's level on the Alarms card and the Overview |
+| Level chip | Outlined in its colour, no fill, 2 × 8 px: warning `warning-text`, serious `critical-text`; critical a solid `critical` fill with white words; acknowledged, and "Cleared", a `border-strong` outline in `ink-2` | An alarm's level on the Alarms card and the Overview |
 | Mark chip | Outlined `border-strong`, `ink-2` words, 2 × 10 px; the current one `accent-soft` with `accent-text` and its edge at 50 % accent | A stage card's place in the plan on the Crop tab ("Current · day 2 of 7 · flush 1 of 4", "Next · about 9 Nov 08:00") |
 | Count | 18 px tall, at least 18 px wide, 0 × 4 px, 700, `border-strong` fill with `ink` words; amber (`warning` fill, `page` words in dark, `ink` in light) when something in it is overdue | The Tasks tab's count, the top bar's Today count |
 | Dot | 6 to 10 px, full-round, no words of its own: the words beside it say the state | Live, a tab with a live problem (7 px), the Overview's status line, a sensor's state, a calendar day on a phone |
