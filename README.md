@@ -1,185 +1,104 @@
 # Mushroom farm
 
-A small web app for running a mushroom farm: an Overview of every room, and per room the live readings of its temperature/humidity probe and CO₂ sensor, manual or automatic control of its machines (intake, exhaust and circulation fans, humidifier, aircon), alarms, and charts up to 30 days back, all over Modbus TCP.
+A web app for a small mushroom farm in Malaysia. It controls the climate of the fruiting rooms over Modbus TCP, guides the daily work, and keeps the farm's books. The owner and the workers each sign in. A device simulator plays the rooms' sensors and machines, so you can run everything without hardware.
 
-Needs Node 22.13 or newer; there are no npm dependencies.
+Plain JavaScript. No build step, no npm dependencies. Needs Node 22.13 or newer (it uses the built-in `node:sqlite`).
 
-## Run
+## What it does
 
-Two programs. In one terminal, the farm app:
+| Area | What you get |
+|---|---|
+| Climate | Live temperature, humidity and CO₂ per room; automatic control of intake, exhaust and circulation fans, humidifier, dehumidifier, aircon and lights from the room's bands; free cooling and outdoor drying from an outdoor probe |
+| Safety | Sensor checks (no answer, out of range, jump, frozen), alarms on the room page, the Overview and a menu badge, optional Telegram messages (Settings) |
+| Rooms | Crops and stage program (spawn run, pinning, fruiting, rest, flushes), intake filter tracking, energy (kWh, RM) and water (L), history up to 30 days |
+| Simulation | Simulation runs for a room's walls, weather and machines, and Suggest machines for sizing |
+| Tasks | Daily stage tasks, upkeep, long-term tasks, the Today page, the Calendar, a CSV log and printable myGAP sheets |
+| Harvest | kg per run, flush, room and crop; kg per block and biological efficiency |
+| Business | Summary, Batches, Inventory, Sales, Costs, Runs and Economics (owner only) |
+| Sign-in | Workers sign in with a 6-digit PIN, owners with a password. Workers see no money. Sessions, lockouts and a live stream that follows the session |
+
+## Quick start
+
+Needs Node 22.13 or newer. Use two terminals.
 
 ```bash
-npm start
+npm run device    # the device simulator: http://localhost:8090
+npm start         # the farm app:         http://localhost:8080
 ```
 
-Open http://localhost:8080. In another terminal, the device app (a pretend Modbus gateway with sensors you control):
+Make the first owner. Nobody can sign in until you do. It asks for the password twice and does not show it (14 characters or more).
 
 ```bash
-npm run device
+npm run owner -- "<name>"
 ```
 
-Open http://localhost:8090, add sensors (address + kind), type their values, and switch "answering" off to make a sensor time out. Then give a room the same addresses in the farm app (room page → Equipment tab → Sensors) and open the room's page.
+Open http://localhost:8080 and sign in. Then:
 
-Machines work the same way: add a relay module and an aircon gateway on the device page, give the room their addresses (room page → Equipment tab → Machines), then switch the machines from the room's page. Each machine shows what the farm **commanded**, what the device **reports**, and (fans and humidifier) whether its current switch says it is **running**. On the device page you can make a relay stick, a motor die, the aircon refuse commands or show an error code, and watch the room page report it.
+1. On the device page, add sensors (address and kind) and type their values.
+2. In the farm app, give a room the same addresses (room page, Equipment tab).
+3. For a live-looking room, add a simulated room on the device page, link its sensors and machines, and enable it.
 
-**Automatic control.** Turn on Auto on a room's page and the farm app runs the machines from the room's bands: an air exchange (intake + exhaust) starts at the CO₂ upper limit and stops at the lower limit or after the time limit (10 min by default); at the CO₂ safety level it runs with no limit. The humidifier switches inside the humidity band, on 1 % RH above its lower limit and off 1 % RH under its upper one (a quarter of the band in from each limit when the band is under 6 % RH wide), so the room is not held at an edge (and it can be forced on during an exchange: off for a new room, since Malaysian outdoor air is wet enough), the aircon cools to the middle of the temperature band (optionally lower during an exchange: 0 °C for a new room), the circulation fan is always on. With no air exchange for 15 min (a room setting, 0 turns it off) the fans run for 1 min of fresh air whatever the CO₂. Machines are protected from rapid switching (an exchange runs at least 30 s and stays off at least 60 s, the humidifier changes at most once in 15 s, the aircon at most every 2 min).
+The database is created at `data/v2.db` on the first start and moved up to the current version by itself. Copy it first when you update an existing farm. It never moves back down.
 
-**Sensor checks and alarms.** Every reading is checked (no answer, out of range, sudden jump, a value that does not change for an hour or two); 3 bad readings in a row make the sensor faulty. With a faulty CO₂ sensor, auto runs a timed air exchange (10 min of every 30); with a faulty humidity reading, a timed humidifier (10 of every 20). Alarms: temperature or humidity outside the band (a wet room after 15 min above the upper humidity limit + 3), CO₂ high or at the safety level, a sensor fault, a machine not following its command, air exchange too small, a humidifier too small (running 30 min with the humidity still below the band). A room with a relay module or an aircon gateway that has been in Manual for 2 h raises a serious reminder ("Automatic control off for 2 h: the machines stay as set by hand"), cleared as soon as auto is on again; the control reply's `autoChangedAt` says since when (a room already in Manual at the upgrade counts from the upgrade). They show on the room page, the Overview and as a badge on the menu; acknowledge them there. Without a simulation the device app's values never change, so after an hour its sensors count as frozen: that is the check working.
+## Configuration
 
-**History.** On a room's page choose Live, 1 h, 6 h, 24 h, 7 d or 30 d; the longer ranges show averages and a timeline of when each machine was on (automatic or manual).
+Environment variables. All are optional.
 
-**Simulation.** In the device page's Simulation section, add a simulated room and link a T/RH probe, a CO₂ sensor, a relay module and an aircon gateway, then enable it. The linked sensors' values then follow what the machines are really doing on the device (a stuck relay, dead motor or faulty aircon has no effect): mushroom blocks add CO₂ (60 mL/h each by default; measure yours by closing the room for 30 min: ppm rise per hour × volume ÷ blocks), moisture and the heat that comes with it, heat leaks through the walls (wall heat transfer, 80 W/K by default) and the sun warms the roof, the outdoor air follows a day (night low 25 °C at 03:00, day high 33 °C at 15:00, dew point 24 °C all day), intake + exhaust bring it in, the blocks, racks and walls hold heat and moisture, water condenses on them when the air is saturated, the humidifier adds moisture, the aircon cools or heats toward its setpoint and dries the air through its coil (more in a wet room, on fan low and in dry mode), with less capacity on a hot day. Speed 1×, 10× or 60×. The farm app sees the values change like real sensors.
+| Variable | Read by | Default | Meaning |
+|---|---|---|---|
+| `FARM_PORT` | farm app | `8080` | HTTP port (0 picks a free one) |
+| `FARM_DB` | farm app, `npm run owner` | `data/v2.db` | SQLite file, or `:memory:` |
+| `FARM_GATEWAY` | farm app | `127.0.0.1:1502` | The farm's Modbus TCP gateway `host:port`: the device app or a real gateway. A room may have its own |
+| `DEVICE_MODBUS_PORT` | device app | `1502` | Modbus TCP port the farm app polls |
+| `DEVICE_HTTP_PORT` | device app | `8090` | The device control page |
+| `DEVICE_STATE` | device app | `device/state.json` | Where sensors and their values are kept |
+| `DEVICE_HOST` | device app | `127.0.0.1` | Address both device ports listen on (`0.0.0.0` in Docker) |
+| `TZ` | both | the machine's | Set `Asia/Kuala_Lumpur`: the lights and the task days follow the clock. Docker and the systemd units already set it |
 
-**Room drawing.** The room page opens with a "Room" card that draws the room: the aircon and its condenser, the intake, exhaust and circulation fans, the humidifier mist, CO₂ bubbles and the three readings, animated from what the machines really report (a stuck or dead machine shows a warning). Each simulated room card on the device page draws the same picture, including the outdoor temperature and a sun or moon. The device serves the farm's `web/mimic.js` itself, so there is one copy. Spec: `docs/superpowers/specs/2026-10-20-room-drawing-design.md`.
+Everything else (bands, prices, poll interval, Telegram, outdoor probe address, workers, task rules) is set on the Settings page and stored in the database.
 
-**Outdoor sensor, energy and water.** Set the address of an outdoor T/RH probe on the Settings page: the Overview shows the outdoor temperature, humidity and dew point, the room drawing shows them with the sun or moon, and the room charts draw the outdoor values as a dashed line. Each room can have an energy meter (an Eastron SDM120-style Modbus meter; Equipment tab → Sensors) and power ratings for its machines (Equipment tab, each machine's card: fans 60 W, humidifier 80 W and 2.0 L/h, aircon 1050 W input by default). The room page's "Energy and water" card shows today, 7 days and 30 days in kWh, RM and litres, a bar chart per day and the share of each machine: metered when the room has a meter, otherwise estimated from run time × rating (the aircon estimate is an upper bound). Water is the humidifier's run time × its L/h. Prices are on the Settings page (electricity RM 0.55/kWh by default; the water price is blank until you enter your bill's rate, and water costs show only then). In the device app, add an "Energy meter" and a second T/RH probe and link them to a simulated room as its meter and outdoor probe. Spec: `docs/superpowers/specs/2026-10-20-energy-water-outdoor-design.md`.
+## Devices
 
-**Crops and stage program.** On a room's page, the "Crop and stage" card takes the crops in the room (Grey, Black, Pink, Abalone and Golden oyster, wood ear, reishi, milky, and lion's mane as a draft; several crops in one room get the overlap of their bands) and the farm type (ready-to-fruit blocks: fruiting and rest; full cycle: spawn run, pinning, fruiting and rest). The room's bands follow the crops and the stage: a new stage moves them over 4 hours (a lower CO₂ limit at once), and after its days (fruiting 7, rest 10, spawn run 21, pinning 4 by default) the next stage starts by itself, flush after flush (4 by default). After the last flush an alarm says to replace the blocks; **New blocks** starts again at flush 1. A band changed by hand on the Automatic control card stays until the next stage.
-
-**Suggest machines.** In the Simulate stepper's last step, **Suggest machines for these crops** works out machine sizes for the room, its crops and the walls and weather of step 1: first estimates from formulas (the fan that holds CO₂ under the band, a humidifier and dehumidifier small enough not to overshoot the band in their minimum run, the aircon from the heat), then a background search of a few dozen setups (at most about 80) over one fruiting and one rest stage. Each setup also gets a **cool-down** check: a day from outdoor air at 14:00 (the room just loaded, or after the door was open; its blocks and walls as hot as the air) until temperature and humidity are in band and hold it for an hour, at most 3 h (the aircon estimate counts the heat of the blocks' and the room's mass, and the search tries a humidifier that keeps up with the water the aircon takes out as it cools). It lists the best five with their time in band, energy and **Cools down in**; the ones that keep temperature, humidity and CO₂ each above the target (95 % by default) and cool down in time come first, cheapest first, then the ones that only miss the cool-down, quickest first. Simulate's step 3 can also start a run from outdoor air at 14:00 (**Start from**); its page says how long it took to cool down. It searches with no aircon drop during an air exchange and no forced humidifier, and **Use this** fills the stepper with the machines and those settings for the run (the room's own settings stay as they are; the summary and the run's page name what differs). Spec: `docs/superpowers/specs/2026-10-22-suggest-machines-design.md`.
-
-**Dehumidifier.** A room can have a dehumidifier on output 5 of its relay module (Equipment tab → Dehumidifier card → "Fitted", then its power and its capacity in L/day as on its label). Auto switches it on at the upper humidity limit and off at the middle of the band, only once the humidifier has been off for 30 min (a room that needed the humidifier a moment ago is not wet by itself: an air exchange wets it for a few minutes) and never together with the humidifier; its compressor gets 3 min between changes. A fitted dehumidifier has a machine tile, a timeline row, alarms and a share of the energy; the Simulate stepper asks for its size (0 = none) and the results show the water it took out. Spec: `docs/superpowers/specs/2026-10-21-dehumidifier-design.md`.
-
-**Intake filter.** Each room has a filter on its intake fan (Equipment tab → Intake fan card: the fan's maximum pressure from its datasheet; Intake filter card: the clean filter's pressure drop, the change pressure: the filter pressure sensor's reading at which to change it with the intake running, 80 Pa by default and below the fan's maximum, and how often to change it, 0 = no reminder). The room page's **Intake filter** card shows the days in use and the due date, and **Filter changed** records a new filter (the days start again, the filter alarms clear). With an optional filter pressure sensor (Equipment tab → Intake filter card → "Pressure sensor address") the card shows the pressure across the filter; readings count once the intake has run 60 s. Alarms: the filter due, the pressure at or above the change pressure (dirty) and below half the clean drop (missing or torn, or the sensor tube is off), each after 10 min of intake running with such readings, added up across exchanges. With a sensor the intake fan's estimated energy rises with the pressure. In the simulator a filter loads with the air it passes and the fan moves less air as it does (the exhaust fan pulls the shortfall in through the leaks, unfiltered); the device app's sim card shows the filter and has a **Change filter** button (a Reset keeps the filter as it is). Simulation runs take the room's filter settings and its days in use, change it on the reminder (or at the change pressure with a sensor) and report the changes, the mean filter pressure and the unfiltered share. Spec: `docs/superpowers/specs/2026-10-22-filter-design.md`.
-
-**Lights.** A room can have lights on output 6 of its relay module (Equipment tab → Lights card → "Fitted", then its power, 60 W by default). The crop program gives each stage its light hours (spawn run 0, pinning and fruiting 12, rest 0 by default; the pencil of each stage on the Crop tab) and the time they come on ("Lights from", 07:00 by default; a window may run past midnight). Auto keeps them on in that window of the present stage, off without crops or once the crop is finished. The Climate tab's Lighting group shows today's hours and why; the Room card draws a lamp and a tile. The farm device's OS time zone must be the farm's (`timedatectl set-timezone Asia/Kuala_Lumpur`): the lights follow its clock. Spec: `docs/superpowers/specs/2026-10-26-lighting-design.md`.
-
-**Simulation runs.** On the Rooms list (or a room's Simulations card), **Simulate** asks in three steps for the room's walls, weather and machines (wall heat transfer, outdoor day high, night low and dew point, sun on the roof, fan flow, aircon size, humidifier output), the crops and the start stage, and how long (7 days, or the whole program). The run goes on in the background (a 68-day program takes a few seconds) with the room's own control settings, and its page shows the time in band (temperature, humidity, CO₂, all three; per stage), charts with the band as it moved and the outdoor air, the machine timeline, and the energy (kWh, RM, per machine and per day) and water (litres). The aircon energy comes from the size you enter (COP 3). The last 20 runs of each room are kept. Spec: `docs/superpowers/specs/2026-10-20-crops-and-simulation-design.md`.
-
-**Live updates.** The pages keep one connection open to the farm app (`GET /api/events`, server-sent events) and refresh as soon as something changes: a room's readings after each poll, its machines, control, crop or filter, the alarms (the menu badge), the outdoor probe, and the progress of simulation runs and machine suggestions. A "Live" mark in the top bar shows the connection; while it is up the pages' own timers slow to 60 s, and when it drops they go back to their short timers and the browser reconnects by itself. A hidden tab closes its connection and reopens it when shown. Spec: `docs/superpowers/specs/2026-10-26-live-alarms-outdoor-design.md`.
-
-**Phone alarms (Telegram).** On the Settings page, the "Phone alarms (Telegram)" card sends alarms to a Telegram chat: make a bot with @BotFather, paste its token (write-only: the page shows only its last 4 characters), send the bot a message and enter your chat id (a group's negative id or `@channel` also work), then **Send test message**. Critical and serious alarms are sent by default (warnings can be added), a "Cleared" message follows when one ends, and an unacknowledged critical alarm repeats every 30 min (0 = no repeats). A failed message is retried after 1, 5 and 15 min (longer when Telegram asks), at most 50 wait; the card shows the last sent message and the last error. The farm keeps running whatever Telegram does.
-
-**Outdoor air in control.** With an outdoor probe set (Settings), auto uses the outdoor air (a room setting on the Automatic control card, on by default): **free cooling** runs the air exchange while outdoor air is at least 2 °C cooler than the room and not wetter, with the room in the warm part of its band, until it reaches the middle; **outdoor drying** runs it while the room is above its humidity band and the outdoor air holds at least 1 g/m³ less water, until the humidity is back at the middle (never taking the room out of its temperature band); and a timed fresh-air run waits out very wet or hot outdoor air for at most one more interval. The exchange line names why it runs ("· free cooling", "· outdoor drying"). Simulation runs and Suggest machines use the same rules. In the default climate (dew point 24 °C) outdoor air is rarely drier than a room, so it mostly helps warm crops such as milky at night: in a 17-day run of a 60 m³ milky room, the time with all three in band went from 48 % to 57 % for 0.8 % more energy.
-
-**Tasks.** Each room has a **Tasks** tab (between Crop and Simulations; the count on it is the tasks due, amber when one is overdue) with three parts: **Daily tasks** (a grid, below), Upkeep and Long-term; the top bar has a **Today** link with the farm's count. **Daily tasks** holds the room's stage tasks, made each farm day (Asia/Kuala_Lumpur) from its crops, stage and day in the stage: the contamination walk every morning (with the bags removed), the colonisation check every 2 days in the last 7 days of the spawn run, opening the bags on the first day of pinning (the casing soil for milky, antlers or caps for reishi), the humidifier check in pinning and fruiting, the harvest checks while fruiting with the kg picked (morning and afternoon for oyster and lion's mane, once a day for wood ear and milky, the growing rim every 2 days for reishi), scrape and recap on the first day of a rest (oyster) and reopen on its last, and the footbath and the floor every day. The crops' notes show under their tasks (such as "pick on sale days" for pink oyster); a room with several crops gets each task once. A room without crops gets only the footbath and the floor, and after the last flush "Clear out the spent blocks" every day until **New blocks**. A day's tasks still open when it ends count as **missed**; a stage change cancels the ones that no longer apply ("Stage changed"; they open again if the stage changes back that day). Days the farm app was not running get no tasks (a gap in the log, not missed).
-
-**Upkeep** repeats, counted from the last time it was done or skipped: the aircon filter, the humidifier and the fly traps every 7 days, the dehumidifier's filter every 14 (when fitted), the CO₂ sensor every 30 and the RH sensor every 90 (when the room has its address), the aircon service every 120 days and its chemical wash every 180. The first one of a rule of 14 days or less is due the day it appears, of a longer one an interval after that day (a new room gets its aircon service 120 days on, not on day one; **Done** early is always there); one past its date says "overdue 3 days" and stays until done or skipped (upkeep is never missed). The part lists the overdue first, then those due within 7 days, then the rest with their date. A new interval takes effect at once on the open one. Taking a machine or sensor out of the room cancels its upkeep ("The room no longer has this machine"). The intake filter keeps its own reminder (above).
-
-**Long-term tasks.** **Plan this**, beside **Use this** on Suggest machines, makes a long-term task for each machine that differs from what the room has now, with the whole plan's RM a month against it (every machine of the plan together): "Aircon 9,000 → 12,000 BTU/h · plan: RM 3 a month less · from Suggest machines, 29 Oct". When a machine's size now was Simulate's default (the fan's flow, which Setup keeps none of, or the aircon or humidifier of a room not rated yet), its line and its task's note say so. It shows only when the search has the room's machines to start from. A machine already planned to the same size is left out ("Already planned: see the Tasks tab" when nothing is left); planned to another size, the newer plan replaces the older one (cancelled "Replaced by a newer plan"), and the row says so: "1 long-term task planned (replaces Humidifier 0.5 → 1 L/h) · Open the Tasks tab". A stored search made before the room's Setup changed cannot plan: Suggest again. **Add** on the tab makes your own (up to 120 characters, and a note). **Done** on a machine task offers to update the room's Setup, before and after, editable: the aircon's rated input (its BTU/h ÷ 11.25, to 10 W), the humidifier's output, the dehumidifier fitted and its L/day (a fan has nothing on Setup); **Save and mark done** saves Setup first and marks the task done only when that worked, **Just mark done** leaves Setup as it is. **Cancel** asks why.
-
-**Workers, the log and the task rules.** **Done** and **Skip** record who did it, when and, for the tasks that record one, the amount (kg picked, bags removed; may be left empty); a skip or a cancel needs a reason. The names come from Settings → **Workers** (add, rename, remove; a removed name stays on the tasks it closed; once there are names, Done and Skip take only a name on the list); Done and Skip record the person signed in (see **Login**; there is no "Doing the rounds as" picker), and Done is one tap for tasks with no amount. Besides "Stage changed", "The room no longer has this machine" and "Replaced by a newer plan", the farm cancels with "Rule changed" (a rule edited so that it no longer wants the task: another time of day, daily changed to every N days or back, or a room taken off an own rule) and "Rule removed". **Export CSV**, under the grid, downloads every closed task of the room (date, time, room, task, status, worker, amount, unit, reason; UTF-8 with a BOM, so Excel shows → and m³) for the myGAP records. The **Today** page (`#/today`) has every room in the Overview's order with its open stage tasks and its upkeep due, Done and Skip in place, and a line per room with open long-term tasks, to its Tasks tab. Settings → **Task rules** lists every built-in rule with its crops and stages or its interval and an On/Off switch (a rule turned off makes no new tasks; its open ones stay until done or the day ends), the upkeep intervals (1–365 days), and **Add your own**: what to do, all rooms or some, daily or every N days, Morning, Afternoon or Any time, with Edit and Remove. The tasks need database 19: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-tasks.db`). Spec: `docs/superpowers/specs/2026-10-30-tasks-design.md`.
-
-**Tasks as a grid.** The Daily tasks card shows one week as the room's log sheet: days down and tasks across on a desk, each task's name over its 7 days where the columns do not fit the card (a phone, a narrow tablet). A box shows ✓ with the worker's initials (and the kg or bags, the unit in the column head), an amber ✗ for missed, — for skipped, shaded for not due, an outlined box for today's open task and a dashed one for a task planned; today is marked in the accent. ‹ › and **This week** change the week, and the address keeps it: `#/rooms/<id>/tasks?week=YYYY-MM-DD` (any day of the week; this week has no query). Tap an open box of today for Done, with a line under the grid to **Undo** it for a minute; long press, right-click or the menu key for **Skip…**, **Undo** (within a minute of the Done or Skip) and **Details**; a past box shows its Details. `POST /api/tasks/:id/undo` opens a daily task again and deletes the harvests its Done made (409 after a minute). **Print month**, beside Export CSV, opens `#/rooms/<id>/tasks/sheet?month=YYYY-MM`, a printable A4 sheet of the room's month (portrait up to 12 tasks, landscape on two pages above; a Farm line, a Reviewed-by line, days ahead blank for a pen). No database change. Spec: `docs/superpowers/specs/2026-11-04-task-grid-design.md`.
-
-**Pictures.** Flat drawings in the room drawing's style name what the farm works with: each crop on the Overview's room cards (with "Grey oyster · Fruiting · day 7 of 7" under the room's name), on Today, on the Now tab's Crop card and at the head of the Crop tab; the grow bag as it looks in each stage on the Crop tab's stage cards; each machine in the Machines list and each device on its Equipment card; each task after its tick and beside its rule in Settings (a harvest's basket holds the room's crop). They never show a state: the pills and words do. No database change. Spec: `docs/superpowers/specs/2026-11-03-pictures-design.md`.
-
-**Calendar.** The top bar's **Calendar** (`#/calendar`) shows every room's tasks by day, or one room's (the Room picker; the Tasks tab's **Open in the calendar**). Past days list the tasks as they were closed (done, skipped, missed, cancelled, with who); today its open tasks (tick them on Today); later days what the farm will want, worked out on the server from the stage plan, the daily rules and the upkeep intervals: the stage that starts, the harvest checks and the stage's tasks, upkeep due, the daily routine folded. Worked-out tasks over an automatic stage change say "Estimated from the stage plan"; it looks 92 days ahead. `GET /api/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD[&room=id]` (42 days at most). No database change. Spec: `docs/superpowers/specs/2026-11-03-calendar-design.md`.
-
-**Harvest and yield.** Each room has a **Harvest** tab (between Tasks and Simulations; `#/rooms/<id>/harvest`) and the top bar has **Harvest** (`#/harvest`, between Calendar and Overview). A harvest comes from a harvest check's **Done** (one kg box per crop in a mixed room) or from **Record a harvest** on the tab; each is stamped with the room's run, crop, stage, flush and blocks. A run starts with a room's crops and ends with New blocks or when the crops are cleared, so past runs keep their figures. The tab shows kg, kg per block, biological efficiency (BE), expected value and energy per kg (electricity and water over the run's days; the whole cost per kg is Costs') for the run, its flushes and its harvests, with the run's profit so far from Costs (Edit changes the kg and time; Delete is inside the dialog). The Harvest page shows the farm's kg for 7 days, 30 days, 13 weeks or 12 months, by room and by crop, with **Export CSV**, and **myGAP sheet** (`#/harvest/sheet`), a printable myGAP 4-6 production and sales record whose sales columns come from Sales. Settings → **Yield** takes each crop's dry substrate per block (kg) and expected price (RM per kg); the Overview has a Harvest card. Routes: `GET` and `POST /api/rooms/:id/harvests`, `PUT` and `DELETE /api/harvests/:id`, `GET /api/harvest?days=7|30|90|365`, `GET /api/harvest.csv?days=` and `POST /api/tasks/:id/done` with `{ worker, amounts: { <crop>: kg } }` for a mixed room. The harvest needs database 20: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-harvest.db`). Spec: `docs/superpowers/specs/2026-11-04-harvest-design.md`.
-
-**Business.** The top bar's **Business** (`#/business`, between Harvest and Overview) holds seven pages under one strip of tabs, Summary, Batches, Inventory, Sales, Costs, Runs and Economics, each described below; `#/business` is the Summary, always. The room's Harvest tab shows the run's blocks under This run, a line linking to its batch. **The four need database version 24** (Batches 21, Inventory 22, Sales 23, Costs 24): the farm app moves the database up through every step, in one transaction, on its first start, and never moves it back down, so stop the farm app and copy `data/v2.db` before that first start (for instance to `data/v2-before-business.db`): the copy is the way back to the app before them.
-
-**Sales.** The Sales page (`#/business/sales`, with `?days=7|30|90|365`) records what the farm sells: a delivery to one buyer on a date, with a line per crop (kg, RM per kg and, if you want, the room), the buyer's own reference (their invoice or receipt number) and a note. **Record a sale** pre-fills the price from the buyer's usual price, else Settings → Yield's expected price, and asks once about an unlikely price or weight. Buyers are a kept list (name, phone, note, a usual price per crop); a buyer with sales is archived, not deleted. Each delivery is paid or unpaid: **Mark paid** takes the date, and the page shows what each buyer owes (all time), sold kg against harvested kg, and the average price got against the expected price, by crop. The list names each delivery's rooms (a link to the room's Harvest tab, or Mixed). The myGAP 4-6 sheet gets a row for each sale line, and Sales' head links it. Harvest's "RM value" is now called "Expected value". The sales need database 23: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-sales.db`). Spec: `docs/superpowers/specs/2026-11-05-sales-design.md`.
-
-| Route | What |
-|---|---|
-| `GET /api/sales?days=7\|30\|90\|365` | The page: deliveries, totals, owed, by crop, by buyer |
-| `GET /api/sales/range?from=&to=` | The sale lines for the myGAP sheet (400 days at most) |
-| `GET /api/sales/summary?from=&to=&run=` | kg and RM in total, by crop and by run (for Costs) |
-| `GET /api/sales.csv?days=` | One row per sale line |
-| `POST /api/sales` | Record a delivery: `{ soldAt, buyerId, invoiceNo?, note?, lines: [{ crop, kg, priceKg, roomId? }] }` |
-| `PUT` and `DELETE /api/sales/deliveries/:id` | Replace a delivery's lines; delete it |
-| `PUT /api/sales/deliveries/:id/paid` | `{ paidAt: ms }` marks paid, `{ paidAt: null }` unpaid |
-| `GET` and `POST /api/buyers` | List the buyers with their sales count and owed; add one |
-| `PUT` and `DELETE /api/buyers/:id` | Edit, archive or restore; delete (409 when the buyer has sales) |
-
-**Batches.** `#/business/batches` (a run's batches `?run=<id>`, a batch `#/business/batches/<id>`, the myGAP 4-2 sheet `#/business/batches/sheet?from=&to=`): bought blocks received (supplier, spawn batch, strain, delivery note, blocks, price, weight), or blocks made on the farm (Make blocks: a saved recipe works out the day's amounts; then sterilising loads, the inoculation with its spawn, the incubation in a grow room or an area, Ready to fruit), put into a room's run (split across rooms) and taken out, contamination checks with a cause, the myGAP 4-2 sheet and a CSV. A made block's price is its materials at Inventory's purchase prices; a batch's weight feeds Harvest's BE; the room's Harvest tab names the run's batches. Routes: `GET` and `POST /api/batches` (`?run=`, `?from=&to=`, `?status=`; a `POST` with `kind: 'made'` makes blocks), `GET /api/batches.csv`, `GET /api/batches/stock-items`, `GET`, `PUT` and `DELETE /api/batches/:id`, `POST /api/batches/:id/place`, `/unplace`, `/checks` and `/loads`, `PUT` and `DELETE /api/batch-checks/:id` and `/api/batch-loads/:id`, `GET` and `POST /api/batch-recipes`, `PUT /api/batch-recipes/:id`. Batches needs database 21: the farm app moves the database up on its first start (copy `data/v2.db` first). Spec `docs/superpowers/specs/2026-11-05-batches-design.md`.
-
-**Inventory.** `#/business/inventory`: stock items by kind (blocks, spawn, bags, chemicals, packaging, other) with a unit each; **Purchase** (RM, supplier, use-by), **Record use** (room, reason, who) and **Count stock** (`/count`, a box per item beside what the records say); lots are used oldest first and a lot near or past its use-by date can be thrown out. Low stock and use-by dates show as pills and as one line above the cards, and go once to Telegram (Settings, Inventory card, turns the messages off); blocks come in and go into rooms only through Batches (Record use leaves them out; Count stock may still correct them), and an item's history names each batch as Batches does and links to it; the purchases are for Costs; **myGAP 4-5 sheet** (`#/business/inventory/sheet?days=30|90|365`) is a printable stock record. Routes: `GET /api/inventory`, `POST /api/inventory/items`, `GET`, `PUT` and `DELETE /api/inventory/items/:id`, `GET` and `POST /api/inventory/purchases`, `POST /api/inventory/uses`, `POST /api/inventory/counts`, `PUT` and `DELETE /api/inventory/moves/:id`, `POST /api/inventory/lots/:moveId/throw-out` and `GET /api/inventory/sheet?days=`. Inventory needs database 22: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-inventory.db`). Spec: `docs/superpowers/specs/2026-11-05-inventory-design.md`.
-
-**Costs.** `#/business/costs` (`?month=YYYY-MM`) shows a month's profit, income, costs, cost per kg and profit per kg, the last 12 months' profit, the costs by category, the month's entries, the monthly items and each run's whole figures; **Export CSV** downloads the month's costs and income. **Add a cost** takes a date, a category, the amount, the farm or a container (a one-off room cost lands on the run open that day), the worker (labour), the kind and period (utilities) and "Every month" (rent, a base wage); a monthly item is changed from a month or stopped. Batches' bought block costs, Inventory's purchases and Sales are read live from their tables; a made batch's cost is its materials, counted as purchases. The measured electricity and water count per room and run; an electricity or water bill adds only what was not measured. Shared costs are split over the runs by block-days. Routes: `GET`/`POST /api/costs`, `PUT`/`DELETE /api/costs/:id`, `POST /api/costs/:id/change` and `/stop`, `GET /api/costs/month?month=YYYY-MM`, `GET /api/costs/summary?from=&to=&run=`, `GET /api/costs.csv?month=YYYY-MM`. Costs needs database 24: the farm app moves the database up on its first start (copy `data/v2.db` first). Spec: `docs/superpowers/specs/2026-11-05-costs-design.md`.
-
-**Runs.** `#/business/runs` (`?crop=` one crop's runs), the sixth Business tab, lists every run of blocks with its container, crops, dates, kg, kg per block, income, costs and profit; a run's page (`#/business/runs/<id>`) leads with its profit so far, then income, costs, kg picked, kg per block and BE, and its blocks (Batches), flushes and latest picks (Harvest), sale lines (Sales) and costs by kind (Costs), each linking to the module that keeps it. It is read only and stores nothing: the server composes each run from the modules on every read. The room's Harvest tab, Costs' run breakdown and Batches' room heads link to the run's page. Routes: `GET /api/runs?crop=`, `GET /api/runs/:id`. No database step. Spec: `docs/superpowers/specs/2026-11-05-runs-design.md`.
-
-**Summary.** `#/business`, the first Business tab and where the top bar's Business opens: this month's profit, income and costs as Costs works them out, the monthly costs still to come, the kg not sold yet and last month's result; a line per thing that needs you (money owed, stock below zero or low, a use-by near or past, blocks ready for a room, blocks with no price), the most urgent first with a red or amber dot, each a link to where you fix it; and each run in progress with its days, kg picked and profit so far, linking to its run page. It is read only and stores nothing: the server composes it from the modules on every read, and a module that cannot be read leaves only its own part out. Route: `GET /api/business/summary`. No database step. Spec: `docs/superpowers/specs/2026-11-06-business-summary-design.md`.
-
-**Economics.** `#/business/economics` (`?room=<id>&crop=<key>`), the seventh Business tab: what one of your rooms makes a month with one crop (grey oyster, pink oyster, black jelly or lion's mane), against a lowland shed, a highland grower, importing and reselling and, for lion's mane, a warm strain, each sized to the room's blocks (only the ways that make sense for the crop; the page says why the others are left out). A headline gives the room's profit a month, its break-even price and when the equipment and the first fill of blocks pay back, then the best other way; a table compares every way a month by part (blocks, electricity, labour, packing, transport, rent, the equipment written off), on a phone one small table a way. Under **Figures** every figure says where it comes from: **You set** (saved for every device, with **Back to default**), **Your runs** (the room's finished runs of the crop: the yield from Harvest, the price from Sales, the block price from Batches, the electricity per block from the measured energy; the blocks from the room's Crop tab), **Simulator**, **Settings** (the expected price and the electricity price) or **Research** (with its range, confidence and sources); the money is worked out again as you type, and a figure is saved when you leave its box (a save with no answer stays typed, marked not saved, with **Retry**). **Work it out** runs the room's simulation with the crop over one block life (one of the room's simulations, offline; nothing is switched) and saves the electricity per block it gives. The owner's only: a worker gets 403 on every route, and a worker's live stream never carries the `economics` event. Routes: `GET /api/economics?room=&crop=`, `PUT` and `DELETE /api/economics/figures`, `POST /api/economics/work-out`. Economics needs database 26 (one step after the login's 25): the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-economics.db`). Spec: `docs/superpowers/specs/2026-11-06-economics-design.md` (its research: `2026-11-06-economics-defaults.md`).
-
-**Login.** Everyone signs in. The sign-in view lists the names of the active workers who have a secret (44 px buttons), then asks for one box: a **worker** signs in with a 6-digit PIN, an **owner** with a password. An owner may do everything. A worker does floor work and sees no money: Today, Calendar, Overview, Rooms (readings, history, crop, machines, alarms and filter changes, read only), Harvest, and Inventory with Record use and Count stock; Business, Settings, a room's Setup, Control and Simulations, usage, CSV and myGAP sheets, task cancel, Plan this, task rules and the workers' edits answer 403 "Ask the owner" (the menu hides them too, and a worker's replies leave the money out). A worker's Done, Skip, harvest, use and count are recorded as them, whatever the request names, and they can undo only their own Done or Skip (undo compares names, so after a rename a worker cannot undo their own earlier Done). An owner's own dialogs pick their name first. A session is a cookie kept in the database (a worker's 30 days, an owner's 7, both sliding); a PIN, a role, an inactive worker or **Sign out everywhere** ends a worker's sessions. Settings → **Workers** gives each row its role (Owner or Worker), **Set PIN** or **Set password**, "Locked until …" with **Unlock**, and "Signed in on N devices" with **Sign out everywhere**; the farm always keeps an owner who can sign in, and you cannot remove your own row. The **Your password** card, first on Settings, changes an owner's own password (their other sessions end). The first owner, and a lost owner password, come from the VM's shell: `npm run owner -- "<name>"` (on the VM: `sudo -u farm FARM_DB=/opt/mushroom-farm/data/v2.db node --disable-warning=ExperimentalWarning server/owner.js "<name>"`, never as root). It asks for the password twice without showing it. Signing in works over plain http on the tailnet IP (for example `http://100.116.49.119:8080`) as well as on the https name: the session cookie is `Secure` only when the request comes through Tailscale's proxy (from this machine); straight to the app it rides Tailscale's encrypted tunnel and the port is not open to the internet.
-
-| Rule | What |
-|---|---|
-| PIN (worker) | Exactly 6 digits; common PINs are refused (one digit, a pair or a triple repeated, doubled digits, runs up or down, two keypad lines, dates) |
-| Password (owner) | 14 to 200 characters, at least 6 different; no part of the person's name, no farm or common word (mushroom, farm, password, qwerty, letmein, 123456, abcdef), not one word with a year; four random words are fine. Checked where it is set; older passwords are not checked again |
-| Wrong tries at a name | 5 wrong in a row lock that name for 15 minutes **for that address only**, so a stranger cannot lock the owner or a worker out of their own phone |
-| Wrong tries in a day | A worker's 20 wrong tries in 24 hours, from any addresses, lock them until the owner's **Unlock** (Settings → Workers; a new PIN or role starts the counts again). Owners have no daily lock |
-| Telegram notes | To the farm's alarm chat, when a worker reaches 10 wrong tries in a day (a warning), when a worker is locked for the day, and when an address locks a name (at most one note an hour per name); nothing when Telegram is not set up |
-| Per address | 20 tries in 15 minutes from one address, then 429. Each tailnet device counts on its own |
-| The internet's budget | 600 checked tries in 15 minutes from the internet at all names together (a request Tailscale marks as Funnel is always the internet); spent, a try answers that the app is getting too many sign-ins. At most 16 sign-in checks run at once and the internet may hold 12 of them, so the tailnet keeps room. Over 10,000 addresses in 15 minutes the oldest count is dropped, never a new address refused |
-| Live stream | The live stream follows the session: it ends within a ping (25 s) after the session ends; at most 3 per sign-in, 6 per person and 20 in all, with 4 places kept for owners |
-| Writes | A write from a page of another site (Sec-Fetch-Site says so) is refused; every write still needs `Content-Type: application/json` |
-| Headers and files | Page files and API replies carry `nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`; page files are gzipped with an ETag (a reload is a 304); API replies are `no-store`. The page's "Couldn't load" warning waits for a real failure (or 90 s), since through Funnel the first files can be slow |
-| Log | Every try to the app's log: time, address, worker id, right, wrong or locked; never the secret. Refused tries log one line a minute per kind |
-
-| Route | What |
-|---|---|
-| `GET /api/login/names` | The names that can sign in, `[{ id, name, kind: 'pin' \| 'password' }]` (no session needed) |
-| `POST /api/login` | `{ id, secret }`: 200 with the cookie; 401 wrong (the same words and time for an unknown name); 429 locked or too many tries |
-| `GET /api/session`, `POST /api/logout` | Who am I; sign out |
-| `POST /api/session/password` | `{ current, next }`, an owner's own password |
-| `GET /api/workers/accounts` | Settings → Workers' sign-in state (`GET /api/workers` stays the names) |
-| `POST /api/workers/:id/secret`, `PUT /api/workers/:id/role`, `POST /api/workers/:id/unlock`, `POST /api/workers/:id/sign-out` | `{ secret }`; `{ role }`; Unlock; Sign out everywhere |
-
-Login needs database 25: the farm app moves the database up on its first start (copy `data/v2.db` first, for instance to `data/v2-before-login.db`); nobody can sign in until `npm run owner` has set an owner. Spec: `docs/superpowers/specs/2026-11-06-login-design.md`.
-
-The farm app polls every wired sensor and machine every reading interval (5 s by default; change it on the Settings page, 1–300 s). A sensor is **online** when the latest poll answered, **timeout** after 1–2 failed polls in a row, **offline** after 3 or more. Stop the device app to see what a dead gateway looks like.
-
-### Farm app settings
-
-| Env var | Default | Meaning |
-|---|---|---|
-| `FARM_PORT` | `8080` | HTTP port (0 picks a free one) |
-| `FARM_DB` | `data/v2.db` | SQLite database file, or `:memory:` |
-| `FARM_GATEWAY` | `127.0.0.1:1502` | the farm's Modbus TCP gateway `host:port` (the device app, or a real gateway); a room may have its own (below) |
-
-### Device app settings
-
-| Env var | Default | Meaning |
-|---|---|---|
-| `DEVICE_MODBUS_PORT` | `1502` | Modbus TCP port the farm app polls |
-| `DEVICE_HTTP_PORT` | `8090` | control page |
-| `DEVICE_STATE` | `device/state.json` | where the sensors and their values are kept |
-| `DEVICE_HOST` | `127.0.0.1` | address both ports listen on (`0.0.0.0` in Docker) |
-
-### Devices (register map)
+The farm app polls every wired sensor and machine each reading interval (5 s by default, 1–300 s in Settings). A sensor is online when the last poll answered, timeout after 1–2 failed polls, offline after 3 or more.
 
 | Device | Request | Reply |
 |---|---|---|
 | T/RH probe | function 04, registers 1–2 | temperature × 10 (signed), humidity × 10 |
 | CO₂ sensor | function 03, register 0 | ppm |
-| Outdoor probe | function 04, registers 1–2 (as a room T/RH probe) | temperature × 10 (signed), humidity × 10 |
+| Outdoor probe | function 04, registers 1–2 (as a T/RH probe) | temperature × 10 (signed), humidity × 10 |
 | Energy meter | function 04, input registers 0x000C–0x000D and 0x0156–0x0157 | active power W and total energy kWh, each a float32, high word first |
 | Filter pressure sensor | function 04, input register 0 | pressure across the filter, Pa × 10 (signed) |
-| Relay module | coils 0–5 (fn 01 read, fn 05 write), inputs 0–5 (fn 02, current switches); the farm reads 4, 5 with a dehumidifier, 6 with lights | outputs: 0 intake, 1 exhaust, 2 circulation, 3 humidifier, 4 dehumidifier, 5 lights |
-| Aircon gateway | holding 0–3 (fn 03 read, fn 16 write), input 0–1 (fn 04) | power, mode (0 cool, 1 heat, 2 dry, 3 fan), setpoint × 10, fan (0 auto, 1 low, 2 high); room T × 10, error code |
+| Relay module | coils 0–5 (fn 01 read, fn 05 write); inputs 0–5 (fn 02, current switches) | outputs: 0 intake, 1 exhaust, 2 circulation, 3 humidifier, 4 dehumidifier, 5 lights |
+| Aircon gateway | holding 0–3 (fn 03 read, fn 16 write); input 0–1 (fn 04) | power, mode (0 cool, 1 heat, 2 dry, 3 fan), setpoint × 10, fan (0 auto, 1 low, 2 high); room T × 10, error code |
 
-A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway: point `FARM_GATEWAY` at it.
+A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway. Point `FARM_GATEWAY` at it.
 
-### A gateway per room
+**A gateway per room.** A room behind its own gateway (its own RS-485 bus) takes that gateway's `host:port` in the Modbus gateway card at the top of its Equipment (Setup tab). Empty means `FARM_GATEWAY`. The room's sensors, meter, filter sensor, relay module and aircon go through it, so their addresses only need to differ on that gateway. The outdoor probe always uses the farm's gateway. Gateways are polled at the same time, so a silent one does not slow the other rooms.
 
-A room behind its own gateway (a container with its own RS-485 bus and Ethernet-to-RS-485 gateway) takes that gateway's `host:port` in the Modbus gateway card at the top of its Equipment (Setup tab); empty means the farm's gateway, `FARM_GATEWAY`. The room's sensors, meter, filter sensor, relay module and aircon are then read and switched through it, and their addresses only need to differ from the others on that gateway (two containers may both have their T/RH probe at 1). The outdoor probe is always read through the farm's gateway. The gateways are polled at the same time, so a container whose gateway does not answer does not slow the other rooms.
+## Run with Docker
 
-## Run with Docker (Windows, macOS, Linux)
-
-Needs Docker Desktop (on Windows with the WSL 2 backend, its default). In the project folder, in PowerShell or any terminal:
+Needs Docker (Docker Desktop on Windows or macOS). From the project folder:
 
 ```bash
 docker compose up -d --build
 ```
 
-Open http://localhost:8080 (farm app) and http://localhost:8090 (device app). Both start again with Docker. The containers run on Malaysia time (`TZ` in `compose.yaml`; the lights follow that clock).
+Farm app on http://localhost:8080, device app on http://localhost:8090. Both restart with Docker. Make the first owner with:
+
+```bash
+docker compose exec farm node --disable-warning=ExperimentalWarning server/owner.js "<name>"
+```
 
 | Task | Command |
 |---|---|
-| Stop | `docker compose down` (the data stays) |
+| Stop (data stays) | `docker compose down` |
 | Logs | `docker compose logs -f` |
-| Update after a `git pull` | `docker compose up -d --build` |
-| Use a real Modbus gateway | put `FARM_GATEWAY=192.168.1.50:502` (its address) in a `.env` file next to `compose.yaml`, then `docker compose up -d --build farm` (no device app) |
-| Back up the database | `docker compose cp farm:/data/v2.db ./v2-backup.db` (with the farm app stopped: `docker compose stop farm`) |
-| Delete every room, reading and setting | `docker compose down -v` |
+| Update after `git pull` | `docker compose up -d --build` |
+| Use a real gateway | Put `FARM_GATEWAY=<gateway-host>:502` in a `.env` file next to `compose.yaml`, then `docker compose up -d --build farm` |
+| Back up the database | `docker compose stop farm`, then `docker compose cp farm:/data/v2.db ./v2-backup.db` |
+| Delete all data | `docker compose down -v` |
 
-The data lives in two Docker volumes, `farm-data` (the database, `/data/v2.db`) and `device-data` (the device app's sensors, `/data/state.json`), not in the project folder. To bring in data from another computer (its `data/v2.db`, `device/state.json` and `device/state.json.sim`, taken with both apps stopped), copy the files in, then give them to the app's user:
+Data lives in two volumes: `farm-data` (`/data/v2.db`) and `device-data` (`/data/state.json`). To bring in files from another machine (taken with both apps stopped), copy them in, then give them to the `node` user. Without the `chown`, the apps cannot write them.
 
 ```bash
 docker compose stop
@@ -191,55 +110,9 @@ docker compose run --rm --no-deps --user root device chown -R node:node /data
 docker compose start
 ```
 
-## Run on a cloud VM (systemd, reached over Tailscale)
+## Run on a cloud VM
 
-The live farm runs on an Oracle Cloud Always Free VM (Ampere A1, Ubuntu 24.04) with the device app and three gateway device apps beside it, each a systemd service that starts with the VM. The files are in `deploy/oracle/`; the scripts run on the dev machine against an SSH host name for the VM (an entry in `~/.ssh/config`, below `<host>`). Plain Node, not Docker: the rooms' own gateways are stored as `127.0.0.1:1512` to `:1514`, which only reach the gateway device apps when all of them share the host.
-
-| Service | Ports | State |
-|---|---|---|
-| `mushroom-farm` | HTTP 8080 | `/opt/mushroom-farm/data/v2.db` |
-| `mushroom-device` | HTTP 8090, Modbus 1502 | `/opt/mushroom-farm/device/state.json` |
-| `mushroom-gateway@alpha`, `@beta`, `@gamma` | HTTP 8092 / 8093 / 8094, Modbus 1512 / 1513 / 1514 | `/opt/mushroom-farm/data/gateways/<name>.json` |
-
-The farm app has a login (a worker's name and PIN, an owner's password; see **Login**), so the farm app can be on the internet: nothing but SSH is open on the VM (the cloud's security list and the VM's firewall), and Tailscale does the rest. `tailscale funnel` puts the farm app on `https://<vm>.<tailnet>.ts.net`, open to the internet (the live farm: https://mushroom-farm.tail04f685.ts.net); each device app stays on `tailscale serve` on the same name with its own port (`:8090`, `:8092` to `:8094`), for the devices logged in to the tailnet only. The farm app also answers on the tailnet IP over plain http (`http://100.116.49.119:8080`), and signing in works there too (the session cookie is `Secure` only through Tailscale's proxy).
-
-Funnel on: `sudo tailscale funnel --bg 8080`. Funnel off (the tailnet only again): `sudo tailscale funnel --bg 8080 off && sudo tailscale serve --bg 8080`.
-
-The owner chose to sign in from anywhere (not the tailnet only). What that means, plainly:
-
-| Limit | What it means |
-|---|---|
-| The names list is public | `GET /api/login/names` needs no session, so anyone who reaches the address can read the active workers' names |
-| A worker can be kept locked | Anyone can try wrong PINs: 20 in a day lock a worker until the owner's Unlock (Settings → Workers); the owner gets a Telegram note. A worker already signed in keeps working. An owner is never locked for the day, and a name locked by 5 wrong tries is locked for that address only |
-| The internet's budget can be spent | Anyone can use the 600 tries per 15 minutes and so block internet sign-ins for 15 minutes at a time. The tailnet is not affected, and nothing but sign-in is slowed |
-| Counts are in memory | A restart of the farm app resets every count (a stranger cannot cause a restart); the daily lock itself is stored and stays |
-| Undo compares names | A worker undoes only a Done or Skip made under their name; after a rename they cannot undo an earlier one, and a freed name given to someone new could undo the old holder's |
-| A cut-off stream may run on | An open live stream ends within a ping (25 s) after its session ends; it carries ids and counts, no money |
-
-| Task | Command |
-|---|---|
-| Stop | `docker compose down` (the data stays) |
-| Logs | `docker compose logs -f` |
-| Update after a `git pull` | `docker compose up -d --build` |
-| Use a real Modbus gateway | put `FARM_GATEWAY=192.168.1.50:502` (its address) in a `.env` file next to `compose.yaml`, then `docker compose up -d --build farm` (no device app) |
-| Back up the database | `docker compose cp farm:/data/v2.db ./v2-backup.db` (with the farm app stopped: `docker compose stop farm`) |
-| Delete every room, reading and setting | `docker compose down -v` |
-
-The data lives in two Docker volumes, `farm-data` (the database, `/data/v2.db`) and `device-data` (the device app's sensors, `/data/state.json`), not in the project folder. To bring in data from another computer (its `data/v2.db`, `device/state.json` and `device/state.json.sim`, taken with both apps stopped), copy the files in, then give them to the app's user:
-
-```bash
-docker compose stop
-docker compose cp v2.db farm:/data/v2.db
-docker compose cp state.json device:/data/state.json
-docker compose cp state.json.sim device:/data/state.json.sim
-docker compose run --rm --no-deps --user root farm chown -R node:node /data
-docker compose run --rm --no-deps --user root device chown -R node:node /data
-docker compose start
-```
-
-## Run on a cloud VM (systemd, reached over Tailscale)
-
-The live farm runs on an Oracle Cloud Always Free VM (Ampere A1, Ubuntu 24.04) with the device app and three gateway device apps beside it, each a systemd service that starts with the VM. The files are in `deploy/oracle/`; the scripts run on the dev machine against an SSH host name for the VM (an entry in `~/.ssh/config`, below `<host>`). Plain Node, not Docker: the rooms' own gateways are stored as `127.0.0.1:1512` to `:1514`, which only reach the gateway device apps when all of them share the host.
+`deploy/oracle/` runs the live farm on one Linux VM (written for an Oracle Cloud Always Free Ampere VM, Ubuntu 24.04) as systemd services. It uses plain Node, not Docker: the rooms' own gateways are stored as `127.0.0.1:1512` to `:1514`, which only work when all the apps share one host.
 
 | Service | Ports | State |
 |---|---|---|
@@ -247,23 +120,57 @@ The live farm runs on an Oracle Cloud Always Free VM (Ampere A1, Ubuntu 24.04) w
 | `mushroom-device` | HTTP 8090, Modbus 1502 | `/opt/mushroom-farm/device/state.json` |
 | `mushroom-gateway@alpha`, `@beta`, `@gamma` | HTTP 8092 / 8093 / 8094, Modbus 1512 / 1513 / 1514 | `/opt/mushroom-farm/data/gateways/<name>.json` |
 
-The farm app has no login, so nothing but SSH is open to the internet (the cloud's security list and the VM's firewall). The pages are reached over Tailscale: `tailscale serve` puts the farm app on `https://<vm>.<tailnet>.ts.net` and each device app on the same name with its own port (`:8090`, `:8092` to `:8094`), for the devices logged in to the tailnet only.
+The scripts run on the dev machine. `<vm-host>` is an SSH host name for the VM.
 
 | Task | Command |
 |---|---|
-| First set-up of a new VM | `deploy/oracle/push-code.sh <host>`, then `ssh <host> bash /opt/mushroom-farm/deploy/oracle/setup-vm.sh` (Node 22, Tailscale, the `farm` user, the services), then `ssh <host> sudo tailscale up`, the first owner (`sudo -u farm FARM_DB=/opt/mushroom-farm/data/v2.db node --disable-warning=ExperimentalWarning server/owner.js "<name>"`, or `npm run owner -- "<name>"` from `/opt/mushroom-farm`; never as root), `sudo tailscale funnel --bg 8080` (and `sudo tailscale serve --bg --https=8090 http://127.0.0.1:8090`, the same for 8092 to 8094) |
-| Move the data in | stop the apps where they run now, then `deploy/oracle/push-data.sh <host>`: copies `data/v2.db`, the gateways' and the device app's state, and starts the services. It **replaces the VM's database**: only for a first move |
-| Ship new code | `deploy/oracle/push-code.sh <host>` (the code at `HEAD`, no data), then `ssh <host> sudo systemctl restart mushroom-farm` (and `mushroom-device mushroom-gateway@{alpha,beta,gamma}` when `device/` changed) |
-| Status | `ssh <host> systemctl status 'mushroom-*'` |
-| Logs | `ssh <host> journalctl -u mushroom-farm -f` |
-| Back up the database | `ssh <host> sudo systemctl stop mushroom-farm`, `scp <host>:/opt/mushroom-farm/data/v2.db ./v2-backup.db`, `ssh <host> sudo systemctl start mushroom-farm` |
+| First set-up | `deploy/oracle/push-code.sh <vm-host>`, then `ssh <vm-host> bash /opt/mushroom-farm/deploy/oracle/setup-vm.sh` (time zone, Node 22, Tailscale, the `farm` user, the services) |
+| First owner | On the VM, in `/opt/mushroom-farm`: `sudo -u farm FARM_DB=/opt/mushroom-farm/data/v2.db node --disable-warning=ExperimentalWarning server/owner.js "<name>"`. Never as root |
+| Move data in | Stop the local apps, then `deploy/oracle/push-data.sh <vm-host>` |
+| Ship new code | `deploy/oracle/push-code.sh <vm-host>` (code at `HEAD`, no data), then `ssh <vm-host> sudo systemctl restart mushroom-farm`. Restart `mushroom-device` and `mushroom-gateway@{alpha,beta,gamma}` too when `device/` changed |
+| Status | `ssh <vm-host> systemctl status 'mushroom-*'` |
+| Logs | `ssh <vm-host> journalctl -u mushroom-farm -f` |
+| Back up the database | `ssh <vm-host> sudo systemctl stop mushroom-farm`, `scp <vm-host>:/opt/mushroom-farm/data/v2.db ./v2-backup.db`, `ssh <vm-host> sudo systemctl start mushroom-farm` |
 
-Only one farm app runs against a farm: once the VM has the data, the apps on the old machine stay stopped (two would keep two histories).
+Safety notes:
 
-## Test
+| Note | Why |
+|---|---|
+| `push-data.sh` replaces the VM's database and simulator state | Use it for the first move only. It refuses to run while local apps listen on the farm's ports |
+| Run one farm app per farm | After the data moves, keep the old machine's apps stopped. Two would keep two histories |
+| `push-code.sh` sends code only | It never touches `data/`. Back up the database before an update that adds a database version |
+| Only SSH should be open on the VM | Reach the pages through Tailscale: `tailscale serve` for the tailnet only, `tailscale funnel --bg 8080` to put the farm app on the internet. The device apps stay on the tailnet |
+| With Funnel on, the sign-in is public | `GET /api/login/names` needs no session, so anyone can read the active workers' names, and wrong PINs can lock a worker until the owner's Unlock. Use long owner passwords |
+
+Funnel off again: `sudo tailscale funnel --bg 8080 off && sudo tailscale serve --bg 8080`.
+
+## Project layout
+
+| Path | What |
+|---|---|
+| `server/` | Farm app: `main.js` (start), `app.js` and `*-api.js` (HTTP routes), `db.js` (schema and migrations), `controller.js` (automatic control), `poller.js` and `modbus.js` (devices), `alarms.js`, `tasks.js`, `auth.js`, `owner.js` (first owner), and one module per business area (`harvests`, `batches`, `inventory`, `sales`, `costs`, `runs`, `economics`) |
+| `web/` | Browser UI: `index.html`, `app.js` (router), and a page, math and dialog file per area. No build |
+| `device/` | Device simulator: `main.js` (start), `modbus-server.js`, `simulation.js` and `sim-model.js` (the room physics), `web/` (its control page) |
+| `tests/` | `node:test` files, `*.test.js` |
+| `deploy/oracle/` | systemd units, `push-code.sh`, `push-data.sh`, `setup-vm.sh` |
+| `docs/superpowers/` | `specs/` (design per feature) and `plans/` (implementation plans) |
+| `docs/research/`, `docs/mockups/`, `docs/screenshots/` | Research notes, design mockups, captures |
+| `Dockerfile`, `compose.yaml` | One image for both apps |
+| `data/` | Created at run time: the database. Not in git |
+
+## Tests
 
 ```bash
 npm test
 ```
 
-Design: `docs/superpowers/specs/2026-10-16-rooms-design.md` (rooms), `docs/superpowers/specs/2026-10-16-sensors-design.md` (sensors, room page, device app), `docs/superpowers/specs/2026-10-16-machines-design.md` (machines) `docs/superpowers/specs/2026-10-19-simulation-design.md` (simulation), `docs/superpowers/specs/2026-10-19-controller-design.md` (automatic control), `docs/superpowers/specs/2026-10-19-settings-design.md` (settings) `docs/superpowers/specs/2026-10-19-safety-and-history-design.md` (sensor checks, alarms, safety level, history, Overview) `docs/superpowers/specs/2026-10-20-room-drawing-design.md` (room drawing) `docs/superpowers/specs/2026-10-20-energy-water-outdoor-design.md` (outdoor sensor, energy and water) and `docs/superpowers/specs/2026-10-20-crops-and-simulation-design.md` (crops, stage program, simulation runs).
+Runs `tests/*.test.js` with the built-in `node:test` runner (60 s per file). They cover the Modbus layer, the device simulator, automatic control, alarms, the HTTP API of every area, sign-in, the database migrations and the UI's math.
+
+## Docs
+
+| Doc | What |
+|---|---|
+| `PRODUCT.md` | Who the app is for and what it is for |
+| `DESIGN.md` | The design system |
+| `docs/superpowers/specs/` | One design spec per feature, named `YYYY-MM-DD-<feature>-design.md` |
+| `docs/superpowers/plans/` | The implementation plan for each spec |
