@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+# Installs one release of the farm app on the VM, as root (README "Deploys"). setup-deploy.sh installs it root-owned at
+# /usr/local/sbin/farm-deploy; deploys never overwrite it.
+# Usage: farm-deploy <40-hex commit sha> < release.tar.gz      (git archive of package.json server device web deploy)
+# Steps: lock; check the tarball; tar the current code; stop the farm app and back up the database (node:sqlite backup,
+# quick_check); install the new code (never data/); start; health check up to 90 s; on any failure put the old code and
+# the database back. Exit: 0 deployed; 1 refused, nothing changed; 2 rolled back; 3 rollback incomplete or the old code
+# unhealthy too (look now); 75 another deploy is running.
+# The app's user farm owns /opt/mushroom-farm, so root never reads, writes or extracts through anything there: farm itself
+# swaps the code in and handles data/; root keeps its records (DEPLOYED, the code tars) in a root-only folder elsewhere;
+# systemd units are never installed by a deploy (setup-deploy.sh does that from a reviewed copy).
+set -euo pipefail
+trap '' HUP PIPE # a dropped ssh connection must not stop a deploy half way: the log goes on to the file
+umask 022
+
+# Through sudo, or as root without FARM_DEPLOY_TEST=1, nothing in the environment counts: the paths and commands are the
+# VM's. The overrides are for the tests, which run as a plain user.
+OVERRIDES=(FARM_ROOT FARM_DB DB_BACKUPS STATE_DIR LOG_FILE LOCK_FILE SYSTEMD_DIR WORK_PARENT FARM_OWNER SYSTEMCTL JOURNALCTL
+  CURL NODE DF AS_FARM APP_URL API_PROBE JOURNAL_ERROR HEALTH_TIMEOUT HEALTH_POLL HEALTH_SETTLE MAX_TARBALL_MB
+  MAX_UNPACKED_MB KEEP_DB KEEP_CODE)
+if [[ -n "${SUDO_USER:-}" ]] || { (( EUID == 0 )) && [[ "${FARM_DEPLOY_TEST:-}" != 1 ]]; }; then
+  unset "${OVERRIDES[@]}"
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin LC_ALL=C
+fi
+
+FARM_ROOT="${FARM_ROOT:-/opt/mushroom-farm}"
+DB="${FARM_DB:-$FARM_ROOT/data/v2.db}"
+DB_BACKUPS="${DB_BACKUPS:-$FARM_ROOT/data/backups}"
+STATE_DIR="${STATE_DIR:-/var/lib/farm-deploy-root}" # root's: DEPLOYED and code/
+LOG_FILE="${LOG_FILE:-/var/log/farm-deploy.log}"
+LOCK_FILE="${LOCK_FILE:-/run/farm-deploy.lock}"
+SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
+WORK_PARENT="${WORK_PARENT:-/tmp}"
+FARM_OWNER="${FARM_OWNER:-farm:farm}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+JOURNALCTL="${JOURNALCTL:-journalctl}"
+CURL="${CURL:-curl}"
+NODE="${NODE:-node}"
+DF="${DF:-df}"
+read -ra AS_FARM <<<"${AS_FARM-runuser -u farm --}" # how anything under FARM_ROOT is touched: as the app's user
+APP_URL="${APP_URL:-http://127.0.0.1:8080}"
+API_PROBE="${API_PROBE:-/api/rooms}" # any API route: 401 without a session
+JOURNAL_ERROR="${JOURNAL_ERROR:-Error}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-90}"
+HEALTH_POLL="${HEALTH_POLL:-2}"
+HEALTH_SETTLE="${HEALTH_SETTLE:-5}"
+MAX_TARBALL_MB="${MAX_TARBALL_MB:-200}"
+MAX_UNPACKED_MB="${MAX_UNPACKED_MB:-500}"
+KEEP_DB="${KEEP_DB:-5}"
+KEEP_CODE="${KEEP_CODE:-10}"
+
+CODE_BACKUPS="$STATE_DIR/code"
+DEPLOYED_FILE="$STATE_DIR/DEPLOYED"
+APP_UNIT=mushroom-farm
+DEVICE_UNITS=(mushroom-device mushroom-gateway@alpha mushroom-gateway@beta mushroom-gateway@gamma)
+CODE=(package.json server device web deploy)
+RUNTIME='state.json*' # the device simulator's own files in device/ (.gitignore): kept across installs, never in a code tar
+DEVICE_ENV=(gateway-alpha.env gateway-beta.env gateway-gamma.env) # read by the gateway units at start
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+# to the VM's log only: the Actions log is public
+log_private() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$LOG_FILE" 2>/dev/null || true; }
+as_farm() { "${AS_FARM[@]}" "$@"; }
+farm_node() { as_farm "$NODE" --disable-warning=ExperimentalWarning --input-type=module -e "$@"; }
+
+# ---- log to the caller and the file; one deploy at a time ----
+mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_FILE")"
+exec 3>&1 4>&2
+exec > >(tee -p -a "$LOG_FILE") 2>&1
+TEE_PID=$!
+WORK=""
+APP_STOPPED=0
+finish() {
+  local rc=$?
+  if (( rc != 0 && APP_STOPPED )); then
+    log "stopped by an error; starting $APP_UNIT again"
+    "$SYSTEMCTL" start "$APP_UNIT" || log "could not start $APP_UNIT: look now"
+  fi
+  [[ -n "$WORK" ]] && rm -rf "$WORK"
+  exec 1>&3 2>&4
+  wait "$TEE_PID" 2>/dev/null || true
+  exit "$rc"
+}
+trap finish EXIT
+
+# Stops here with nothing changed; the farm app runs again if this deploy had stopped it.
+refuse() {
+  log "REFUSED: $*"
+  if (( APP_STOPPED )); then
+    APP_STOPPED=0
+    "$SYSTEMCTL" start "$APP_UNIT" || log "could not start $APP_UNIT again: look now"
+  fi
+  exit 1
+}
+
+exec 9>"$LOCK_FILE"
+if ! flock -n 9; then log "REFUSED: another deploy is running"; exit 75; fi
+
+SHA="${1:-}"
+[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || refuse "give the full 40-character commit sha"
+if [[ -t 0 ]]; then refuse "send the release tarball on stdin"; fi
+cd / # node runs as farm: a cwd anyone can read
+as_farm test -d "$FARM_ROOT" || refuse "no $FARM_ROOT"
+as_farm test -f "$DB" || refuse "no database at $DB"
+
+# root's own records
+if [[ -L "$STATE_DIR" || -L "$CODE_BACKUPS" ]]; then refuse "$STATE_DIR or its code/ is a link"; fi
+mkdir -p "$CODE_BACKUPS"
+chmod 700 "$STATE_DIR" "$CODE_BACKUPS"
+[[ -O "$STATE_DIR" && -O "$CODE_BACKUPS" ]] || refuse "$STATE_DIR is not this user's own"
+OLD_SHA="$(cat "$DEPLOYED_FILE" 2>/dev/null || true)"
+[[ "$OLD_SHA" =~ ^[0-9a-f]{40}$ ]] || OLD_SHA=unknown
+log "deploy $SHA (now $OLD_SHA)"
+
+# → 0 when tarball $1 holds only plain files and folders (no set-id or sticky bits) under the code paths, no ../, and
+# unpacks to at most MAX_UNPACKED_MB and the free space of WORK_PARENT; else why = what is wrong.
+check_tar() {
+  local listing names bytes free_kb
+  listing="$(tar -tvzf "$1" 2>/dev/null)" || { why="not a gzip tarball"; return 1; }
+  [[ -n "$listing" ]] || { why="an empty tarball"; return 1; }
+  if grep -Evq '^[-d][r-][w-][x-][r-][w-][x-][r-][w-][x-] ' <<<"$listing"; then
+    why="links, special files or set-id/sticky modes in the tarball"; return 1
+  fi
+  names="$(tar -tzf "$1")"
+  if grep -Ev '^(package\.json|(server|device|web|deploy)(/.*)?)$' <<<"$names" | grep -q .; then
+    why="paths outside the code in the tarball"; return 1
+  fi
+  if grep -Eq '(^|/)\.\.(/|$)' <<<"$names"; then why="../ in the tarball"; return 1; fi
+  bytes="$(awk '{ s += $3 } END { printf "%d", s }' <<<"$listing")"
+  (( bytes <= MAX_UNPACKED_MB * 1024 * 1024 )) || { why="the tarball unpacks to over $MAX_UNPACKED_MB MB"; return 1; }
+  free_kb="$("$DF" -Pk "$WORK_PARENT" | awk 'NR == 2 { print $4 }')" || true
+  [[ "$free_kb" =~ ^[0-9]+$ ]] || { why="cannot read the free space of $WORK_PARENT"; return 1; }
+  (( bytes / 1024 < free_kb )) || { why="the tarball unpacks to $((bytes / 1048576)) MB, $((free_kb / 1024)) MB free"; return 1; }
+}
+
+# Unpacks checked tarball $1 into new folder $2, still root's: no owner or modes from the tarball, set-id and sticky
+# bits cleared. give_to_farm then makes it farm's (after which root reads nothing in it).
+unpack() {
+  mkdir "$2"
+  tar -xzf "$1" -C "$2" --no-same-owner --no-same-permissions
+  find "$2" -perm /7000 -exec chmod u-s,g-s,o-t {} +
+}
+give_to_farm() { chown -R -h "$FARM_OWNER" "$1"; }
+
+# ---- the release ----
+WORK="$(mktemp -d "$WORK_PARENT/farm-deploy.XXXXXX")"
+chmod 711 "$WORK" # farm reaches its unpacked copies inside; the tarball itself stays root's
+NEW="$WORK/new"
+max_bytes=$((MAX_TARBALL_MB * 1024 * 1024))
+head -c "$((max_bytes + 1))" >"$WORK/release.tar.gz"
+chmod 600 "$WORK/release.tar.gz"
+size="$(stat -c %s "$WORK/release.tar.gz")"
+(( size > 0 )) || refuse "empty tarball"
+(( size <= max_bytes )) || refuse "tarball over $MAX_TARBALL_MB MB"
+why=""
+check_tar "$WORK/release.tar.gz" || refuse "$why"
+unpack "$WORK/release.tar.gz" "$NEW" || refuse "the tarball does not unpack"
+[[ -f "$NEW/server/main.js" && -f "$NEW/package.json" ]] || refuse "no server/main.js or package.json in the tarball"
+
+# units are the owner's to install (setup-deploy.sh): a release's changed unit is only reported. Compared while $NEW is
+# still root's, so farm cannot swap a file in under cmp
+for f in "$NEW"/deploy/oracle/*.service; do
+  [[ -f "$f" && ! -L "$f" ]] || continue
+  name="$(basename "$f")"
+  cmp -s "$f" "$SYSTEMD_DIR/$name" && continue
+  log "unit $name changed: not installed by deploys; install it by hand with setup-deploy.sh from a reviewed copy"
+done
+give_to_farm "$NEW"
+
+# → the database version server/db.js under $1 brings the database to, or nothing; read as farm.
+code_version() {
+  local v
+  v="$(as_farm sed -n 's/^const VERSION = \([0-9][0-9]*\);.*/\1/p' "$1/server/db.js" 2>/dev/null | head -n 1)" || true
+  [[ "$v" =~ ^[0-9]+$ ]] && printf '%s' "$v"
+  return 0
+}
+NEW_VERSION="$(code_version "$NEW")"
+[[ -n "$NEW_VERSION" ]] || refuse "no VERSION in the new server/db.js"
+OLD_VERSION="$(code_version "$FARM_ROOT")"
+
+# device/ (bar the simulator's state) or a gateway's env file differs: the device apps restart with the app
+device_changed() {
+  as_farm diff -rq --exclude="$RUNTIME" "$FARM_ROOT/device" "$NEW/device" >/dev/null 2>&1 || return 0
+  local f
+  for f in "${DEVICE_ENV[@]}"; do
+    as_farm test -e "$FARM_ROOT/deploy/oracle/$f" || as_farm test -e "$NEW/deploy/oracle/$f" || continue
+    as_farm cmp -s "$FARM_ROOT/deploy/oracle/$f" "$NEW/deploy/oracle/$f" || return 0
+  done
+  return 1
+}
+DEVICE_CHANGED=0
+if device_changed; then DEVICE_CHANGED=1; fi
+
+# ---- 1. tar the current code, the app still running: farm reads its tree, root keeps the tar ----
+CODE_TAR="$CODE_BACKUPS/code-$OLD_SHA.tar.gz"
+have=()
+for p in "${CODE[@]}"; do if as_farm test -e "$FARM_ROOT/$p"; then have+=("$p"); fi; done
+(( ${#have[@]} )) || refuse "no current code in $FARM_ROOT"
+as_farm tar -czf - -C "$FARM_ROOT" --exclude="device/$RUNTIME" "${have[@]}" >"$CODE_TAR.partial" \
+  || { rm -f "$CODE_TAR.partial"; refuse "could not tar the current code"; }
+# the rollback must be able to take it back
+check_tar "$CODE_TAR.partial" || { rm -f "$CODE_TAR.partial"; refuse "the current code cannot be rolled back to: $why"; }
+mv -f "$CODE_TAR.partial" "$CODE_TAR"
+log "code backup $CODE_TAR"
+
+# ---- 2. back up the database, with the farm app stopped (the copy is the database the new code will open) ----
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+DB_BACKUP="$DB_BACKUPS/$(basename "$DB").before-$SHA-$stamp"
+db_bytes="$(as_farm stat -c %s "$DB")" || refuse "cannot read the size of $DB"
+db_kb=$(( db_bytes / 1024 + 1 ))
+free_kb="$("$DF" -Pk "$(dirname "$DB")" | awk 'NR == 2 { print $4 }')" || true
+[[ "$free_kb" =~ ^[0-9]+$ ]] || refuse "cannot read the free disk space"
+(( free_kb >= 2 * db_kb )) || refuse "only $((free_kb / 1024)) MB free; the database backup needs $((2 * db_kb / 1024)) MB"
+
+# node as the app's user: backup() (Node 22.16+; VACUUM INTO before), then PRAGMA quick_check on the copy
+BACKUP_JS='
+import * as sqlite from "node:sqlite";
+const [from, to] = process.argv.slice(1);
+const source = new sqlite.DatabaseSync(from);
+if (typeof sqlite.backup === "function") await sqlite.backup(source, to);
+else source.exec(`VACUUM INTO '\''${to.replaceAll("'\''", "'\'''\''")}'\''`);
+source.close();
+const copy = new sqlite.DatabaseSync(to, { readOnly: true });
+const check = copy.prepare("PRAGMA quick_check").all().map((row) => Object.values(row)[0]);
+copy.close();
+if (check.join() !== "ok") { console.error(`quick_check: ${check.slice(0, 5).join("; ")}`); process.exit(1); }
+'
+VERSION_JS='
+import { DatabaseSync } from "node:sqlite";
+const db = new DatabaseSync(process.argv[1], { readOnly: true });
+console.log(db.prepare("PRAGMA user_version").get().user_version);
+db.close();
+'
+
+as_farm mkdir -p "$DB_BACKUPS" || refuse "cannot make $DB_BACKUPS"
+as_farm chmod 700 "$DB_BACKUPS" || refuse "cannot make $DB_BACKUPS private"
+log "stopping $APP_UNIT"
+APP_STOPPED=1
+"$SYSTEMCTL" stop "$APP_UNIT" || refuse "could not stop $APP_UNIT"
+log "backing up $DB ($((db_kb / 1024)) MB)"
+farm_node "$BACKUP_JS" "$DB" "$DB_BACKUP.partial" || { as_farm rm -f "$DB_BACKUP.partial"; refuse "the database backup failed"; }
+as_farm mv "$DB_BACKUP.partial" "$DB_BACKUP" || refuse "cannot name the database backup"
+log "database backup $DB_BACKUP (quick_check ok)"
+
+# ---- 3. to 5., run with set -e in a subshell: any failure rolls back ----
+
+# As farm: replaces the code paths under FARM_ROOT with those of folder $1, keeping data/ and the simulator's state.
+INSTALL_SH='
+set -euo pipefail
+shopt -s nullglob dotglob
+root="$1" from="$2" runtime="$3"
+shift 3
+keep="$(mktemp -d "$root/.deploy-keep.XXXXXX")"
+for f in "$root"/device/$runtime; do mv "$f" "$keep/"; done
+for p in "$@"; do rm -rf "${root:?}/$p"; done
+for p in "$@"; do if [[ -e "$from/$p" ]]; then cp -a "$from/$p" "$root/$p"; fi; done
+mkdir -p "$root/device"
+for f in "$keep"/*; do mv "$f" "$root/device/"; done
+rmdir "$keep"
+'
+install_code() { as_farm bash -c "$INSTALL_SH" install-code "$FARM_ROOT" "$1" "$RUNTIME" "${CODE[@]}"; }
+
+# Starts the farm app, and restarts the device apps when they changed; since = the journal's start of this run.
+start_apps() {
+  since="$(date '+%Y-%m-%d %H:%M:%S')"
+  if (( DEVICE_CHANGED )); then
+    log "restarting ${DEVICE_UNITS[*]} (device code changed)"
+    "$SYSTEMCTL" restart "${DEVICE_UNITS[@]}"
+  fi
+  log "starting $APP_UNIT"
+  "$SYSTEMCTL" restart "$APP_UNIT"
+}
+
+# → 0 when the apps answer as they should for database version $1; else why = the first thing wrong.
+healthy() {
+  local want="$1" u code got
+  for u in "$APP_UNIT" "${CHECK_UNITS[@]}"; do
+    "$SYSTEMCTL" is-active --quiet "$u" || { why="$u is not active"; return 1; }
+  done
+  code="$("$CURL" -sS -o /dev/null -w '%{http_code}' --max-time 5 "$APP_URL/" 2>/dev/null)" || true
+  [[ "$code" == 200 ]] || { why="GET / answered ${code:-nothing}"; return 1; }
+  code="$("$CURL" -sS -o /dev/null -w '%{http_code}' --max-time 5 "$APP_URL$API_PROBE" 2>/dev/null)" || true
+  [[ "$code" == 401 ]] || { why="GET $API_PROBE without a session answered ${code:-nothing}, not 401"; return 1; }
+  if [[ -n "$want" ]]; then
+    got="$(farm_node "$VERSION_JS" "$DB" 2>/dev/null)" || true
+    [[ "$got" == "$want" ]] || { why="database version ${got:-unreadable}, the code's is $want"; return 1; }
+  fi
+  return 0
+}
+
+# → 0 when the farm app's journal since $since has errors; the lines go to the VM's log only.
+journal_errors() {
+  local out lines
+  out="$("$JOURNALCTL" -u "$APP_UNIT" --since "$since" --no-pager -o cat 2>/dev/null)" || true
+  lines="$(grep -F -- "$JOURNAL_ERROR" <<<"$out")" || return 1
+  why="\"$JOURNAL_ERROR\" in the $APP_UNIT journal (the lines are in $LOG_FILE on the VM)"
+  log_private "journal lines with \"$JOURNAL_ERROR\":"$'\n'"$(sed -n '1,20p' <<<"$lines")"
+  return 0
+}
+
+# Waits up to HEALTH_TIMEOUT s for healthy, then HEALTH_SETTLE s more and checks again.
+wait_healthy() {
+  local want="$1" deadline=$((SECONDS + HEALTH_TIMEOUT))
+  why=""
+  until healthy "$want"; do
+    if journal_errors; then log "health check failed: $why"; return 1; fi
+    if (( SECONDS >= deadline )); then log "health check failed after ${HEALTH_TIMEOUT} s: $why"; return 1; fi
+    sleep "$HEALTH_POLL"
+  done
+  sleep "$HEALTH_SETTLE"
+  if ! healthy "$want" || journal_errors; then log "health check failed: $why"; return 1; fi
+  log "healthy: services active, / 200, $API_PROBE 401${want:+, database version $want}, no \"$JOURNAL_ERROR\" in the journal"
+}
+
+CHECK_UNITS=()
+if (( DEVICE_CHANGED )); then CHECK_UNITS=("${DEVICE_UNITS[@]}"); fi
+since=""
+
+APP_STOPPED=0 # from here on, the rollback below starts the app
+set +e
+(
+  set -e
+  log "installing $SHA"
+  install_code "$NEW"
+  start_apps
+  wait_healthy "$NEW_VERSION"
+)
+rc=$?
+set -e
+
+if (( rc == 0 )); then
+  # ---- 7. success: remember it, prune the backups ----
+  printf '%s\n' "$SHA" >"$DEPLOYED_FILE.partial"
+  mv -f "$DEPLOYED_FILE.partial" "$DEPLOYED_FILE"
+  find "$CODE_BACKUPS" -maxdepth 1 -type f -name 'code-*.tar.gz' -printf '%T@ %p\n' | sort -rn | tail -n +"$((KEEP_CODE + 1))" \
+    | cut -d' ' -f2- | while read -r f; do rm -f -- "$f"; log "pruned $f"; done
+  # farm prunes its own folder; the names it made go to the VM's log only (one escaped line each), the count to the caller
+  pruned="$(as_farm bash -c 'find "$1" -maxdepth 1 -type f -name "$2" -printf "%T@ %p\0" | sort -zrn | tail -zn +"$(($3 + 1))" \
+    | cut -zd" " -f2- | while IFS= read -r -d "" f; do rm -f -- "$f"; printf "%q\n" "$f"; done' prune \
+    "$DB_BACKUPS" "$(basename "$DB").before-*" "$KEEP_DB")" || true
+  if [[ -n "$pruned" ]]; then
+    log_private "pruned database backups:"$'\n'"$pruned"
+    log "pruned $(wc -l <<<"$pruned") database backups"
+  fi
+  log "DEPLOYED $SHA (database version $NEW_VERSION; device apps restarted: $( (( DEVICE_CHANGED )) && echo yes || echo no))"
+  exit 0
+fi
+
+# ---- 6. failure: the old code and database back ----
+log "deploy of $SHA failed; rolling back to $OLD_SHA"
+set +e
+(
+  set -e
+  "$SYSTEMCTL" stop "$APP_UNIT"
+  check_tar "$CODE_TAR" || { log "the code backup fails its check: $why"; exit 1; }
+  unpack "$CODE_TAR" "$WORK/old"
+  give_to_farm "$WORK/old"
+  install_code "$WORK/old"
+  as_farm cp "$DB_BACKUP" "$DB.restoring"
+  as_farm mv -f "$DB.restoring" "$DB"
+  as_farm rm -f "$DB-journal" "$DB-wal" "$DB-shm" # the new code's, never to be replayed into the old database
+  log "restored the code of $OLD_SHA and the database from $DB_BACKUP"
+)
+restored=$?
+set -e
+if (( restored != 0 )); then
+  log "ROLLBACK FAILED: the code or database could not be put back (backups: $CODE_TAR, $DB_BACKUP). Look now"
+  exit 3
+fi
+set +e
+( set -e; start_apps; wait_healthy "$OLD_VERSION" )
+back=$?
+set -e
+if (( back != 0 )); then
+  log "ROLLED BACK to $OLD_SHA, but it fails its health check too: look now"
+  exit 3
+fi
+log "ROLLED BACK to $OLD_SHA: the deploy of $SHA failed its health check or install"
+exit 2

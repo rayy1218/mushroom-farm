@@ -53,7 +53,9 @@ export function createApp(db, {
   const authRoutes = auth && createAuthRoutes({ auth });
   const server = http.createServer(async (req, res) => {
     try {
-      const url = new URL(req.url, 'http://localhost');
+      // a request line no URL parses (GET //) is the client's mistake: 400, not a logged error
+      const url = URL.parse(req.url, 'http://localhost');
+      if (!url) return send(res, 400, { error: 'Bad request' });
       const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
       if (isApi) {
         for (const [name, value] of Object.entries(API_HEADERS)) res.setHeader(name, value);

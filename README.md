@@ -232,22 +232,73 @@ The scripts run on the dev machine. `<vm-host>` is an SSH host name for the VM.
 
 | Task | Command |
 |---|---|
-| First set-up | `deploy/oracle/push-code.sh <vm-host>`, then `ssh <vm-host> bash /opt/mushroom-farm/deploy/oracle/setup-vm.sh` (time zone, Node 22, Tailscale, the `farm` user, the services) |
+| First set-up | `deploy/oracle/push-code.sh <vm-host>`, then `ssh <vm-host> bash /opt/mushroom-farm/deploy/oracle/setup-vm.sh` (time zone, Node 22, Tailscale, the `farm` user, the services). Fresh VM only: it refuses once the units exist or `farm` runs anything |
 | First owner | On the VM, in `/opt/mushroom-farm`: `sudo -u farm FARM_DB=/opt/mushroom-farm/data/v2.db node --disable-warning=ExperimentalWarning server/owner.js "<name>"`. Never as root |
 | Move data in | Stop the local apps, then `deploy/oracle/push-data.sh <vm-host>` |
-| Ship new code | `deploy/oracle/push-code.sh <vm-host>` (code at `HEAD`, no data), then `ssh <vm-host> sudo systemctl restart mushroom-farm`. Restart `mushroom-device` and `mushroom-gateway@{alpha,beta,gamma}` too when `device/` changed |
+| Ship new code | Merge to `main`: the Deploy workflow ships it (Deploys, below). Without it: `deploy/oracle/push-code.sh <vm-host>` (code at `HEAD`, no data, no backup, no rollback, no units: those only `setup-deploy.sh` installs), then `ssh <vm-host> sudo systemctl restart mushroom-farm`. Restart `mushroom-device` and `mushroom-gateway@{alpha,beta,gamma}` too when `device/` changed |
 | Status | `ssh <vm-host> systemctl status 'mushroom-*'` |
 | Logs | `ssh <vm-host> journalctl -u mushroom-farm -f` |
-| Back up the database | `ssh <vm-host> sudo systemctl stop mushroom-farm`, `scp <vm-host>:/opt/mushroom-farm/data/v2.db ./v2-backup.db`, `ssh <vm-host> sudo systemctl start mushroom-farm` |
+| Back up the database | Every deploy makes one first (Deploys, below). A copy off the VM: `ssh <vm-host> sudo systemctl stop mushroom-farm`, `scp <vm-host>:/opt/mushroom-farm/data/v2.db ./v2-backup.db`, `ssh <vm-host> sudo systemctl start mushroom-farm` |
 | Funnel off again | `sudo tailscale funnel --bg 8080 off && sudo tailscale serve --bg 8080` |
 
 | Safety note | Why |
 |---|---|
 | `push-data.sh` replaces the VM's database and simulator state | Use it for the first move only. It refuses to run while local apps listen on the farm's ports |
 | Run one farm app per farm | After the data moves, keep the old machine's apps stopped. Two would keep two histories |
-| `push-code.sh` sends code only | It never touches `data/`. Back up the database before an update that adds a database version |
+| `push-code.sh` sends code only | It never touches `data/`, and it bypasses the deploy's backup, health check and rollback. Back up the database before an update that adds a database version |
 | Only SSH should be open on the VM | Reach the pages through Tailscale: `tailscale serve` for the tailnet only, `tailscale funnel --bg 8080` to put the farm app on the internet. The device apps stay on the tailnet |
 | With Funnel on, the sign-in is public | `GET /api/login/names` needs no session, so anyone can read the active workers' names, and wrong PINs can lock a worker until the owner's Unlock. Use long owner passwords |
+
+#### Deploys
+
+Every merge to `main` whose Tests pass goes live by itself. The Deploy workflow (`.github/workflows/deploy.yml`, in the `production` environment) joins the tailnet as `tag:ci` (`tailscale/github-action` v4 with workload identity federation, so no Tailscale secret is stored; it waits up to 3 minutes for the VM to answer), and `deploy/oracle/ci-deploy.sh` streams `git archive` of the tested commit over SSH to the VM's `farm-deploy`, which the `deploy` user may run as root with one commit sha and nothing else.
+
+| What | How |
+|---|---|
+| On a merge to `main` | Tests pass, then Deploy runs on exactly the tested commit. `main` is not branch-protected: a direct push deploys too, but only after Tests pass on that exact commit. Whoever can push to `main` can put code on the farm. One deploy at a time, never cancelled. A Tests run that ends after a newer commit's is skipped: the newest commit's own run deploys it |
+| On the VM, in order | Lock. Check the tarball. Tar the current code (the app still running). Stop `mushroom-farm` and back up the database with `node:sqlite` `backup()` as `farm`, then `PRAGMA quick_check` the copy. Replace `package.json`, `server/`, `device/`, `web/`, `deploy/` (never `data/`, never the simulator's `device/state.json*`). Start `mushroom-farm`; restart `mushroom-device` and `mushroom-gateway@{alpha,beta,gamma}` only when `device/` or a gateway's env file changed |
+| Root and the app's user | `farm` owns `/opt/mushroom-farm`, so `farm` itself swaps the code in and handles `data/`. Root keeps its records (`DEPLOYED`, the code tars) in `/var/lib/farm-deploy-root` (root only), unpacks tarballs with no owners, modes or set-id bits from them, and reads nothing of `farm`'s |
+| A changed systemd unit | Never installed by a deploy (a unit decides what runs as root). The run logs `unit <name> changed`; install it by hand: one-time setup step 4 again, then restart its services |
+| Refused, nothing changed | Free disk under 2 × the database, a failed backup or `quick_check`, a bad sha, a tarball with links, special files, set-id or sticky modes, paths outside the code or over 500 MB unpacked, current code that could not be rolled back to, or a deploy already running (the runner tries up to 5 times, a minute apart). The app starts again if it was stopped |
+| Health check, up to 90 s | The services are active, `GET /` answers 200, `GET /api/rooms` without a session answers 401, the database's `PRAGMA user_version` is the new code's `VERSION`, and the `mushroom-farm` journal since the start has no `Error`. The journal's lines go to the VM's log only: the Actions log is public |
+| Rollback | Any failure after the install begins: stop the app, put back the old code and the database backup (any `v2.db-journal` of the new code deleted), restart, check health again. The run fails with `ROLLED BACK`. What the app recorded while the failed release ran (up to about 95 s: readings, entries) is lost with it |
+| Downtime | From the stop to the health check: the backup and its `quick_check` (4 s for a 317 MB database on a laptop SSD, longer on the VM's disk) plus the start and any migration |
+| Exit codes | 0 deployed, 1 refused, 2 rolled back, 3 the rollback failed or the old code is unhealthy too (look now), 75 another deploy running |
+| Logs | The Actions run log, and on the VM `/var/log/farm-deploy.log` (with the journal lines of a failed health check) |
+| Backups | Database: `/opt/mushroom-farm/data/backups/v2.db.before-<sha>-<UTC time>`, newest 5. Code: `/var/lib/farm-deploy-root/code/code-<sha>.tar.gz`, newest 10. Older ones go after each successful deploy |
+| What runs now | `sudo cat /var/lib/farm-deploy-root/DEPLOYED` (the commit sha) |
+| Deploy by hand | Actions, Deploy, Run workflow on `main`: it refuses a commit whose Tests have not passed. From a dev machine on the tailnet with the deploy key: `DEPLOY_HOST=<vm>.<tailnet>.ts.net DEPLOY_SSH_KEY="$(cat farm-deploy-ci)" deploy/oracle/ci-deploy.sh <commit>` |
+| An older commit back | Deploy it by hand as above. Database versions only move up, so this suits a commit with the same `VERSION` in `server/db.js`. Across a version, stop the app, copy the matching `v2.db.before-*` over `data/v2.db` (as `farm`, `v2.db-journal` deleted), then deploy |
+| Pause deploys | Actions, Deploy, Disable workflow (or delete a secret: the run then ends with a notice) |
+| A change to `farm-deploy` | Deploys never overwrite `/usr/local/sbin/farm-deploy`. Run one-time setup step 4 again, from a fresh `scp` of a reviewed checkout, never from `/opt/mushroom-farm` |
+
+One-time setup, by the owner. `<vm>` is the VM's tailnet machine name, `<tailnet>` the tailnet's DNS name, `<vm-host>` an SSH host name for the VM as above.
+
+| Step | Do |
+|---|---|
+| 1. Tailnet policy | In the Tailscale admin console, Access controls, merge in the policy below: `tag:ci` may reach only the VM, only on port 22. The default policy's allow-all rule (`"src": ["*"]`) would let `tag:ci` reach every machine: narrow it to `autogroup:member` as below. The `tests` block makes the console refuse a policy that lets `tag:ci` reach the farm app. If Tailscale SSH is on for the VM (`setup-deploy.sh` warns), it answers port 22 on the tailnet instead of `sshd` and the deploy key is ignored: make sure plain `ssh` with your own key works, then `sudo tailscale set --ssh=false` |
+| 2. Trust credential | Tailscale admin console, Settings, Trust credentials: a new federated identity credential for GitHub (workload identity federation: GitHub's short-lived OIDC token signs the runner in, so no long-lived Tailscale secret exists), subject `repo:rayy1218/mushroom-farm:environment:production`, the writable `auth_keys` scope, tag `tag:ci`. Keep its client id and audience for step 6 |
+| 3. Deploy key | On a dev machine: `ssh-keygen -t ed25519 -N '' -C farm-deploy-ci -f farm-deploy-ci` |
+| 4. Deploy user on the VM | From a checkout of `main` you have reviewed: `ssh <vm-host> mkdir -p farm-deploy-setup`, `scp deploy/oracle/farm-deploy deploy/oracle/setup-deploy.sh deploy/oracle/*.service farm-deploy-ci.pub <vm-host>:farm-deploy-setup/`, then `ssh <vm-host> 'sudo bash farm-deploy-setup/setup-deploy.sh "$(cat farm-deploy-setup/farm-deploy-ci.pub)" <vm>.<tailnet>.ts.net'`. It makes the `deploy` user (key usable only from the tailnet, only to run `farm-deploy`), installs `/usr/local/sbin/farm-deploy` root-owned, `/var/lib/farm-deploy-root`, the changed units, and the one sudo rule (`farm-deploy` with one 40-hex sha; sudo 1.9.10 or later), checked with `visudo -c` |
+| 5. Host key line | The last line `setup-deploy.sh` prints: `<vm>.<tailnet>.ts.net ssh-ed25519 AAAA...` |
+| 6. GitHub environment secrets | The `production` environment already exists (deployment branch `main` only; Repository Settings, Environments). Add the five there as environment secrets, not repository secrets (`gh secret set <name> --env production`): `TS_OAUTH_CLIENT_ID` and `TS_AUDIENCE` (step 2), `DEPLOY_SSH_KEY` (`gh secret set DEPLOY_SSH_KEY --env production < farm-deploy-ci`), `DEPLOY_HOST` (`<vm>.<tailnet>.ts.net`), `DEPLOY_KNOWN_HOSTS` (step 5). Then delete `farm-deploy-ci` from the dev machine, or keep it in a password manager for deploys by hand |
+| 7. First deploy | Actions, Deploy, Run workflow on `main`. The log should end with `DEPLOYED <sha>` |
+
+The tailnet policy (merge the keys into the existing policy file; the first `acls` rule replaces the allow-all one):
+
+```json
+{
+  "tagOwners": { "tag:ci": ["autogroup:admin"] },
+  "hosts": { "farm-vm": "<vm tailnet IP, 100.x.y.z>" },
+  "acls": [
+    { "action": "accept", "src": ["autogroup:member"], "dst": ["*:*"] },
+    { "action": "accept", "src": ["tag:ci"], "dst": ["farm-vm:22"] }
+  ],
+  "tests": [
+    { "src": "tag:ci", "accept": ["farm-vm:22"], "deny": ["farm-vm:8080"] }
+  ]
+}
+```
 
 ### Project layout
 
@@ -257,7 +308,8 @@ The scripts run on the dev machine. `<vm-host>` is an SSH host name for the VM.
 | `web/` | Browser UI: `index.html`, `app.js` (router), and a page, math and dialog file per area. No build |
 | `device/` | Device simulator: `main.js` (start), `modbus-server.js`, `simulation.js` and `sim-model.js` (the room physics), `web/` (its control page) |
 | `tests/` | `node:test` files, `*.test.js` |
-| `deploy/oracle/` | systemd units, `push-code.sh`, `push-data.sh`, `setup-vm.sh` |
+| `deploy/oracle/` | systemd units, `push-code.sh`, `push-data.sh`, `setup-vm.sh`; the deploy CI's `ci-deploy.sh`, `farm-deploy` and `setup-deploy.sh` |
+| `.github/workflows/` | `test.yml` (Tests on every push and pull request), `deploy.yml` (Deploy after main's Tests pass) |
 | `docs/` | `specs/` (design per feature) and `plans/` (implementation plans) |
 | `docs/images/` | The pictures in this README |
 | `docs/research/`, `docs/mockups/`, `docs/screenshots/` | Research notes, design mockups, captures |

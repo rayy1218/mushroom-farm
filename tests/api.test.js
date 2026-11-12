@@ -211,6 +211,19 @@ test('a client that hangs up mid-body does not log an error', async (t) => {
   assert.equal(console.error.mock.callCount(), 0);
 });
 
+test('a request line no URL parses answers 400 without logging an error (a stray request must not fail a deploy)', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const socket = net.connect(server.address().port, '127.0.0.1');
+  await new Promise((resolve) => socket.once('connect', resolve));
+  let reply = '';
+  socket.on('data', (chunk) => { reply += chunk; });
+  const ended = new Promise((resolve) => socket.once('close', resolve));
+  socket.end('GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n');
+  await ended;
+  assert.match(reply, /^HTTP\/1\.1 400 /);
+  assert.equal(console.error.mock.callCount(), 0);
+});
+
 // --- iteration 2: addresses, room detail, sensors ---
 
 test('POST /api/rooms stores the sensor addresses; missing means null', async () => {

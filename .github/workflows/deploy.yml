@@ -1,0 +1,101 @@
+name: Deploy
+
+# Every push to main whose Tests pass goes to the live VM over Tailscale (README "Deploys"): deploy/oracle/ci-deploy.sh
+# streams the tested commit to the VM's farm-deploy, which backs up the database, installs, checks health and rolls back
+# on failure. The secrets live in the "production" environment (main only). Without them the job only leaves a notice.
+# "Run workflow" on main deploys main by hand, once its Tests have passed.
+on:
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_repository.full_name == github.repository)
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      actions: read # the dispatch's Tests check
+      id-token: write # Tailscale workload identity federation: no long-lived Tailscale secret
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check the deploy secrets
+        id: secrets
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_AUDIENCE: ${{ secrets.TS_AUDIENCE }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          missing=()
+          for name in TS_OAUTH_CLIENT_ID TS_AUDIENCE DEPLOY_SSH_KEY DEPLOY_HOST DEPLOY_KNOWN_HOSTS; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} )); then
+            echo "::notice title=Deploy skipped::No secret ${missing[*]} in the production environment. Set-up: README, Run on a cloud VM, Deploys"
+            echo "ready=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      # by hand: only a commit whose Tests passed
+      - name: Check the commit passed Tests
+        if: steps.secrets.outputs.ready == 'true' && github.event_name == 'workflow_dispatch'
+        run: |
+          passed="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$DEPLOY_SHA&status=success&per_page=1" --jq '.total_count')"
+          [[ "$passed" =~ ^[0-9]+$ ]] || passed=0
+          (( ${passed:-0} > 0 )) || { echo "::error title=Deploy refused::Tests have not passed on $DEPLOY_SHA"; exit 1; }
+
+      # a Tests run that ends after a newer commit's must not put the older code back: the newest commit's own run deploys
+      - name: Check it is still the newest on main
+        id: newest
+        if: steps.secrets.outputs.ready == 'true'
+        run: |
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq '.sha')"
+          if [[ "$GITHUB_EVENT_NAME" == workflow_run && "$tip" != "$DEPLOY_SHA" ]]; then
+            echo "::notice title=Deploy skipped::main has moved on to $tip; its own run deploys it"
+            echo "go=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "go=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the tested commit
+        if: steps.newest.outputs.go == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+
+      - name: Join the tailnet
+        if: steps.newest.outputs.go == 'true'
+        uses: tailscale/github-action@064b10558093f38325e838ddea35486bdc6b1d5c # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_AUDIENCE }}
+          tags: tag:ci
+          ping: ${{ secrets.DEPLOY_HOST }} # waits up to 3 min for the VM to answer on the tailnet
+
+      - name: Deploy
+        if: steps.newest.outputs.go == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: deploy/oracle/ci-deploy.sh "$DEPLOY_SHA"
