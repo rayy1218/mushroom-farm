@@ -5,7 +5,7 @@
 // dropped. A module that could not be read says so in its own place, with Retry; the rest shows.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { COSTS_HASH, RUNS_HASH } from './route.js';
+import { COSTS_HASH, RUNS_HASH, INVENTORY_HASH } from './route.js';
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { farmDate } from './tasks-math.js';
@@ -13,7 +13,7 @@ import { picture } from './pictures.js';
 import { tileNodes } from './harvest-card.js';
 import {
   moneyTitle, moneyTiles, toComeLine, unsoldLine, unsoldTile, lastMonthLine, lastMonthTile, needLines, needsTitle, needsEmpty,
-  readFailText, PART_NAMES, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows,
+  readFailText, PART_NAMES, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows, stockLine, boughtLine,
 } from './business-math.js';
 
 const REFRESH_MS = 60_000;
@@ -148,6 +148,8 @@ export function mount(container) {
     tiles.toggleAttribute('data-long', nodes.slice(1, list.length).some((n) => n.querySelector('.us-kwh').hasAttribute('data-long')));
     const toCome = toComeLine(r.month);
     const unsold = unsoldLine(r.month);
+    const bought = boughtLine(r.month); // ---- Money truth ----
+    const stock = stockLine(r.stock);
     const last = lastMonthLine(r.lastMonth, r.month);
     const lines = [
       ...(toCome ? [el('p', 'muted sm-line', toCome)] : []),
@@ -156,6 +158,14 @@ export function mount(container) {
     if (last) {
       const p = el('p', 'muted sm-line sm-narrow');
       p.append(...last.map((part) => (part.tone === 'loss' ? el('span', 'co-loss', part.text) : part.text)));
+      lines.push(p);
+    }
+    if (bought) lines.push(el('p', 'muted sm-line', bought));
+    if (stock) {
+      const p = el('p', 'muted sm-line', `${stock} `);
+      const a = el('a', 'co-link', 'Inventory');
+      a.href = INVENTORY_HASH;
+      p.append(a);
       lines.push(p);
     }
     els.money.replaceChildren(tiles, ...lines);

@@ -3,7 +3,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { stockOf, lotsOf, useByState, itemView, attentionOf, sheetRows, SOON_DAYS, KINDS, ITEM_UNITS, WHOLE_UNITS } from '../server/inventory-math.js';
+import {
+  stockOf, lotsOf, useByState, itemView, attentionOf, sheetRows, SOON_DAYS, KINDS, ITEM_UNITS, WHOLE_UNITS, lotUnitCost, costedMoves,
+} from '../server/inventory-math.js';
 
 const at = (date, hh = 12) => Date.parse(`${date}T${String(hh).padStart(2, '0')}:00:00+08:00`);
 let next = 0;
@@ -144,4 +146,91 @@ test('a use in a room with no run at that moment has no crop', () => {
   assert.equal(rows[0].crop, '');
   assert.equal(rows[0].product, 'Bleach');
   assert.equal(rows[0].lrmpNo, '');
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 3): what each lot cost, what each move out took, what is left ----
+
+test('a lot\'s unit cost: a purchase\'s total ÷ qty (as paid), else its unit cost; a batch receipt\'s; a count\'s the last price', () => {
+  assert.equal(lotUnitCost(mv({ qty: 1200, refKind: 'purchase', total: 1680, unitCost: 1.5 })), 1.4, 'the RM paid wins');
+  assert.equal(lotUnitCost(mv({ qty: 100, refKind: 'purchase', unitCost: 0.7 })), 0.7);
+  assert.equal(lotUnitCost(mv({ qty: 100, refKind: 'purchase' })), null, 'a purchase with no price');
+  assert.equal(lotUnitCost(mv({ qty: 480, refKind: 'batch', refId: 5, unitCost: 2.7935 })), 2.7935);
+  assert.equal(lotUnitCost(mv({ qty: 5, refKind: 'adjust', counted: 105 }), 1.25), 1.25, 'found stock at the last price paid');
+  assert.equal(lotUnitCost(mv({ qty: 5, refKind: 'adjust', counted: 105 })), null);
+});
+
+test('each move out takes its lots oldest first, at their cost; the golden five materials and what is left of them', () => {
+  const bought = Date.parse('2026-09-21T12:00:00+08:00');
+  const mixed = Date.parse('2026-11-04T16:10:00+08:00');
+  const golden = [['sawdust', 1200, 1680, 360.5, 504.7, 1175.3], ['bran', 400, 840, 92.4, 194.04, 645.96], ['lime', 80, 72, 4.6, 4.14, 67.86],
+    ['gypsum', 80, 96, 4.6, 5.52, 90.48], ['spawn', 300, 3300, 57.5, 632.5, 2667.5]];
+  let left = 0;
+  for (const [name, qty, total, drawn, cost, value] of golden) {
+    const lot = mv({ at: bought, qty, refKind: 'purchase', total, unitCost: total / qty });
+    const draw = mv({ at: mixed, qty: -drawn, refKind: 'batch', refId: 5 });
+    const { outs, lots, value: worth, unpriced } = costedMoves([draw, lot]);
+    assert.deepEqual(outs.get(draw.id), { moveId: draw.id, qty: drawn, cost, unpricedQty: 0 }, name);
+    assert.equal(lots[0].left, Math.round((qty - drawn) * 1000) / 1000, name);
+    assert.equal(lots[0].value, value, name);
+    assert.equal(worth, value, name);
+    assert.equal(unpriced, false, name);
+    left += worth;
+  }
+  assert.equal(Math.round(left * 100) / 100, 4647.1, 'the stock worth of the five');
+});
+
+test('a draw with no lot (bags never bought) is unpriced; a later purchase prices it, as Inventory\'s lots end', () => {
+  const draw = mv({ at: 1000, qty: -480, refKind: 'batch', refId: 5 });
+  const none = costedMoves([draw]);
+  assert.deepEqual(none.outs.get(draw.id), { moveId: draw.id, qty: 480, cost: 0, unpricedQty: 480 });
+  assert.equal(none.value, 0);
+  assert.equal(none.unpriced, true, 'below zero: the worth is not known');
+  const bought = mv({ at: 2000, qty: 1000, refKind: 'purchase', total: 50 });
+  const later = costedMoves([draw, bought]);
+  assert.deepEqual(later.outs.get(draw.id), { moveId: draw.id, qty: 480, cost: 24, unpricedQty: 0 });
+  assert.deepEqual(later.lots.map((l) => [l.left, l.value]), [[520, 26]], 'the same left as lotsOf');
+  assert.deepEqual(lotsOf([draw, bought]).map((l) => l.left), [520]);
+  assert.equal(later.unpriced, false);
+});
+
+test('outs over two lots, a throw-out off its own lot, a count that found more at the last price, an unpriced lot', () => {
+  const a = mv({ at: 1000, qty: 10, refKind: 'purchase', total: 10 }); // RM 1 a kg
+  const b = mv({ at: 2000, qty: 10, refKind: 'purchase', total: 30 }); // RM 3 a kg
+  const use = mv({ at: 3000, qty: -15, refKind: 'use', roomId: 2 });
+  const thrown = mv({ at: 4000, qty: -5, refKind: 'use', reason: 'Expired', lotId: b.id });
+  const found = mv({ at: 5000, qty: 4, refKind: 'adjust', counted: 4 });
+  const less = mv({ at: 6000, qty: -1, refKind: 'adjust', counted: 3 });
+  const gift = mv({ at: 7000, qty: 2, refKind: 'purchase' }); // no price
+  const after = mv({ at: 8000, qty: -4, refKind: 'use' });
+  const { outs, lots, value, unpriced } = costedMoves([after, gift, less, found, thrown, use, b, a]);
+  assert.deepEqual(outs.get(use.id), { moveId: use.id, qty: 15, cost: 25, unpricedQty: 0 }, '10 at RM 1 + 5 at RM 3');
+  assert.deepEqual(outs.get(thrown.id), { moveId: thrown.id, qty: 5, cost: 15, unpricedQty: 0 }, 'its own lot');
+  assert.deepEqual(outs.get(less.id), { moveId: less.id, qty: 1, cost: 3, unpricedQty: 0 }, 'the found lot at RM 3, the last paid');
+  assert.deepEqual(outs.get(after.id), { moveId: after.id, qty: 4, cost: 9, unpricedQty: 1 }, '3 found at RM 3, 1 of the gift');
+  assert.deepEqual(lots.map((l) => [l.moveId, l.unitCost, l.left, l.value]), [[a.id, 1, 0, 0], [b.id, 3, 0, 0], [found.id, 3, 0, 0], [gift.id, null, 1, null]]);
+  assert.equal(value, 0);
+  assert.equal(unpriced, true, 'a lot with some left and no price');
+  assert.deepEqual(lotsOf([after, gift, less, found, thrown, use, b, a]).map((l) => l.left), [0, 0, 0, 1], 'the same left as lotsOf');
+});
+
+test('an item\'s view carries its worth and each lot its unit cost and value', () => {
+  const lot = mv({ at: Date.parse('2026-09-21T12:00:00+08:00'), qty: 1200, refKind: 'purchase', total: 1680 });
+  const draw = mv({ at: Date.parse('2026-11-04T16:00:00+08:00'), qty: -360.5, refKind: 'batch', refId: 5 });
+  const v = itemView(ITEM, [lot, draw], Date.parse('2026-11-12T12:00:00+08:00'));
+  assert.equal(v.value, 1175.3);
+  assert.equal(v.unpriced, false);
+  assert.deepEqual(v.lots.map((l) => [l.left, l.unitCost, l.value]), [[839.5, 1.4, 1175.3]]);
+  const none = itemView(ITEM, [mv({ at: 1000, qty: -480, refKind: 'batch' })], Date.parse('2026-11-12T12:00:00+08:00'));
+  assert.equal(none.value, 0);
+  assert.equal(none.unpriced, true);
+});
+
+test('a throw-out dated before its own lot (the purchase day edited later) takes that lot, as lotsOf does', () => {
+  const a = mv({ at: 1000, qty: 10, refKind: 'purchase', total: 10 }); // RM 1
+  const b = mv({ at: 3000, qty: 10, refKind: 'purchase', total: 100 }); // RM 10
+  const thrown = mv({ at: 2000, qty: -5, refKind: 'use', reason: 'Expired', lotId: b.id });
+  const { outs, lots } = costedMoves([a, thrown, b]);
+  assert.deepEqual(lots.map((l) => l.left), lotsOf([a, thrown, b]).map((l) => l.left), 'the same left as lotsOf');
+  assert.deepEqual(lots.map((l) => l.left), [10, 5]);
+  assert.deepEqual(outs.get(thrown.id), { moveId: thrown.id, qty: 5, cost: 50, unpricedQty: 0 }, 'at its own lot\'s price');
 });

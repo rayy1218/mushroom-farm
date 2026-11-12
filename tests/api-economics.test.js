@@ -46,7 +46,7 @@ test('GET /api/economics: the first room and its crop without a query; the room 
   const { call, room } = await app(t);
   const r = await call('GET', '/api/economics');
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.deepEqual(Object.keys(r.body), ['rooms', 'room', 'crop', 'ways', 'left', 'figures', 'sim', 'machinesNote', 'errors']);
+  assert.deepEqual(Object.keys(r.body), ['rooms', 'room', 'crop', 'ways', 'left', 'figures', 'context', 'sim', 'machinesNote', 'errors']);
   assert.deepEqual([r.body.room.id, r.body.crop], [room, 'lionsmane']);
   const oyster = await call('GET', `/api/economics?room=${room}&crop=oyster`);
   assert.deepEqual([oyster.status, oyster.body.crop, oyster.body.ways], [200, 'oyster', ['yours', 'shed']]);

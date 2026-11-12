@@ -158,19 +158,25 @@ test('the month view reads Batches, Inventory and Sales when their tables exist'
   add(raw, {
     batches: [{ id: 1, run_id: s.run.id, room_id: s.one, crop: 'oyster', received_at: at('2026-11-02'), blocks: 100, price_per_block: 2.5 }],
     items: [{ id: 1, name: 'PP bags', kind: 'packaging', unit: 'count' }],
-    moves: [{ id: 1, item_id: 1, at: at('2026-11-04'), qty: 1000, unit_cost: 0.05, ref_kind: 'purchase' }],
+    moves: [
+      { id: 1, item_id: 1, at: at('2026-11-04'), qty: 1000, unit_cost: 0.05, ref_kind: 'purchase' },
+      { id: 2, item_id: 1, at: at('2026-11-05'), qty: -200, ref_kind: 'use' },
+    ],
     sales: [{ id: 1, sold_at: at('2026-11-10'), crop: 'oyster', kg: 20, price_kg: 15, total: 300, buyer: 'Pasar', room_id: s.one, run_id: s.run.id }],
   });
   raw.close();
   s.costs.monthView({});
   await s.costs.warmed();
   const view = s.costs.monthView({});
-  assert.equal(view.tiles.costs, 300, 'blocks 250 + bags 50');
+  assert.equal(view.tiles.costs, 260, 'blocks 250 + the 200 bags used 10 (Money truth: the 1,000 bought are not a cost)');
   assert.equal(view.tiles.income, 300);
-  assert.equal(view.tiles.profit, 0);
-  assert.deepEqual(view.byCategory.map((c) => [c.key, c.source, c.amount]), [['blocks-batches', 'batches', 250], ['inventory-packaging', 'inventory', 50]]);
+  assert.equal(view.tiles.profit, 40);
+  assert.deepEqual(view.byCategory.map((c) => [c.key, c.source, c.amount]), [['blocks-batches', 'batches', 250], ['inventory-packaging', 'inventory', 10]]);
+  assert.deepEqual(view.bought, {
+    total: 300, lines: [{ key: 'blocks', label: 'Blocks', amount: 250 }, { key: 'inventory-packaging', label: 'Packaging', amount: 50 }], unpriced: [],
+  }, 'what was paid for stock this month');
   assert.equal(view.runs[0].income, 300);
-  assert.equal(view.runs[0].profitPerKg, 0);
+  assert.equal(view.runs[0].profitPerKg, 2);
 });
 
 test('the month query and the summary', async (t) => {

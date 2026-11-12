@@ -1,5 +1,5 @@
-// Who acknowledged an alarm (spec 2026-11-12-alarms-triage-design.md 7): database 27's alarms.acked_by, the step from 26, and
-// the step on a real version 26 farm file when a copy is on this machine.
+// Who acknowledged an alarm (spec 2026-11-12-alarms-triage-design.md 7): database 27's alarms.acked_by, the step from 26 (on to
+// Money truth's 28), and the step on a real version 26 farm file when a copy is on this machine.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,7 +46,7 @@ test('a gateway alarm keeps the address it was raised for (review 2026-11-12: Hi
   db.close();
 });
 
-test('a version 26 database is upgraded to 27: alarms gain acked_by (empty), every alarm kept', (t) => {
+test('a version 26 database is upgraded through 27 to 28: alarms gain acked_by (empty), every alarm kept', (t) => {
   const file = fileOf(t);
   const db = openDb(file);
   const room = db.createRoom(ROOM).id;
@@ -60,7 +60,7 @@ test('a version 26 database is upgraded to 27: alarms gain acked_by (empty), eve
   assert.deepEqual([again.getAlarm(old).ackedAt, again.getAlarm(old).ackedBy], [2000, null]);
   again.close();
   const check = new DatabaseSync(file);
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 27);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 28); // Money truth's 28 after the alarms' 27
   assert.ok(check.prepare('PRAGMA table_info(alarms)').all().some((c) => c.name === 'acked_by' && c.type === 'TEXT'));
   assert.ok(check.prepare('PRAGMA table_info(alarms)').all().some((c) => c.name === 'gateway' && c.type === 'TEXT'));
   check.close();
@@ -68,7 +68,7 @@ test('a version 26 database is upgraded to 27: alarms gain acked_by (empty), eve
 
 // A real version 26 farm file, named by FARM_REAL_V26 (skipped without it). Copied, never opened in place.
 const REAL = process.env.FARM_REAL_V26 ?? '';
-test('a real version 26 farm file (the audit copy) opens at 27 with its alarms and rooms', { skip: !(REAL && existsSync(REAL)) && 'set FARM_REAL_V26 to a v26 farm file' }, () => {
+test('a real version 26 farm file opens at 28 with its alarms and rooms, and the Money truth columns and table', { skip: !(REAL && existsSync(REAL)) && 'set FARM_REAL_V26 to a v26 farm file' }, () => {
   const dir = mkdtempSync('/tmp/alarms-triage/real-');
   const file = join(dir, 'v2.db');
   // a consistent copy even while a farm app writes the file (a plain file copy could catch it half-written)
@@ -87,12 +87,29 @@ test('a real version 26 farm file (the audit copy) opens at 27 with its alarms a
     assert.equal(db.roomAlarms(db.listRooms()[0].id).history.every((a) => a.ackedBy === null), true);
     db.close();
     const after = new DatabaseSync(file, { readOnly: true });
-    assert.equal(after.prepare('PRAGMA user_version').get().user_version, 27);
+    assert.equal(after.prepare('PRAGMA user_version').get().user_version, 28);
     assert.equal(after.prepare('SELECT COUNT(*) AS n FROM alarms').get().n, alarms);
     assert.equal(after.prepare('SELECT COUNT(*) AS n FROM alarms WHERE acked_by IS NOT NULL').get().n, 0);
+    assert.ok(after.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'room_type'));
+    assert.ok(after.prepare('PRAGMA table_info(runs)').all().some((c) => c.name === 'blocks_in_at'));
+    assert.equal(after.prepare('SELECT COUNT(*) AS n FROM equipment').get().n, 0, 'the register starts empty');
     assert.ok(statSync(file).size > 0);
     after.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a file Money truth brought to 28 before the alarms\' 27 merged gains their two columns on open', (t) => {
+  const file = fileOf(t);
+  openDb(file).close();
+  const raw = new DatabaseSync(file);
+  raw.exec('ALTER TABLE alarms DROP COLUMN acked_by; ALTER TABLE alarms DROP COLUMN gateway;'); // still at 28
+  raw.close();
+  openDb(file).close();
+  const check = new DatabaseSync(file);
+  const cols = check.prepare('PRAGMA table_info(alarms)').all().map((c) => c.name);
+  assert.ok(cols.includes('acked_by') && cols.includes('gateway'));
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 28);
+  check.close();
 });

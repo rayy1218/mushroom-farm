@@ -7,6 +7,7 @@ import { checkWorker } from './tasks.js';
 import { CROPS, CROP_KEYS, cropShortName } from '../web/crops.js';
 import { KINDS, ITEM_UNITS, WHOLE_UNITS, itemView, attentionOf, sheetRows, stockOf, round3 } from './inventory-math.js';
 import { batchTitle } from '../web/inventory-math.js';
+import { madePricer } from './batches.js'; // ---- Money truth ---- a made delivery's blocks at their live price
 
 // The names Batches gives its block items ("<crop> blocks", by the crop's short name or its full name), lower case. Batches
 // finds or makes that item with `WHERE kind = 'blocks' AND name = ?`; a worker's own item of such a name (any case) would
@@ -130,12 +131,34 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
 
   // ---- views ----
 
-  // The list: { items (no lots), attention, archivedCount, suppliers }; archived items only when asked.
+  // ---- Money truth ---- A made delivery's blocks lot at Batches' live price (its materials at their lots), partial while a
+  // material has no price, so the worth follows a purchase entered after the mix. moves: the moves the views read. → lotCost.
+  function batchLotCosts(moves) {
+    const ids = [...new Set(moves.filter((m) => m.refKind === 'batch' && m.qty > 0 && m.refId != null).map((m) => m.refId))];
+    const rows = db.batchRows(ids);
+    if (![...rows.values()].some((b) => b.kind === 'made')) return () => undefined;
+    const price = madePricer(db.batches);
+    return (m) => {
+      if (m.refKind !== 'batch' || !(m.qty > 0) || rows.get(m.refId)?.kind !== 'made') return undefined;
+      const p = price(m.refId);
+      return { unitCost: p.over ? null : p.perBlock, partial: p.cost.missing.length > 0 };
+    };
+  }
+
+  // The list: { items (no lots), value { total, unpriced } (Money truth), attention, archivedCount, suppliers }; archived
+  // items only when asked.
   function list({ archived = false } = {}) {
     const by = movesByItem();
-    const views = db.stockItems().map((item) => itemView(item, by.get(item.id) ?? [], now()));
+    const lotCost = batchLotCosts([...by.values()].flat());
+    const views = db.stockItems().map((item) => itemView(item, by.get(item.id) ?? [], now(), lotCost));
+    const open = views.filter((v) => !v.archived);
     return {
       items: views.filter((v) => archived || !v.archived).sort(byKindThenName).map(({ lots, ...v }) => v),
+      // ---- Money truth ---- what the stock not archived is worth at what each lot cost, and the items with no price
+      value: {
+        total: Math.round(open.reduce((sum, v) => sum + v.value, 0) * 100) / 100,
+        unpriced: open.filter((v) => v.unpriced).sort(byKindThenName).map((v) => v.name),
+      },
       attention: attentionOf(views),
       archivedCount: views.filter((v) => v.archived).length,
       suppliers: suppliers(),
@@ -156,7 +179,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     // A receipt (an in-move) is the whole delivery: its blocks are the move's, not what is left on the first row after a split.
     const titleOf = (refId, inQty) => (batches.has(refId) ? batchTitle({ ...batches.get(refId), ...(inQty > 0 ? { blocks: inQty } : {}) }, day) : null);
     const roomIdOf = (m) => (m.refKind === 'batch' ? batches.get(m.refId)?.roomId ?? null : m.roomId);
-    const view = itemView(it, moves, now());
+    const view = itemView(it, moves, now(), batchLotCosts(moves));
     return {
       ...view,
       lots: view.lots.map((l) => (l.refKind === 'batch' ? { ...l, batchTitle: titleOf(l.refId, l.qty) } : l)),

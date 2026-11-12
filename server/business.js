@@ -1,10 +1,11 @@
 // The Business summary (spec 2026-11-06-business-summary-design.md): the month's money, what needs the owner and the runs in
 // progress, composed on each read from the modules' own functions: Costs' month view (this month's tiles and monthly items,
-// last month's result, the batches with no price), Sales' owed, Inventory's list (below zero, low, use-by), Batches' list
-// (blocks ready for a room, the one delivery with no price) and Runs' list (the open runs). No table, no state, no HTTP. A module that fails leaves only its own part
+// last month's result), Sales' owed, Inventory's list (below zero, low, use-by), Batches' list (blocks ready for a room, the
+// deliveries with no whole price) and Runs' list (the open runs). No table, no state, no HTTP. A module that fails leaves only its own part
 // out (errors[part]); the rest still shows. The server gives the figures; the browser words them (web/business-math.js).
 
-import { addMonths } from './costs-math.js';
+import { addMonths, dayMonth } from './costs-math.js';
+import { cropShortName } from '../web/crops.js';
 import { localZone } from './usage.js';
 import { SALES_HASH, INVENTORY_HASH, inventoryItemHash, BATCHES_HASH, batchHash } from '../web/route.js';
 
@@ -20,7 +21,7 @@ const WORST = { expired: 0, soon: 1 };
 // named.
 export function createBusiness({ costs, sales, inventory, batches, runs, zone = localZone, log = console.error }) {
   return {
-    // GET /api/business/summary: { month, lastMonth, needs, runs, errors } (spec 4).
+    // GET /api/business/summary: { month, lastMonth, needs, runs, stock, errors } (spec 4; stock and month.bought: Money truth).
     summary() {
       const errors = {};
       // A part read on its own: a throw leaves it null and says so in errors, never the whole reply.
@@ -35,15 +36,17 @@ export function createBusiness({ costs, sales, inventory, batches, runs, zone = 
       };
       const view = read('costs', () => costs.monthView());
       const owed = read('sales', () => sales.view({ days: 7 }).owed);
-      const items = read('inventory', () => inventory.list().items);
+      const stock = read('inventory', () => inventory.list());
+      const items = stock?.items ?? null;
       const blocks = read('batches', () => batches.list().batches);
-      const open = read('runs', () => runs.list().runs.filter((r) => r.endedAt === null));
+      const open = read('runs', () => runs.list({ untied: false }).runs.filter((r) => r.endedAt === null));
       const last = view ? view.last12.find((x) => x.month === addMonths(view.month, -1)) ?? null : null;
       return {
-        month: view && { month: view.month, today: view.today, pending: view.pending, tiles: view.tiles, repeating: view.repeating },
+        month: view && { month: view.month, today: view.today, pending: view.pending, tiles: view.tiles, repeating: view.repeating, bought: view.bought },
         lastMonth: last && { month: last.month, income: last.income, costs: last.costs, profit: last.profit, pending: last.pending },
-        needs: [...owedNeeds(owed), ...stockNeeds(items), ...blockNeeds(blocks), ...unpricedNeeds(view, blocks, zone)],
+        needs: [...owedNeeds(owed), ...stockNeeds(items), ...blockNeeds(blocks), ...unpricedNeeds(blocks, zone)],
         runs: open,
+        stock: stock?.value ?? null, // ---- Money truth ---- what the stock is worth at what each lot cost
         errors,
       };
     },
@@ -85,17 +88,23 @@ function blockNeeds(batches) {
   return blocks ? [{ kind: 'blocks', blocks, crops: [...new Set(list.map((b) => b.crop))], href: BATCHES_HASH }] : [];
 }
 
-// (6) Blocks with no price: this month's Costs notes of kind 'unpriced-batch', one need for all of them. One note whose
-// delivery Batches' list names (a bought batch with no price received this month, the one): batchId and its page; else
-// Batches.
-function unpricedNeeds(view, batches, zone) {
-  const notes = (view?.notes ?? []).filter((n) => n.kind === 'unpriced-batch');
-  if (!notes.length) return [];
-  const found = notes.length === 1 && batches
-    ? batches.filter((b) => b.kind !== 'made' && b.pricePerBlock === null && zone.label(b.receivedAt).slice(0, 7) === view.month) : [];
-  const batchId = found.length === 1 ? found[0].id : null;
-  return [{
-    kind: 'unpriced', notes: notes.map((n) => ({ text: n.text, runId: n.runId ?? null })), batchId,
-    href: batchId === null ? BATCHES_HASH : batchHash(batchId),
-  }];
+// (6) Blocks with no price (Money truth, spec 2026-11-12-money-truth-design.md 4 and 5.1): Batches' deliveries waiting for a
+// room or in one (not being made, not past) whose price is not whole: a bought one with none, a made one with none or a
+// material with no price (priceMissing); one note a delivery, its first row's. One delivery: its page; several: Batches.
+function unpricedNeeds(batches, zone) {
+  if (!batches) return [];
+  const notes = new Map();
+  for (const b of batches) {
+    if (b.status !== 'waiting' && b.status !== 'placed') continue;
+    const missing = b.kind === 'made' ? b.priceMissing ?? [] : [];
+    if (b.pricePerBlock !== null && !missing.length) continue;
+    const first = b.parentId ?? b.id;
+    if (notes.has(first)) continue;
+    const whose = `${cropShortName(b.crop)} blocks ${b.kind === 'made' ? 'made' : 'received'} ${dayMonth(zone.label(b.receivedAt))}`;
+    const list = missing.length < 2 ? missing.join('') : `${missing.slice(0, -1).join(', ')} and ${missing.at(-1)}`;
+    notes.set(first, { text: b.pricePerBlock === null || !missing.length ? `${whose} have no price` : `${whose}: no price for ${list}`, batchId: first });
+  }
+  if (!notes.size) return [];
+  const batchId = notes.size === 1 ? [...notes.keys()][0] : null;
+  return [{ kind: 'unpriced', notes: [...notes.values()], batchId, href: batchId === null ? BATCHES_HASH : batchHash(batchId) }];
 }

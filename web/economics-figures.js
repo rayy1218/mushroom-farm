@@ -5,7 +5,7 @@
 //   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint · likely
 //   · sourceItems
 
-import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts, MAX_SIM_DAYS } from './economics-defaults.js';
+import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts, MAX_SIM_DAYS, yoursName, figureLabel, EQUIPMENT_KEYS, SALES_DAYS } from './economics-defaults.js';
 import { compare } from './economics-model.js';
 import { figureText, rangeText } from './economics-math.js';
 import { moneyText, perKgText, amountBox, amountOf } from './costs-math.js';
@@ -24,7 +24,7 @@ const plural = (n, one, many) => `${grouped(n, 0)}${NB}${n === 1 ? one : many}`;
 export function foldsOf(view) {
   const ways = ['shared', ...view.ways];
   return ways.map((way) => ({
-    way, title: way === 'shared' ? 'Shared by every way' : WAY_NAMES[way], open: way === 'shared' || way === 'yours',
+    way, title: way === 'shared' ? 'Shared by every way' : way === 'yours' ? yoursName(view.room?.type) : WAY_NAMES[way], open: way === 'shared' || way === 'yours',
     figures: view.figures.filter((f) => f.way === way),
   })).filter((f) => f.figures.length);
 }
@@ -40,7 +40,8 @@ export function tagText(f) {
   if (f.source === 'owner') return 'You set';
   if (f.source === 'runs' && f.runs?.from === 'crop') return 'Crop tab'; // the planted blocks: no run gave them (the audit, #24)
   if (f.source === 'runs') return f.runs?.count ? `Your runs${DOT}${plural(f.runs.count, 'run', 'runs')}` : 'Your runs';
-  return { simulator: 'Simulator', settings: 'Settings', research: 'Research' }[f.source];
+  // Money truth: the crop's sales of the last SALES_DAYS, Costs' labour items, the equipment register
+  return { simulator: 'Simulator', settings: 'Settings', research: 'Research', sales: 'Your sales', costs: 'Your costs', register: 'Your equipment' }[f.source];
 }
 
 // Where a figure applies (its scope): "Every room and crop", "Every room, Lion's mane", "Container 1, every crop",
@@ -50,22 +51,28 @@ export function appliesText(f, room, crop) {
   return { farm: 'Every room and crop', crop: `Every room, ${name}`, room: `${room}, every crop`, roomCrop: `${room}, ${name}` }[f.scope];
 }
 
-const SOURCE_WORDS = { runs: 'Your runs', simulator: 'Simulator', settings: 'Settings' };
-const PART_NAMES = { harvest: 'Harvest', sales: 'Sales', batches: 'Batches', energy: 'the energy' };
-const USING = { research: 'research', simulator: 'the simulator', settings: 'Settings', runs: 'your runs', owner: 'your figure' };
+const SOURCE_WORDS = { runs: 'Your runs', simulator: 'Simulator', settings: 'Settings', sales: 'Your sales', costs: 'Your costs', register: 'Your equipment' };
+const PART_NAMES = { harvest: 'Harvest', sales: 'Sales', batches: 'Batches', energy: 'the energy', costs: 'Costs' };
+const USING = { research: 'research', simulator: 'the simulator', settings: 'Settings', runs: 'your runs', owner: 'your figure', sales: 'your sales', costs: 'your costs', register: 'your equipment register' };
 const span = (runs) => `${dateText(runs.from)} – ${dateText(runs.to)}`;
 
 // What Your runs say of a figure (spec 8.6).
 function runsNote(f, { room, crop }) {
   const r = f.runs;
+  // a partial run counted from its block-in day (Money truth 8.2) says so
+  const partial = r.partial ? ` (${r.partial === 1 ? 'one' : grouped(r.partial, 0)} counted from ${r.partial === 1 ? 'its' : 'their'} block-in day)` : '';
   switch (f.key) {
     case 'yours.yieldG':
-      return `Your runs: ${plural(r.count, 'finished run', 'finished runs')} of ${cropShortName(crop)} in ${room}, ${span(r)}: ${kgText(r.kg)} from `
-        + `${plural(r.blocks, 'block', 'blocks')} put in (${figureText('yours.yieldG', f.value)} a${NB}block, lost blocks counted).`;
+      // the loss measured from Batches' checks (Money truth 8.3): the yield is per good block
+      return r.measured
+        ? `Your runs: ${plural(r.count, 'finished run', 'finished runs')} of ${cropShortName(crop)} in ${room}${partial}, ${span(r)}: ${kgText(r.kg)} from `
+          + `${plural(r.good, 'good block', 'good blocks')} of ${grouped(r.blocks, 0)} put in (${figureText('yours.yieldG', f.value)} a${NB}good block).`
+        : `Your runs: ${plural(r.count, 'finished run', 'finished runs')} of ${cropShortName(crop)} in ${room}${partial}, ${span(r)}: ${kgText(r.kg)} from `
+          + `${plural(r.blocks, 'block', 'blocks')} put in (${figureText('yours.yieldG', f.value)} a${NB}block, lost blocks counted).`;
+    case 'yours.loss':
+      return `Your runs: ${grouped(r.lost, 0)} of ${plural(r.put, 'block', 'blocks')} lost (Batches’ checks).`;
     case 'price':
-      return r.farmWide
-        ? `Your sales: ${cropShortName(crop)} sold farm-wide ${dateText(r.from)} – ${dateText(r.until)}, ${kgText(r.kg)} for ${moneyText(r.total)} (no sale was tied to these runs).`
-        : `Your runs: ${kgText(r.kg)} sold for ${moneyText(r.total)}.`;
+      return `Your runs: ${kgText(r.kg)} sold for ${moneyText(r.total)}.`;
     case 'blockPrice':
       return `Your runs: ${plural(r.blocks, 'block', 'blocks')} in ${plural(r.batches, 'batch', 'batches')}.`
         + (r.batchesLeftOut ? `${DOT}${plural(r.batchesLeftOut, 'batch', 'batches')} without a price left out.` : '');
@@ -94,11 +101,18 @@ export function noteParts(f, ctx) {
     const real = f.real ? `${DOT}${SOURCE_WORDS[f.real.source]}: ${figureText(f.key, f.real.value)}` : '';
     const research = f.research ? `${DOT}Research: ${rangeText(f.key, f.research.low, f.research.high)}` : '';
     out.push({ text: `You set this on ${dateText(f.at)}${real}${research}.`, back: true });
-  } else if (f.source === 'runs' && f.key === 'yours.loss') {
+  } else if (f.source === 'runs' && f.key === 'yours.loss' && !f.runs?.measured) {
     out.push({ text: 'Counted in your yield: your runs\' kg a block is over every block put in.' });
   } else if (f.source === 'runs') {
     const text = runsNote(f, ctx);
     if (text) out.push({ text });
+  } else if (f.source === 'sales') { // ---- Money truth ----
+    out.push({ text: `Your sales: ${kgText(f.runs.kg)} of ${cropShortName(ctx.crop)} sold for ${moneyText(f.runs.total)} in the last ${SALES_DAYS}${NB}days.` });
+  } else if (f.source === 'costs') {
+    out.push({ text: costsNote(f) });
+  } else if (f.source === 'register') {
+    const items = f.runs?.items ?? [];
+    out.push({ text: items.length ? `Your equipment register: ${items.map((i) => `${i.name} ${moneyText(i.amount)}`).join(', ')}.` : 'Your equipment register has none of this part.' });
   } else if (f.source === 'settings' && f.key === 'price') {
     out.push({ text: 'Your expected price in Settings → Yield.', link: { text: 'Settings', href: SETTINGS_HASH } });
   } else if (f.source === 'settings') {
@@ -111,8 +125,35 @@ export function noteParts(f, ctx) {
       ...(sources.length ? { sources } : {}),
     });
   }
+  if (f.notes.includes('not-in-register')) out.push({ text: `Not in your equipment register: ${USING[f.source]}.` }); // Money truth
   if (f.notes.includes('loss-twice')) out.push({ text: 'Your runs\' yield already counts lost blocks; a loss here counts them twice.', tone: 'warn' });
+  // ---- Money truth ---- (10) the building's research follows the room type, set on the room's Setup
+  if (f.key === 'yours.container' && f.source === 'research') out.push({ text: 'By the room type on its Setup tab: container, built room or shed.' });
+  // (8.1) the realised price beside any other; flagged when the price used is more than 25 % off it
+  if (f.key === 'price' && f.realised && f.source !== 'sales') {
+    const real = figureText('price', f.realised.value);
+    if (f.notes.includes('price-off')) {
+      const pct = Math.round((Math.abs(f.value - f.realised.value) / f.realised.value) * 100);
+      const way = f.value > f.realised.value ? 'over' : 'under';
+      out.push({
+        text: f.source === 'settings'
+          ? `Settings’ expected price, ${figureText('price', f.value)}, is ${pct}${NB}% ${way} your sales’ ${real} of the last ${SALES_DAYS}${NB}days.`
+          : `Your ${figureText('price', f.value)} is ${pct}${NB}% ${way} your sales’ ${real} of the last ${SALES_DAYS}${NB}days.`,
+        tone: 'warn',
+      });
+    } else {
+      out.push({ text: `Your sales, last ${SALES_DAYS}${NB}days: ${real}.` });
+    }
+  }
   return out;
+}
+
+// What Costs' monthly labour items give (Money truth 9): their workers, what they come to a month as entered there.
+function costsNote(f) {
+  const r = f.runs;
+  const count = r.names.length + (r.unnamed ?? 0);
+  const names = !r.unnamed && r.names.length < 3 ? r.names.map((n) => `${n}’s`).join(' and ') : `${count} workers’`;
+  return `Your costs: ${names} base wages, ${moneyText(r.total)} a${NB}month as entered in Costs (enter them with EPF, SOCSO and EIS).`;
 }
 
 // The Electricity per block row's simulator line (spec 6.3): { text, tone?, action (the button's words) or null }. sim: the
@@ -140,12 +181,17 @@ export function simText(sim, f, { room, crop, life, machinesNote }) {
 // The headline card's sources line (spec 8.1): "From your runs: yield, selling price · Simulator: electricity · You set: 2 ·
 // The rest is research." ("All research: set your own figures below." when none is real.)
 // The blocks are not counted: a planted room gives them from the first day, which would end "All research" on a new farm.
-const SHORT = { 'yours.yieldG': 'yield', price: 'selling price', blockPrice: 'block price', 'yours.kwhBlock': 'electricity' };
+const SHORT = {
+  'yours.yieldG': 'yield', 'yours.loss': 'loss', price: 'selling price', blockPrice: 'block price', 'yours.kwhBlock': 'electricity',
+  'yours.workers': 'labour', ...Object.fromEntries(EQUIPMENT_KEYS.map((k) => [k, 'equipment'])),
+};
 export function sourcesLine(figures) {
-  const of = (source) => Object.keys(SHORT).filter((key) => figures.some((f) => f.key === key && f.source === source)).map((key) => SHORT[key]);
+  const of = (source) => [...new Set(Object.keys(SHORT).filter((key) => figures.some((f) => f.key === key && f.source === source)).map((key) => SHORT[key]))];
   const set = figures.filter((f) => f.source === 'owner').length;
   const parts = [
     of('runs').length ? `From your runs: ${of('runs').join(', ')}` : null,
+    of('sales').length ? `Your sales: ${of('sales').join(', ')}` : null, // ---- Money truth ----
+    of('costs').length || of('register').length ? `Your costs: ${[...of('costs'), ...of('register')].join(', ')}` : null,
     of('simulator').length ? `Simulator: ${of('simulator').join(', ')}` : null,
     of('settings').length ? `Settings: ${of('settings').join(', ')}` : null,
     set ? `You set: ${set}` : null,
@@ -173,10 +219,10 @@ export function boxText(key, v) {
 // The polite line after a save: "Saved: Selling price, RM 55.00 a kg, every room." With yours (the model's result for Your
 // container) the result follows, which is out of view at the box (the audit, #10): "Now RM 649.13 a month, break-even
 // RM 48.58 a kg."
-export function savedText(key, value, room, crop, yours = null) {
+export function savedText(key, value, room, crop, yours = null, type = 'container') {
   const f = figureOf(key);
   const where = { farm: 'every room and crop', crop: 'every room', room: `${room}, every crop`, roomCrop: `${room} and ${cropShortName(crop)}` }[f.scope];
-  const saved = `Saved: ${f.label}, ${figureText(key, value)}, ${where}.`;
+  const saved = `Saved: ${figureLabel(key, type)}, ${figureText(key, value)}, ${where}.`;
   if (!yours) return saved;
   const loss = Math.round(yours.profit * 100) < 0 ? ' loss' : '';
   const be = Number.isFinite(yours.be) ? `, break\u2011even ${perKgText(yours.be)} a${NB}kg` : '';
@@ -186,7 +232,7 @@ export function savedText(key, value, room, crop, yours = null) {
 // A figure the owner typed or set that is allowed but unlikely (the audit, #6; DESIGN's check): outside its research
 // range, or under half or over twice the real figure (your runs', the simulator's, Settings'). → the warning's words, or
 // null. "Unusual: research gives RM 30.00–70.00 a kg; your runs give RM 48.00 a kg."
-const GIVE = { runs: 'your runs give', simulator: 'the simulator gives', settings: 'Settings gives' };
+const GIVE = { runs: 'your runs give', simulator: 'the simulator gives', settings: 'Settings gives', sales: 'your sales give', costs: 'your costs give', register: 'your equipment register gives' };
 export function likely(f, value) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   const real = f.source === 'owner' ? f.real : GIVE[f.source] ? { source: f.source, value: f.value } : null;
@@ -234,6 +280,7 @@ export function partsLine(errors) {
 export function createDraft() {
   let figures = [];
   let ways = ['yours'];
+  let context = {}; // Money truth: the other rooms' blocks and the register, for the model
   let room;
   let crop;
   const typedValues = {};
@@ -249,6 +296,7 @@ export function createDraft() {
       crop = reply.crop;
       figures = reply.figures;
       ways = reply.ways;
+      context = reply.context ?? {};
     },
     type(key, text) {
       const t = typed(key, text);
@@ -270,7 +318,7 @@ export function createDraft() {
     unsaved: (key) => key in typedValues,
     values: () => valuesOf(figures, typedValues),
     results() {
-      return figures.length ? compare(valuesOf(figures, typedValues), ways) : [];
+      return figures.length ? compare(valuesOf(figures, typedValues), ways, context) : [];
     },
   };
 }

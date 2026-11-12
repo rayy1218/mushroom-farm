@@ -10,7 +10,7 @@ import { DOT } from './text-math.js';
 import { openItemDialog, openPurchaseDialog, openUseDialog } from './inventory-dialogs.js';
 import { createDoneLine, takeFlash } from './inventory-done.js';
 import { farmDate } from './tasks-math.js';
-import { groupItems, pillOf, attentionParts, countedText, metaLine, needsLook, qtyText, useItems } from './inventory-math.js';
+import { groupItems, pillOf, attentionParts, countedText, metaLine, needsLook, qtyText, useItems, worthLine, itemWorth } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
 
@@ -33,6 +33,7 @@ const TEMPLATE = `
     <span data-banner-text></span>
     <button type="button" data-retry>Retry</button>
   </div>
+  <p class="iv-worth-line" data-worth hidden><span class="iv-worth-total" data-worth-total></span> <span class="muted" data-worth-note></span></p>
   <p class="muted" data-loading role="status">Loading…</p>
   <p class="iv-attention" data-attention hidden></p>
   <p class="muted iv-filter-line" data-filter-line hidden><span data-filter-text></span> <button type="button" class="iv-link" data-filter-off>Show all</button></p>
@@ -96,7 +97,10 @@ function groupCard(group, now) {
     const counted = countedText(item.lastCountedAt, now);
     const countCell = el('td', `iv-counted${counted.stale ? ' iv-stale' : ''}`, counted.text);
     const reorder = el('td', 'num iv-reorder', item.reorderAt === null ? '—' : qtyText(item.reorderAt, item.unit));
-    tr.append(name, el('td', 'num iv-qty', qtyText(item.qty, item.unit)), reorder, countCell);
+    const qty = el('td', 'num iv-qty', qtyText(item.qty, item.unit));
+    const worth = itemWorth(item); // ---- Money truth ---- the owner's: a worker's item has no value
+    if (worth) qty.append(el('span', 'iv-worth', worth));
+    tr.append(name, qty, reorder, countCell);
     body.append(tr);
   }
   t.append(thead, body);
@@ -116,6 +120,7 @@ export function mount(container) {
     use: q('[data-use]'), purchase: q('[data-purchase]'), count: q('[data-count]'), add: q('[data-add]'), sheet: q('[data-sheet]'),
     banner: q('.banner'), bannerText: q('[data-banner-text]'), attention: q('[data-attention]'), groups: q('[data-groups]'),
     empty: q('[data-empty]'), allArchived: q('[data-all-archived]'), archivedLine: q('[data-archived-line]'), archived: q('[data-archived]'),
+    worth: q('[data-worth]'), worthTotal: q('[data-worth-total]'), worthNote: q('[data-worth-note]'),
     loading: q('[data-loading]'), filterLine: q('[data-filter-line]'), filterText: q('[data-filter-text]'), archivedSaid: q('[data-archived-said]'),
   };
   document.title = 'Inventory · Mushroom farm';
@@ -143,6 +148,11 @@ export function mount(container) {
     painted = key;
     els.loading.hidden = true;
     const items = data.items ?? [];
+    // ---- Money truth ---- what the stock is worth (the owner's; a worker's reply has none)
+    const worth = worthLine(data.value);
+    els.worth.hidden = !worth || items.length === 0;
+    els.worthTotal.textContent = worth?.text ?? '';
+    els.worthNote.textContent = worth?.note ?? '';
     const parts = attentionParts(data.attention, items);
     if (filter && !parts.some((p) => p.key === filter)) filter = null; // nothing of that kind any more
     els.attention.hidden = parts.length === 0;

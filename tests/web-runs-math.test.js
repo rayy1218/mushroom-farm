@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   LIST_COLUMNS, cropChoices, cropsText, runDates, listRow, emptyText, runTitle, runSub, runPageLabel, pageTiles, costsMix, batchRows,
-  MADE_NOTE, SALE_COLUMNS, saleRows, salesTotal, costRows, costsTotal, costNotes,
+  MADE_NOTE, SALE_COLUMNS, saleRows, salesTotal, costRows, costsTotal, costNotes, tieText, untiedText, countLine, COUNT_TITLE, countLead, countBody, countRange,
 } from '../web/runs-math.js';
 
 const NB = ' ';
@@ -119,7 +119,7 @@ test('the Blocks card: each batch, its supplier and day received (a made one its
     { href: '#/business/batches/4', title: '1 Grey oyster block', line: `made 20${NB}Dec${NB}2025${NB}· no price`, note: MADE_NOTE },
     { href: '#/business/batches/5', title: '20 Grey oyster blocks', line: `made 20${NB}Sep${NB}· RM${NB}1.10 a block`, note: MADE_NOTE },
   ]);
-  assert.equal(MADE_NOTE, 'Its materials count in Costs as Inventory purchases');
+  assert.equal(MADE_NOTE, 'Its materials at what their lots cost, charged to the run as its blocks went in');
 });
 
 test('the Sales card: a line as Sales shows a delivery; the total', () => {
@@ -151,4 +151,40 @@ test('the Costs card: Costs\' breakdown without the income rows, Electricity and
   assert.equal(costsTotal({ ...v, pending: true }), '—');
   assert.deepEqual(costNotes(v), [{ kind: 'unpriced-batch', text: 'A batch has no price', warn: true }]);
   assert.deepEqual(costNotes({ ...v, pending: true, costsByKind: null }), [{ kind: 'pending', text: 'Working out the energy cost…', warn: false }]);
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 7) ----
+test('how a sale line reached the run; the Runs tab\'s line for what reaches none; a made batch\'s missing price', () => {
+  const plain = (s) => s?.replace(/[ ⁠]/g, ' ').replace(/ +/g, ' ');
+  assert.equal(tieText({ crop: 'lionsmane', kg: 8, tie: { how: 'only', share: 1, kg: 8, total: 384 } }), 'Tied here: the only run growing Lion\'s mane that day');
+  assert.equal(plain(tieText({ crop: 'oyster', kg: 2.5, tie: { how: 'picked', share: 0.25, kg: 10, total: 100 } })), 'Shared: 2.5 kg of a 10.0 kg sale, by the kg picked here');
+  assert.equal(tieText({ crop: 'oyster', kg: 8, tie: { how: 'room', share: 1, kg: 8, total: 96 } }), null);
+  assert.equal(tieText({ crop: 'oyster', kg: 8 }), null);
+  assert.equal(plain(untiedText({ total: 384, kg: 8, count: 1 })), 'RM 384.00 of sales not tied to a run');
+  assert.equal(untiedText({ total: 0, kg: 0, count: 0 }), null);
+  assert.equal(untiedText(undefined), null, 'an older server');
+  const [row] = batchRows([{ id: 5, kind: 'made', blocks: 480, crop: 'oyster', mixedAt: at('2026-11-04'), receivedAt: at('2026-11-04'), pricePerBlock: 2.7935, priceMissing: ['Plastic bags'] }], '2026-11-12');
+  assert.equal(plain(row.line), 'made 4 Nov · RM 2.79 a block · no price for Plastic bags');
+});
+
+test('a partial run\'s line for Economics, its dialog\'s words and the day it sends (Money truth 8.2)', () => {
+  const plain = (s) => s?.replace(/[ ⁠]/g, ' ');
+  const run = { id: 3, partial: true, startedAt: at('2026-11-04', 16), blocksInAt: null };
+  const line = countLine(run, '2026-11-12');
+  assert.deepEqual([plain(line.text), line.action, line.stop], ['Recorded from 4 Nov, when the app began keeping runs; its blocks went in earlier, so Economics leaves it out.', 'Count it in Economics', undefined]);
+  const counted = countLine({ ...run, blocksInAt: at('2026-09-20') }, '2026-11-12');
+  assert.deepEqual([plain(counted.text), counted.action, counted.stop], ['Counted in Economics from 20 Sep, the day its blocks went in.', 'Change the day', 'Stop counting it']);
+  assert.equal(countLine({ ...run, partial: false }, '2026-11-12'), null);
+  assert.equal(COUNT_TITLE, 'Count this run in Economics');
+  assert.match(plain(countLead(run, '2026-11-12')), /recorded from 4 Nov: give the day its blocks went in\. Count it only if every pick since then is recorded\.$/);
+  assert.deepEqual(countBody('2026-09-20', run), { body: { blocksInAt: at('2026-09-20') } }, 'noon on the farm\'s day');
+  assert.equal(countBody('2026-11-05', run).field, 'day');
+  assert.equal(countBody('2025-11-03', run).field, 'day', '366 days before');
+  assert.equal(countBody('', run).field, 'day');
+  assert.deepEqual(countRange(run), { max: '2026-11-04', min: '2025-11-04' });
+});
+
+test('the money\'s make-up names the equipment written off (Money truth)', () => {
+  const v = { pending: false, costs: 300, prices: { electricity: 0.55, water: null }, costsByKind: { parts: { blocks: 0, energy: 100, water: 0, own: 0, equipment: 200, shared: 0 } } };
+  assert.match(costsMix(v).replace(/[\u00a0]/g, ' '), /^Electricity RM 100.00 · Equipment RM 200.00 \(67 % of costs\)/);
 });

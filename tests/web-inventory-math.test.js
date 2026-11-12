@@ -7,6 +7,7 @@ import {
   SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
   moveLine, decimalComma, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, batchTitle, lotHref, useItems, sheetPeriod, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, SHEET_WRITE, KIND_OPTIONS, UNIT_OPTIONS,
+  worthLine, itemWorth, lotWorth,
 } from '../web/inventory-math.js';
 
 const plain = (s) => s.replace(/ /g, ' ');
@@ -446,4 +447,23 @@ test("a worker's purchase line has no RM part (the reply has no total)", () => {
   const m = { refKind: 'purchase', at: Date.UTC(2026, 10, 2, 2), qty: 5, supplier: 'Ah Seng' };
   assert.ok(!moveLine(m, item).parts[0].text.includes('—'));
   assert.ok(moveLine({ ...m, total: 50 }, item).parts[0].text.includes('RM'));
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 3) ----
+test('the stock\'s worth: the page\'s line, an item\'s beside its stock, a lot\'s; nothing for a worker', () => {
+  const line = worthLine({ total: 4647.1, unpriced: ['Plastic bags'] });
+  assert.deepEqual([plain(line.text), plain(line.note)], ['Stock worth RM 4,647.10', 'at what each lot cost · Plastic bags: no price']);
+  assert.equal(plain(worthLine({ total: 0, unpriced: ['Plastic bags', 'Bleach'] }).note), 'at what each lot cost · 2 items have no price');
+  assert.equal(plain(worthLine({ total: 12.5, unpriced: [] }).note), 'at what each lot cost');
+  assert.equal(worthLine(undefined), null, 'a worker\'s reply');
+  assert.equal(plain(itemWorth({ value: 1175.3, unpriced: false })), 'RM 1,175.30');
+  assert.equal(plain(itemWorth({ value: 0, unpriced: true })), 'no price');
+  assert.equal(plain(itemWorth({ value: 20, unpriced: true })), 'RM 20.00 · part with no price');
+  assert.equal(itemWorth({ value: 0, unpriced: false }), null, 'nothing in stock');
+  assert.equal(itemWorth({ qty: 5 }), null, 'a worker\'s item');
+  assert.equal(plain(lotWorth({ left: 839.5, unitCost: 1.4, value: 1175.3 }, 'kg')), 'RM 1.40 per kg · RM 1,175.30');
+  assert.equal(plain(lotWorth({ left: 480, unitCost: 2.7935, value: 1340.88 }, 'blocks')), 'RM 2.79 per block · RM 1,340.88');
+  assert.equal(plain(lotWorth({ left: 1, unitCost: null, value: null }, 'pcs')), 'no price');
+  assert.equal(lotWorth({ left: 1 }, 'pcs'), null);
+  assert.equal(plain(lotWorth({ left: 600, unitCost: 1, value: 600, partial: true }, 'blocks')), 'RM 1.00 per block · RM 600.00 · part with no price');
 });

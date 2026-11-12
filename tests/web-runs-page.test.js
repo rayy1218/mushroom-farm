@@ -19,7 +19,7 @@ test('the router mounts the Runs tab under the strip, a run on its own with its 
 });
 
 test('both pages read again on the modules\' events, a room\'s crops or name, the stream\'s return and a timer; a stale answer is dropped', () => {
-  assert.ok(page.includes("const LISTEN = ['harvest', 'batches', 'sales', 'costs'].filter((type) => EVENT_TYPES.includes(type));"));
+  assert.ok(page.includes("const LISTEN = ['harvest', 'batches', 'sales', 'costs', 'inventory'].filter((type) => EVENT_TYPES.includes(type));"));
   assert.ok(page.includes("live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }),"));
   assert.ok(page.includes('live.onStatus((up) => { if (up) reload.call(); }),'));
   assert.ok(page.includes('if (!alive() || mine !== seq) return;'));

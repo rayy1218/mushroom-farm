@@ -22,7 +22,7 @@ test('the router mounts it under the strip with the address\'s room and crop; it
 });
 
 test('it reads again on the events, a room\'s crops or name, the stream\'s return and a timer; stale answers dropped, an older app stops', () => {
-  assert.ok(page.includes("const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs'].filter((type) => EVENT_TYPES.includes(type));"));
+  assert.ok(page.includes("const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs', 'inventory'].filter((type) => EVENT_TYPES.includes(type));"));
   assert.ok(page.includes("live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }),"));
   assert.ok(page.includes('live.onStatus((up) => { if (up) reload.call(); }),'));
   assert.ok(page.includes("live.on('simulation', (d) => {"), 'the progress of its own run');
@@ -133,7 +133,7 @@ test('the spec review\'s notes: Work it out\'s refusals shown and said; a failed
   assert.ok(page.includes("parts.push(el('p', 'ec-note-line ec-warn', simRefused));"));
   assert.ok(page.includes('said(simRefused);'));
   assert.ok(page.includes('if (reply && simMoved(reply.sim, next.sim)) simRefused = null; // the run moved on: the refusal is old'));
-  assert.ok(page.includes('said(`${figureOf(key).label}: couldn\'t save. Retry is under it.`);'));
+  assert.ok(page.includes('said(`${figureLabel(key, reply.room.type)}: couldn\'t save. Retry is under it.`);')); // Money truth: by the room type
   assert.ok(page.includes('said(err.message); // the refusal, as under the box'));
   assert.ok(page.includes('p.append(DOT, b);'));
   assert.doesNotMatch(page, /' · '/);
@@ -195,7 +195,7 @@ test('the audit #7 #8 #9 #10: a refusal left is said and leaves the sums; the pa
   assert.ok(page.includes("const described = [error.hidden ? null : error, ...row.querySelectorAll('.ec-prefix, .ec-unit, .ec-tag')].filter((n) => n && n.textContent);"));
   assert.ok(page.includes("box.setAttribute('aria-describedby', described.map((n) => n.id).join(' '));"));
   // #10: the saved line with the result
-  assert.ok(page.includes('said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0]) + (warn ? ` ${warn}` : \'\'));'));
+  assert.ok(page.includes('said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0], next.room.type) + (warn ? ` ${warn}` : \'\'));'));
 });
 
 test('the audit #2 #6 #12 #14 #20 #22 #26: fold heads h3; an unusual figure checked; RM inside the box; a new tab said; the row\'s order; the run\'s end said; the gone line said', () => {
@@ -238,4 +238,12 @@ test('the final review: the page asks with economicsHash\'s query; the route rea
   const tabs = src('business-tabs.js');
   assert.ok(tabs.includes('const placer = new ResizeObserver(place);'));
   assert.ok(tabs.includes('observer.disconnect(); // placed once: no more measuring'));
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 9 and 10) ----
+test('the page: Your way and the building named by the room type; the labour line under the table; the draft reads the context', () => {
+  assert.ok(page.includes("th.append(el('span', 'ec-way', wayName(r.way, { type: reply.room.type })));"));
+  assert.ok(page.includes("figureLabel(f.key, reply.room.type)"));
+  assert.ok(page.includes('const labour = labourLine(results[0], reply.room.name);'));
+  assert.ok(src('economics-figures.js').includes('return figures.length ? compare(valuesOf(figures, typedValues), ways, context) : [];'));
 });

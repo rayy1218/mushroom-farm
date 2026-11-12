@@ -82,13 +82,15 @@ test('summary: the reply\'s parts; the month\'s money is Costs\' own, last month
   farm(s);
   await s.warm();
   const r = s.business.summary();
-  assert.deepEqual(Object.keys(r), ['month', 'lastMonth', 'needs', 'runs', 'errors']);
+  assert.deepEqual(Object.keys(r), ['month', 'lastMonth', 'needs', 'runs', 'stock', 'errors']);
   const view = s.costs.monthView();
-  assert.deepEqual(r.month, { month: '2026-11', today: '2026-11-15', pending: false, tiles: view.tiles, repeating: view.repeating });
+  assert.deepEqual(r.month, { month: '2026-11', today: '2026-11-15', pending: false, tiles: view.tiles, repeating: view.repeating, bought: view.bought });
+  assert.deepEqual(r.stock, s.inventory.list().value, 'Inventory\'s worth (Money truth)');
+  assert.equal(r.month.bought.total, 93, 'the grow bags, lime and bleach bought this month: RM 60 + 8 + 25');
   assert.equal(r.month.tiles.income, 120, 'the two sales');
-  assert.equal(r.month.tiles.incomplete, true, 'the pink blocks have no price');
+  assert.equal(r.month.tiles.incomplete, true, 'the 30 kg of sawdust used were never bought: no price (the pink blocks wait: not a cost yet)');
   assert.deepEqual(r.month.tiles.unsold, { kg: 10, value: null }, '20 kg picked, 10 sold; no expected price set');
-  assert.deepEqual(r.lastMonth, { month: '2026-10', income: 0, costs: 1620, profit: -1620, pending: false }, 'the blocks and the repair');
+  assert.deepEqual(r.lastMonth, { month: '2026-10', income: 0, costs: 120, profit: -120, pending: false }, 'the repair: the blocks bought 28 Oct are a cost when they went in, 15 Nov (Money truth)');
   assert.deepEqual(r.errors, {});
 });
 
@@ -118,8 +120,8 @@ test('summary: every kind of need, in its order, each with where it is fixed', a
     'the expired first');
   assert.deepEqual(bleach, { kind: 'use-by', id: f.bleach.id, name: 'Bleach', unit: 'L', useBy: { date: '2026-11-18', state: 'soon', qty: 5 }, href: `#/business/inventory/${f.bleach.id}` });
   assert.deepEqual(blocks, { kind: 'blocks', blocks: 400, crops: ['pink'], href: '#/business/batches' }, 'ready for a room only: blocks being made are not a to-do');
-  assert.deepEqual(unpriced, { kind: 'unpriced', notes: [{ text: 'Blocks received 14 Nov have no price', runId: null }], batchId: f.pink.id, href: `#/business/batches/${f.pink.id}` },
-    'one delivery with no price: its batch page');
+  assert.deepEqual(unpriced, { kind: 'unpriced', notes: [{ text: 'Pink oyster blocks received 14 Nov have no price', batchId: f.pink.id }], batchId: f.pink.id, href: `#/business/batches/${f.pink.id}` },
+    'one delivery with no price, waiting: its batch page (the blocks being made are not a to-do yet)');
 });
 
 test('summary: several items below zero or low: Inventory; several deliveries with no price: Batches', async (t) => {
@@ -143,12 +145,14 @@ test('summary: several items below zero or low: Inventory; several deliveries wi
   assert.deepEqual([byKind.unpriced.batchId, byKind.unpriced.href], [null, '#/business/batches']);
 });
 
-test('summary: a priced delivery and one with no price received last month: no batch to name', async (t) => {
+test('summary: a priced delivery and one with no price received last month: the one with no price named, whatever its month', async (t) => {
   const s = setup(t);
-  s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-10-20'), blocks: 50 });
+  const old = s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-10-20'), blocks: 50 });
   s.batches.receive({ crop: 'pink', supplier: 'Agro Supplies', receivedAt: at('2026-11-14'), blocks: 50, pricePerBlock: 2 });
   await s.warm();
-  assert.deepEqual(s.business.summary().needs.filter((n) => n.kind === 'unpriced'), [], 'October\'s is not this month\'s note');
+  const unpriced = s.business.summary().needs.filter((n) => n.kind === 'unpriced');
+  assert.deepEqual(unpriced.map((n) => [n.notes.map((x) => x.text), n.batchId]), [[['Pink oyster blocks received 20 Oct have no price'], old.id]],
+    'it still waits for its price (Money truth: a cost once it goes in)');
 });
 
 test('summary: one owed buyer is its own oldest; the oldest sale\'s buyer when several', async (t) => {
@@ -219,7 +223,7 @@ test('summary: the open runs as Runs lists them; an ended run is not in progress
   await s.warm();
   const { runs } = s.business.summary();
   assert.deepEqual(runs.map((r) => [r.id, r.roomName, r.kg, r.endedAt]), [[f.run.id, 'Container 1', 20, null]]);
-  assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'startedAt', 'endedAt', 'kg', 'perBlock',
+  assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'blocksInAt', 'startedAt', 'endedAt', 'kg', 'perBlock',
     'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete']);
   s.db.setProgram(f.room, { ...s.db.getProgram(f.room), crops: [] }, { change: 'end', at: at('2026-11-15', 9) });
   assert.deepEqual(s.business.summary().runs, []);
@@ -250,7 +254,7 @@ test('summary: a module that fails leaves only its own part out, says so and log
   s.logged.length = 0;
   const r = s.business.summary();
   assert.deepEqual(r.errors, { sales: PART_FAILED, inventory: PART_FAILED });
-  assert.deepEqual(r.needs.map((n) => n.kind), ['blocks', 'unpriced'], 'Batches\' and Costs\' needs still there');
+  assert.deepEqual(r.needs.map((n) => n.kind), ['blocks', 'unpriced'], 'Batches\' needs still there');
   assert.equal(r.month.month, '2026-11');
   assert.equal(r.runs.length, 1);
   assert.deepEqual(s.logged, ["Business summary: couldn't read sales: sales broke", "Business summary: couldn't read inventory: list broke"], 'the part named, the cause kept');
@@ -262,6 +266,6 @@ test('summary: every module failing: each part null or empty, every part named',
     costs: { monthView: fail }, sales: { view: fail }, inventory: { list: fail }, batches: { list: fail }, runs: { list: fail },
   });
   const r = s.business.summary();
-  assert.deepEqual(r, { month: null, lastMonth: null, needs: [], runs: null, errors: Object.fromEntries(PARTS.map((p) => [p, PART_FAILED])) });
+  assert.deepEqual(r, { month: null, lastMonth: null, needs: [], runs: null, stock: null, errors: Object.fromEntries(PARTS.map((p) => [p, PART_FAILED])) });
   assert.equal(PART_FAILED, 'Something went wrong');
 });

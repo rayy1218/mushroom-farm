@@ -29,10 +29,12 @@ export function runDryKg(rows) {
   return out;
 }
 
-// Σ blocks × price per block, to 2 places; null when any row's price is unknown (the contract's rule); 0 with no rows.
+// Σ each row's cost (a made row's share of its materials, Money truth: the same figure Costs charges; else blocks × price per
+// block), to 2 places; null when any row's price is unknown (the contract's rule); 0 with no rows.
+const rowCost = (b) => (b.cost !== undefined ? b.cost : b.pricePerBlock == null ? null : b.blocks * b.pricePerBlock);
 export function blockCost(rows) {
-  if (rows.some((b) => b.pricePerBlock == null)) return null;
-  return round(rows.reduce((s, b) => s + b.blocks * b.pricePerBlock, 0), 2);
+  if (rows.some((b) => rowCost(b) === null)) return null;
+  return round(rows.reduce((s, b) => s + rowCost(b), 0), 2);
 }
 
 // 'making' (a made batch not yet ready: not in a room, and not an area's blocks marked ready to fruit), 'waiting' (not yet in
@@ -42,18 +44,38 @@ export function statusOf(b) {
   return b.runId == null ? (b.placedAt == null ? 'waiting' : 'past') : b.runEndedAt == null ? 'placed' : 'past';
 }
 
-// A made block's price (spec 4): Σ material qty × its item's latest purchase price ÷ the blocks made, to 4 places; null with no
-// lines, a line with no Inventory item, or an item with no purchase price. priceOf(stockItemId) → RM per unit, or null.
-export function madePrice(materials, priceOf, blocks) {
-  if (!materials.length || !(blocks > 0)) return null;
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 4): a made batch's materials at what their lots cost.
+// drawOf(stockItemId) → the delivery's draws on that item, costed by Inventory's costedMoves ({ cost, unpricedQty }), or null
+// when it drew nothing (its item gone); nameOf(line) → the line's name. A line with no item, or whose draw has an unpriced part,
+// is missing. → { total (RM, 2 places; null when no line has a price), missing: [names] }.
+export function madeCost(materials, drawOf, nameOf) {
+  const missing = [];
+  const seen = new Set();
   let total = 0;
+  let priced = false;
   for (const m of materials) {
-    const cost = m.stockItemId == null ? null : priceOf(m.stockItemId);
-    if (cost == null) return null;
-    total += m.qty * cost;
+    const draw = m.stockItemId == null ? null : drawOf(m.stockItemId);
+    if (!draw) {
+      missing.push(nameOf(m));
+      continue;
+    }
+    if (seen.has(m.stockItemId)) continue; // two lines on one item: its draws counted once
+    seen.add(m.stockItemId);
+    if (draw.unpricedQty > 0) missing.push(nameOf(m));
+    if (draw.cost > 0 || draw.unpricedQty === 0) priced = true; // some of it came off a priced lot
+    total += draw.cost;
   }
-  return round(total / blocks, 4);
+  return { total: priced ? round(total, 2) : null, missing: [...new Set(missing)] };
 }
+
+// The price per block of a made batch's cost over the blocks made, to 4 places; null with no total or no blocks.
+export const madePerBlock = (cost, blocks) => (cost.total === null || !(blocks > 0) ? null : round(cost.total / blocks, 4));
+// Over this a block, a made price is a slip in the amounts or the prices: unknown, never charged (Batches and Costs alike).
+export const MADE_CAP = 1000;
+export const madeOver = (cost, blocks) => {
+  const price = madePerBlock(cost, blocks);
+  return price !== null && price > MADE_CAP;
+};
 
 // The run's blocks of the batch's crop (the Crop tab's count; 0 when the run's crops no longer have it); null without a run
 // (waiting, or its room deleted).
@@ -68,10 +90,13 @@ export function runBlocksOf(b) {
 // A row whose room was deleted keeps its placed time, so its move out stays. A made batch's materials (its first row's lines)
 // with an Inventory item go out on their own items (itemId): the mix's at the mix, the spawn at the inoculation (none before
 // it). family: not empty.
-export function movesOf(family, checksOf, materials = []) {
+// receiptCost (Money truth): the blocks' unit cost on their receipt when given (a made batch with a material unpriced: null, so
+// Inventory does not value its blocks at a part price); else the first row's price.
+export function movesOf(family, checksOf, materials = [], receiptCost = undefined) {
   const first = family.find((b) => b.parentId == null) ?? family[0]; // a first row is always there (it is never deleted with parts)
   const total = family.reduce((s, b) => s + b.blocks, 0);
-  const moves = [{ refId: first.id, at: first.mixedAt ?? first.receivedAt, qty: total, unitCost: first.pricePerBlock ?? null, note: null }];
+  const unitCost = receiptCost !== undefined ? receiptCost : first.pricePerBlock ?? null;
+  const moves = [{ refId: first.id, at: first.mixedAt ?? first.receivedAt, qty: total, unitCost, note: null }];
   for (const b of family) {
     const checks = checksOf(b.id);
     const before = b.placedAt == null ? checks : checks.filter((c) => c.at <= b.placedAt);

@@ -80,6 +80,8 @@ test('batchLineFor: null without batches; one batch; several', () => {
     { text: `Blocks${dot}Agro Supplies${dot}spawn batch 0912${dot}950${nb}blocks${dot}RM${nb}2,185.00`, href: '#/business/batches/7' });
   assert.deepEqual(batchLineFor(run, { batches: [b({ id: 7, blocks: 800 }), b({ id: 8, blocks: 400, pricePerBlock: null })], blockCost: null }),
     { text: `Blocks${dot}2 batches${dot}1,200${nb}blocks`, href: '#/business/batches?run=4' });
+  assert.ok(batchLineFor(run, { batches: [b({ id: 7, blocks: 480 })], blockCost: 1340.9, blockCostPartial: true }).text.endsWith(`RM${nb}1,340.90, some with no price`),
+    'Money truth: a made delivery with a material unpriced');
 });
 
 test('the myGAP 4-2 sheet: a receipt row per delivery and a use row per placement in the dates, by date', () => {

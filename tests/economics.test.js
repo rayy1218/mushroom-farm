@@ -61,7 +61,8 @@ test('a new farm: every figure research but the electricity price (Settings); th
   const s = setup(t);
   const v = s.econ.view();
   assert.deepEqual(v.rooms, [{ id: s.room, name: 'Container 1' }]);
-  assert.deepEqual(v.room, { id: s.room, name: 'Container 1', volume: 69, size: '40 ft', humidifierLH: s.db.getRoom(s.room).humidifierLH });
+  assert.deepEqual(v.room, { id: s.room, name: 'Container 1', volume: 69, size: '40 ft', humidifierLH: s.db.getRoom(s.room).humidifierLH, type: 'container' });
+  assert.deepEqual(v.context, { otherBlocks: 0, register: null }, 'Money truth: no other room, no register');
   assert.deepEqual([v.crop, v.ways, v.left], ['lionsmane', ['yours', 'highland', 'import', 'warm'], [{ way: 'shed', reason: 'warm-strain' }]]);
   assert.deepEqual(v.errors, {});
   assert.equal(v.sim, null);
@@ -90,7 +91,7 @@ test('no rooms: no room, no figures', (t) => {
   const s = setup(t, { rooms: 0 });
   assert.deepEqual(s.econ.view(), {
     rooms: [], room: null, crop: 'lionsmane', ways: ['yours', 'highland', 'import', 'warm'], left: [{ way: 'shed', reason: 'warm-strain' }],
-    figures: [], sim: null, machinesNote: null, errors: {},
+    figures: [], context: { otherBlocks: 0, register: null }, sim: null, machinesNote: null, errors: {},
   });
   // a room asked for that is not there is a 404 (spec 7.1), with no rooms too: the page then asks without it
   assert.throws(() => s.econ.view({ room: 1 }), (e) => e instanceof EconomicsError && e.status === 404 && e.message === 'Room not found');
@@ -366,4 +367,73 @@ test('close stops listening to the events', (t) => {
   const n = s.events.listeners();
   s.econ.close();
   assert.equal(s.events.listeners(), n - 1);
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 6.3, 8.1, 9 and 10) ----
+test('the price: Your sales (the crop\'s last 90 days) ahead of Settings; its realised price beside any other; a price far off it flagged', async (t) => {
+  const s = setup(t);
+  const { createSales } = await import('../server/sales.js');
+  const sales = createSales({ db: s.db, now: () => NOW });
+  writeSettings(s.db, { cropYield: { lionsmane: { dryKg: 0.8, priceKg: 35 } } });
+  assert.deepEqual(pick(fig(s.econ.view(), 'price')), { value: 35, source: 'settings' });
+  assert.equal(fig(s.econ.view(), 'price').realised, null, 'nothing sold');
+  const buyer = sales.addBuyer({ name: 'Kedai Ah Seng' });
+  sales.record({ soldAt: at('2026-11-05'), buyerId: buyer.id, lines: [{ crop: 'lionsmane', kg: 8, priceKg: 48 }] });
+  sales.record({ soldAt: at('2026-07-01'), buyerId: buyer.id, lines: [{ crop: 'lionsmane', kg: 10, priceKg: 10 }] }); // before the 90 days
+  const price = fig(s.econ.view(), 'price');
+  assert.deepEqual([price.value, price.source, price.runs.kg, price.runs.total], [48, 'sales', 8, 384], 'RM 48.00 from Your sales, not Settings\' 35');
+  assert.equal(price.notes.includes('price-off'), false, 'Settings is not used');
+  s.econ.setFigure({ room: s.room, crop: 'lionsmane', key: 'price', value: 70 });
+  const set = fig(s.econ.view(), 'price');
+  assert.deepEqual([set.source, set.realised.value, set.notes.includes('price-off')], ['owner', 48, true], '70 is 46 % over 48');
+  s.econ.setFigure({ room: s.room, crop: 'lionsmane', key: 'price', value: 52 });
+  assert.equal(fig(s.econ.view(), 'price').notes.includes('price-off'), false, '8 %: not flagged');
+});
+
+test('labour as people: the workers and a worker\'s month from Costs\' monthly labour items; the other rooms\' blocks for the share', (t) => {
+  const s = setup(t, { rooms: 2 });
+  const program = (room, blocks) => s.db.setProgram(room, { ...s.db.getProgram(room), crops: [{ crop: 'lionsmane', blocks }] }, { change: 'start', at: NOW });
+  program(s.ids[0], 1740);
+  program(s.ids[1], 2610);
+  assert.deepEqual(pick(fig(s.econ.view({ room: s.ids[0] }), 'yours.workerMonth')), { value: 1954.15, source: 'research' });
+  const cost = (worker, amount, date = '2026-10-01') => s.db.insertCost({ date, category: 'labour', amount, roomId: null, runId: null, note: '', repeat: 'monthly',
+    repeatUntil: null, worker, utility: null, periodFrom: null, periodTo: null }, NOW);
+  cost('Aminah', 1954.15);
+  cost('Siti', 1445.85);
+  cost('Ali', 900, '2026-12-01'); // not charging yet
+  const v = s.econ.view({ room: s.ids[0] });
+  assert.deepEqual(pick(fig(v, 'yours.workers')), { value: 2, source: 'costs' });
+  assert.deepEqual(pick(fig(v, 'yours.workerMonth')), { value: 1700, source: 'costs' });
+  assert.deepEqual(fig(v, 'yours.workers').runs, { names: ['Aminah', 'Siti'], unnamed: 0, total: 3400, items: 2 });
+  cost(null, 800);
+  cost(null, 900);
+  const more = s.econ.view({ room: s.ids[0] });
+  assert.deepEqual([fig(more, 'yours.workers').value, fig(more, 'yours.workerMonth').value], [4, 1275], 'two unnamed wages are two people: RM 5,100 ÷ 4');
+  assert.equal(v.context.otherBlocks, 2610);
+});
+
+test('the register: only the parts it has items for come from it, the others keep their source and say so; its write-off a month', (t) => {
+  const s = setup(t);
+  const item = (name, part, amount, lifeMonths, boughtOn = '2025-01-03') => s.db.insertEquipment({ name, roomId: s.room, part, boughtOn, amount, lifeMonths, resale: 0, note: '' }, NOW);
+  item('Daikin FTKF 2.5 hp', 'cooling', 4170, 60);
+  item('Daikin FTKF 2.5 hp', 'cooling', 4170, 60);
+  item('Steel racks', 'racks', 1200, 24, '2023-01-03'); // written off by now: still the planning figure's RM 50 a month
+  const v = s.econ.view();
+  assert.deepEqual(pick(fig(v, 'yours.cooling')), { value: 8340, source: 'register' });
+  assert.deepEqual(fig(v, 'yours.cooling').runs.items, [{ name: 'Daikin FTKF 2.5 hp', amount: 4170 }, { name: 'Daikin FTKF 2.5 hp', amount: 4170 }]);
+  assert.deepEqual(pick(fig(v, 'yours.container')), { value: 38100, source: 'research' }, 'no item for the container: not 0 (the review, #4)');
+  assert.ok(fig(v, 'yours.container').notes.includes('not-in-register'));
+  assert.ok(!fig(v, 'yours.cooling').notes.includes('not-in-register'));
+  assert.deepEqual(v.context.register, { total: 9540, writeOffMonth: 189, count: 3, parts: { 'yours.cooling': 8340, 'yours.racks': 1200 } });
+  s.econ.setFigure({ room: s.room, crop: 'lionsmane', key: 'yours.cooling', value: 9000 });
+  assert.equal(fig(s.econ.view(), 'yours.cooling').source, 'owner', 'You set still wins');
+});
+
+test('the room type: Economics prices a built room\'s building and cooling, the room says its type and no container size', (t) => {
+  const s = setup(t);
+  s.db.updateRoom(s.room, { ...ROOM, length: 9, width: 4.5, height: 2.8, roomType: 'built' }, NOW);
+  const v = s.econ.view();
+  assert.deepEqual([v.room.type, v.room.size], ['built', null]);
+  assert.equal(fig(v, 'yours.container').value, 25056, '156.6 m² of panel');
+  assert.equal(fig(v, 'yours.cooling').value, 13560, '3 units for 113 m³');
 });

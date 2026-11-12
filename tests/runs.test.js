@@ -81,7 +81,7 @@ test('list: the open runs first, then the ended, each newest started first; a ro
   await s.warm();
   const { runs } = s.runs.list();
   assert.deepEqual(runs.map((r) => r.id), [s.c.id, s.b.id, s.a.id]);
-  assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'startedAt', 'endedAt', 'kg', 'perBlock',
+  assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'blocksInAt', 'startedAt', 'endedAt', 'kg', 'perBlock',
     'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete']);
   const a = runs[2];
   assert.deepEqual([a.roomName, a.startedAt, a.endedAt, a.kg, a.perBlock], ['Container 1', at('2026-10-01', 9), at('2026-11-01', 9), 80, 0.13]);
@@ -192,4 +192,27 @@ test('view: the sale lines, newest delivery first, each delivery\'s lines in the
   ] });
   const v = s.runs.view(s.b.id);
   assert.deepEqual(v.sales.lines.map((l) => [l.invoiceNo, l.crop, l.kg]), [['R-3', 'lionsmane', 2], ['R-3', 'oyster', 5], [null, 'oyster', 8]]);
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 8.2) ----
+test('a partial run takes its real block-in day: up to its recorded start, at most 365 days before; null stops it; a whole run refuses', (t) => {
+  const s = setup(t);
+  const raw = new DatabaseSync(s.file);
+  t.after(() => raw.close());
+  raw.prepare('UPDATE runs SET partial = 1 WHERE id = ?').run(s.c.id); // Container 2's run, recorded from 10 Nov
+  const told = [];
+  const runs = createRuns({ db: s.db, harvests: { roomView: () => null }, batches: { list: () => ({ batches: [], blockCost: 0 }) }, costs: s.costs, zone: fixedZone(480), onChange: (r) => told.push(r.id) });
+  const saved = runs.setBlocksIn(s.c.id, { blocksInAt: at('2026-09-20') });
+  assert.equal(saved.blocksInAt, at('2026-09-20'));
+  assert.deepEqual(told, [s.c.id], 'the change is told');
+  assert.equal(s.runs.list().runs.find((r) => r.id === s.c.id).blocksInAt, at('2026-09-20'));
+  const refused = (body, status, field) => assert.throws(() => runs.setBlocksIn(s.c.id, body), (e) => e instanceof RunError && e.status === status && e.field === field, JSON.stringify(body));
+  refused({ blocksInAt: at('2026-11-11') }, 400, 'blocksInAt');
+  refused({ blocksInAt: Date.UTC(2025, 10, 9, 4) }, 400, 'blocksInAt'); // 9 Nov 2025: 366 days before
+  refused({ blocksInAt: 'soon' }, 400, 'blocksInAt');
+  assert.throws(() => runs.setBlocksIn(s.c.id, { blocksInAt: at('2026-11-11') }), { message: 'Pick a day up to 10 Nov, at most 365 days before it' });
+  assert.equal(runs.setBlocksIn(s.c.id, { blocksInAt: at('2026-11-10', 6) }).blocksInAt, at('2026-11-10', 6), 'its own day');
+  assert.equal(runs.setBlocksIn(s.c.id, { blocksInAt: null }).blocksInAt, null, 'stop counting it');
+  assert.throws(() => runs.setBlocksIn(s.a.id, { blocksInAt: at('2026-09-20') }), (e) => e.status === 409);
+  assert.throws(() => runs.setBlocksIn(999, { blocksInAt: null }), (e) => e.status === 404);
 });

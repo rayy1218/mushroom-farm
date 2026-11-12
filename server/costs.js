@@ -6,9 +6,10 @@ import { addDays, daysBetween } from './task-rules.js';
 import { readSettings, readCropYield } from './settings.js';
 import { roomDays, warmRoom, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { checkWorker, TaskError } from './tasks.js';
+import { checkEquipment, equipmentView } from './costs-equipment.js'; // ---- Money truth ----
 import {
   CATEGORIES, BILLS, monthOf, firstDayOf, lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, runEnd, figuresOf,
-  runTotals, summaryOf, CATEGORY_LABELS, billTopUp, runFirstMonth, csvRows,
+  runTotals, summaryOf, CATEGORY_LABELS, billTopUp, runFirstMonth, csvRows, saleParts, SALE_DAYS,
 } from './costs-math.js';
 
 export const MAX_AMOUNT = 1_000_000;
@@ -113,7 +114,13 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     const { electricityPrice, waterPrice } = readSettings(db);
     return {
       today: t, keptFrom: kept, prices: { electricity: electricityPrice, water: waterPrice }, rooms, runs,
-      costs: db.listCosts(), usage, batches: dated(src.batches), purchases: dated(src.purchases), sales: dated(src.sales),
+      costs: db.listCosts(), usage, purchases: dated(src.purchases), sales: dated(src.sales), uses: dated(src.uses),
+      equipment: db.listEquipment(), // ---- Money truth ---- the register, written off a month at a time
+      // ---- Money truth ---- a batch row's cost lands on its placing day (date; null while it waits) or its losses' days
+      batches: src.batches.map((b) => ({
+        ...b, date: b.placedAt == null ? null : zone.label(b.placedAt), receivedDate: zone.label(b.receivedAt),
+        lost: b.lost.map((l) => ({ ...l, date: zone.label(l.at) })),
+      })),
       harvests: db.harvestsBetween(fromMs, toMs).map((h) => ({ roomId: h.roomId, runId: h.runId, date: zone.label(h.pickedAt), kg: h.kg, crop: h.crop })),
       cropYield: readCropYield(db),
     };
@@ -319,8 +326,10 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
         tiles: {
           income: f.income, costs: f.costs, profit: f.profit, costPerKg: f.costPerKg, profitPerKg: f.profitPerKg,
           kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold, incomplete: f.incomplete,
+          writeOff: f.writeOff, profitBeforeWriteOff: f.profitBeforeWriteOff, // ---- Money truth ---- the register's
         },
         notes: f.notes, byCategory: f.byCategory, pending: f.pending,
+        bought: f.bought, // ---- Money truth ---- what was bought for stock: a cash line, not a cost
         entries: entriesOf(m, data),
         repeating: data.costs.filter((c) => c.repeat === 'monthly' && monthOf(c.date) <= m && (c.repeatUntil === null || c.repeatUntil >= m))
           .map((c) => ({ ...c, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null })),
@@ -386,6 +395,62 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       return runs.map((r) => runView(r, figs, t));
     },
     // ---- end Runs ----
+
+    // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 7) Every sale line's runs (Costs' sale steps), all time:
+    // { parts: Map sale id → [{ runId, share, how, total, kg }], untied: { total, kg, count } } (crop: that crop's lines only).
+    // run: only the lines that can reach that run (its own, or its crops' sold from its start to SALE_DAYS after its end).
+    saleTies({ crop = null, run = null } = {}) {
+      const ALL = [-8.64e15, 8.64e15];
+      const runs = runsOf();
+      const one = run === null ? null : runs.find((r) => r.id === run) ?? null;
+      const until = one ? addDays(runEnd(one, today()), SALE_DAYS) : null;
+      const reaches = (s, date) => !one || s.runId === one.id
+        || (one.crops.some((c) => c.crop === s.crop) && date >= one.startDate && date <= until);
+      // the picks the lines' 14-day windows can see: one run's span (a margin each side), else all
+      const span = one ? [Date.parse(`${addDays(one.startDate, -SALE_DAYS)}T00:00:00Z`) - DAY, Date.parse(`${until}T00:00:00Z`) + 2 * DAY] : ALL;
+      const data = {
+        today: today(), runs,
+        harvests: (crop === null ? db.harvestsBetween(...span) : db.cropHarvestsBetween(crop, ...span)).map((h) => ({ roomId: h.roomId, runId: h.runId, date: zone.label(h.pickedAt), kg: h.kg, crop: h.crop })),
+      };
+      const parts = new Map();
+      const untied = { total: 0, kg: 0, count: 0 };
+      for (const s of db.salesBetween(...ALL)) {
+        if (crop !== null && s.crop !== crop) continue;
+        const date = zone.label(s.soldAt);
+        if (!reaches(s, date)) continue;
+        const p = saleParts({ ...s, date }, data);
+        if (p.length) parts.set(s.id, p);
+        else Object.assign(untied, { total: Math.round((untied.total + s.total) * 100) / 100, kg: Math.round((untied.kg + s.kg) * 100) / 100, count: untied.count + 1 });
+      }
+      return { parts, untied };
+    },
+    // ---- end Money truth ----
+
+    // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 6) The equipment register: { items: [equipmentView] },
+    // newest bought first; add, edit and remove tell (the figures change).
+    equipment() {
+      const t = today();
+      const rooms = new Map(db.listRooms().map((r) => [r.id, r.name]));
+      return { items: db.listEquipment().toReversed().map((e) => equipmentView(e, t, e.roomId === null ? null : rooms.get(e.roomId) ?? null)) };
+    },
+    addEquipment(body) {
+      const fields = checkEquipment(body, { today: today(), roomOf: (id) => db.getRoom(id), fail: (...a) => { throw new CostError(...a); } });
+      const made = db.insertEquipment(fields, now());
+      tell();
+      return made;
+    },
+    editEquipment(id, body) {
+      const old = db.getEquipment(id);
+      if (!old) throw new CostError(404, 'Equipment not found');
+      const row = db.updateEquipment(id, checkEquipment(body, { old, today: today(), roomOf: (x) => db.getRoom(x), fail: (...a) => { throw new CostError(...a); } }));
+      tell();
+      return row;
+    },
+    removeEquipment(id) {
+      if (!db.deleteEquipment(id)) throw new CostError(404, 'Equipment not found');
+      tell();
+    },
+    // ---- end Money truth ----
 
     // A promise for the usage warms under way (tests).
     warmed: () => Promise.all([...warming.values()].map((job) => job.done)),

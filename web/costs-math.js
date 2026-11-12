@@ -63,12 +63,21 @@ export function monthTiles({ pending, tiles: t }) {
   const profit = moneyText(t.profit);
   const perKg = perKgText(t.profitPerKg);
   return [
-    pending ? waiting('Profit') : { label: 'Profit', value: profit, ...(isLoss(profit) ? { line: 'Loss', tone: 'loss' } : {}) },
+    pending ? waiting('Profit') : { label: 'Profit', value: profit, ...profitLine(t, profit) },
     { label: 'Income', value: moneyText(t.income), line: t.kgSold > 0 ? `${kgText(t.kgSold)} sold` : NOTHING_SOLD },
     pending ? waiting('Costs') : { label: 'Costs', value: moneyText(t.costs), ...(t.incomplete ? { line: 'Some costs have no price' } : {}) },
     pending ? waiting('Cost per kg') : { label: 'Cost per kg', value: perKgText(t.costPerKg), line: t.kgHarvested > 0 ? `${kgText(t.kgHarvested)} picked` : 'Nothing picked' },
     pending ? waiting('Profit per kg') : { label: 'Profit per kg', value: perKg, line: t.kgSold > 0 ? `on ${kgText(t.kgSold)} sold` : NOTHING_SOLD, ...(isLoss(perKg) ? { tone: 'loss' } : {}) },
   ];
+}
+
+// Profit's line: "Loss" on a loss; with equipment written off (Money truth: the register), what it is before the write-off,
+// the month as Economics' "before write-off" reads it ("Loss · RM 1,234.56 before write-off").
+function profitLine(t, profit) {
+  const loss = isLoss(profit);
+  const before = t.writeOff > 0 && finite(t.profitBeforeWriteOff) ? `${moneyText(t.profitBeforeWriteOff)} before write-off` : null;
+  const line = [loss ? 'Loss' : null, before].filter(Boolean).join(DOT);
+  return { ...(line ? { line } : {}), ...(loss ? { tone: 'loss' } : {}) };
 }
 
 // The notes under the tiles: the one pending note first; an input left out of the costs (a batch or a purchase with no
@@ -84,7 +93,10 @@ export function monthNotes(view) {
 // Where a line comes from, in a muted line under its name (nothing for one entered here).
 // A line entered here says "entered" when the same name also comes from another source (Packaging from Inventory too).
 // A source in another module links to its page (2026-11-05, the Business audit).
-export const SOURCE_WORDS = { manual: null, batches: 'from Batches', inventory: 'from Inventory', measured: 'measured', bill: `bill${NB}−${NB}measured` };
+// Money truth: a material counts when used; the register's write-off.
+export const SOURCE_WORDS = {
+  manual: null, batches: 'from Batches', inventory: 'used, from Inventory', measured: 'measured', bill: `bill${NB}−${NB}measured`, register: 'from the register',
+};
 const SOURCE_HASH = { batches: BATCHES_HASH, inventory: INVENTORY_HASH, sales: SALES_HASH };
 export const categoryRows = (list) => list.map((c) => {
   const twin = c.source === 'manual' && list.some((o) => o !== c && o.label === c.label && o.source !== 'manual');
@@ -191,7 +203,7 @@ export function runParts(run) {
   const blocks = unpriced ? (p.blocks > 0 ? `${moneyText(p.blocks)}, some with no price` : 'no price') : p.blocks > 0 ? moneyText(p.blocks) : null;
   return [
     ...(blocks ? [['Blocks', blocks, batchesRunHash(run.id)]] : []),
-    ...[['Electricity', p.energy], ['Water', p.water], ['Own costs', p.own], ['Share of shared costs', p.shared]]
+    ...[['Electricity', p.energy], ['Water', p.water], ['Own costs', p.own], ['Equipment written off', p.equipment], ['Share of shared costs', p.shared]]
       .filter(([, v]) => v > 0).map(([label, v]) => [label, moneyText(v)]),
     ['Income', moneyText(run.income)], ['Picked', kgText(run.kgHarvested)], ['Sold', kgText(run.kgSold)],
   ];
@@ -285,6 +297,63 @@ export function runProfitLine(s) {
   const text = moneyText(s.profit);
   return isLoss(text) ? `Loss so far ${text.slice(MINUS.length)}${DOT}Run page` : `Profit so far ${text}${DOT}Run page`;
 }
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 5.2 and 6) ----
+
+// Bought for stock: the month's purchases at what was paid, a cash line apart from the costs. → { rows: [{ label, amount }],
+// total, unpriced (a line naming what has no price, or null) }, or null when nothing was bought.
+export function boughtView(bought) {
+  if (!bought || (!bought.lines?.length && !bought.unpriced?.length)) return null;
+  const n = bought.unpriced?.length ?? 0;
+  return {
+    rows: bought.lines.map((l) => ({ label: l.label, amount: moneyText(l.amount) })), total: moneyText(bought.total),
+    unpriced: n === 0 ? null : n === 1 ? `No price: ${bought.unpriced[0]}` : `${n} purchases have no price`,
+  };
+}
+export const BOUGHT_NOTE = 'Paid this month; a cost once used.';
+
+// The register's parts (server/costs-equipment.js PARTS), in the dialog's order.
+export const PART_OPTIONS = [['building', 'Building or container'], ['cooling', 'Cooling'], ['humidifier', 'Humidifier'], ['fans', 'Fans and controls'],
+  ['racks', 'Racks'], ['other', 'Other']];
+const PART_NAMES = Object.fromEntries(PART_OPTIONS);
+export const EQUIPMENT_NONE = 'No equipment yet. Add what you bought for a room or the farm; it is written off a month at a time.';
+const longDay = (date) => `${Number(date.slice(8))}${NB}${dayMonth(date).split(' ')[1]}${NB}${date.slice(0, 4)}`; // "3 Jan 2025"
+const monthsWord = (n) => `${n}${NB}month${n === 1 ? '' : 's'}`;
+// An item's row on the Equipment card: { name, sub ("Container 1 · Cooling · bought 3 Jan 2025"), amount, writeOff ("RM 69.50
+// a month, 60 months"), left ("RM 2,641.00 left to write off", "written off") }.
+export const equipmentLine = (e) => ({
+  name: e.name, sub: [e.roomId === null ? 'The farm' : e.roomName ?? 'A deleted room', PART_NAMES[e.part] ?? 'Other', `bought ${longDay(e.boughtOn)}`].join(DOT),
+  amount: moneyText(e.amount), writeOff: `${moneyText(e.monthly)} a${NB}month, ${monthsWord(e.lifeMonths)}`,
+  left: e.done || !(e.left > 0) ? 'written off' : `${moneyText(e.left)} left to write off`,
+});
+// What the dialog's figures write off, said as they are typed: "RM 69.50 a month for 60 months." (the last month the rest:
+// "RM 33.33 a month for 3 months, the last RM 33.34."); null until they make sense.
+export function writeOffWords(v) {
+  const amount = amountOf(v.amount);
+  const resale = v.resale === '' || v.resale === undefined ? 0 : amountOf(v.resale);
+  const months = Number(v.lifeMonths);
+  if (!(amount > 0) || !(resale >= 0) || resale > amount || !Number.isInteger(months) || months < 1 || months > 240) return null;
+  const total = Math.round((amount - resale) * 100) / 100;
+  const each = Math.floor((total / months) * 100 + 1e-9) / 100;
+  const last = Math.round((total - each * (months - 1)) * 100) / 100;
+  return `${moneyText(each)} a month for ${monthsWord(months)}${last !== each && months > 1 ? `, the last ${moneyText(last)}` : ''}.`;
+}
+export const EQUIPMENT_AMOUNT = 'Enter what it cost, over RM 0, up to RM 10,000,000'; // server/costs-equipment.js says the same
+// The dialog's body, checked as the server checks it: { body } or { field, message }.
+export function equipmentBody(v, today) {
+  const name = String(v.name ?? '').trim();
+  if (!name) return { field: 'name', message: 'Give the item a name' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v.boughtOn ?? '') || v.boughtOn > today) return { field: 'boughtOn', message: 'Pick the day bought, up to today' };
+  const amount = amountOf(v.amount);
+  if (!(amount > 0 && amount <= 10_000_000)) return { field: 'amount', message: EQUIPMENT_AMOUNT };
+  const months = Number(v.lifeMonths);
+  if (!(Number.isInteger(months) && months >= 1 && months <= 240)) return { field: 'lifeMonths', message: 'Written off over must be a whole number of months from 1 to 240' };
+  const resale = v.resale === '' || v.resale === undefined ? 0 : amountOf(v.resale);
+  if (!(resale >= 0)) return { field: 'resale', message: 'Enter a resale value from RM 0' };
+  if (resale > amount) return { field: 'resale', message: 'The resale value can’t be more than what it cost' };
+  return { body: { name, roomId: v.roomId ? Number(v.roomId) : null, part: v.part, boughtOn: v.boughtOn, amount, lifeMonths: months, resale, note: v.note ?? '' } };
+}
+// ---- end Money truth ----
 
 // ---- the dialogs (web/costs-dialogs.js) ----
 

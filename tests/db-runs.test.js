@@ -33,7 +33,7 @@ test('allRuns: every room\'s runs, newest started first, with the room\'s name; 
     ['Container 2', T0 + DAY, null],
     ['Container 1', T0, T0 + 30 * DAY],
   ]);
-  assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'startedAt', 'endedAt', 'crops', 'partial', 'roomName']);
+  assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'startedAt', 'endedAt', 'crops', 'partial', 'blocksInAt', 'roomName']);
   assert.deepEqual(runs[1].crops, [{ crop: 'oyster', blocks: 300 }, { crop: 'lionsmane', blocks: 100 }]);
   assert.equal(runs[1].partial, false);
   db.deleteRoom(two);

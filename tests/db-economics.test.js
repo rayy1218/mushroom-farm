@@ -26,7 +26,7 @@ test('a version 25 database is upgraded to 26: the table (STRICT), its unique in
   assert.deepEqual(again.economicsFigures(room, 'lionsmane'), []);
   again.close();
   const check = new DatabaseSync(file);
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 27);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 28);
   const kinds = (name) => check.prepare('SELECT type, sql FROM sqlite_master WHERE name = ?').get(name);
   assert.match(kinds('economics_figures').sql, /STRICT/);
   assert.equal(kinds('economics_figure').type, 'index');

@@ -10,8 +10,10 @@ import { cropShortName } from '../web/crops.js';
 export const CATEGORIES = ['blocks', 'spawn', 'labour', 'rent', 'repairs', 'transport', 'packaging', 'utilities', 'other'];
 export const CATEGORY_LABELS = {
   blocks: 'Blocks', spawn: 'Spawn', labour: 'Labour', rent: 'Rent', repairs: 'Repairs', transport: 'Transport',
-  packaging: 'Packaging', utilities: 'Utilities', other: 'Other',
+  packaging: 'Packaging', utilities: 'Utilities', other: 'Other', equipment: 'Equipment written off',
 };
+// Every category a line may have: the entered ones and the equipment register's write-off (Money truth; never entered here).
+const LINE_CATEGORIES = [...CATEGORIES, 'equipment'];
 // The bills whose measured part the app already counts (section 4: the top-up).
 export const BILLS = ['electricity', 'water'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -80,6 +82,97 @@ export function split(amount, weights) {
   return [...shares, round(amount - shares.reduce((s, x) => s + x, 0), 2)];
 }
 
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 7) Sales reach runs. A sale line goes to its own run; else its
+// room's run open on its day (each only when it grows the line's crop; none: that room's runs that picked its crop lately); else the one run open that day
+// growing its crop; else the runs that picked its crop in the SALE_DAYS up to its day, by their kg of it then. → [{ runId, share, how ('run' | 'room' | 'only' | 'picked') }],
+// the shares summing to 1; [] when it reaches none (not tied: the month's only).
+export const SALE_DAYS = 14;
+// The picks by crop, each crop's oldest first, and the runs' ids, made once per data (a month's view asks for every sale).
+const PICKS = new WeakMap();
+const KNOWN = new WeakMap();
+function picksOf(data, crop) {
+  if (!PICKS.has(data.harvests)) {
+    const by = new Map();
+    for (const h of data.harvests) {
+      if (!by.has(h.crop)) by.set(h.crop, []);
+      by.get(h.crop).push(h);
+    }
+    for (const list of by.values()) list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    PICKS.set(data.harvests, by);
+  }
+  return PICKS.get(data.harvests).get(crop) ?? [];
+}
+function knownOf(data) {
+  if (!KNOWN.has(data.runs)) KNOWN.set(data.runs, new Set(data.runs.map((r) => r.id)));
+  return KNOWN.get(data.runs);
+}
+// A run grows the crop (a run with no crops given, an older caller's: it does).
+const grows = (r, crop) => !r.crops || r.crops.some((c) => c.crop === crop);
+export function saleRuns(s, data) {
+  const known = knownOf(data);
+  if (s.runId !== null && s.runId !== undefined) {
+    if (!known.has(s.runId)) return [];
+    // its own run, when that run grows its crop (Sales ties a line to its room's run whatever the crop): else the rules below
+    if (grows(data.runs.find((r) => r.id === s.runId), s.crop)) return [{ runId: s.runId, share: 1, how: 'run' }];
+  }
+  const room = s.roomId ?? null;
+  if (room !== null) {
+    const r = runOn(data.runs, room, s.date, data.today);
+    if (r && grows(r, s.crop)) return [{ runId: r.id, share: 1, how: 'room' }];
+    // no run open in its room that day (sold after the run ended): that room's runs that picked the crop lately
+    const own = picked(s, data, known, room);
+    if (own.length) return own;
+  }
+  const open = data.runs.filter((r) => r.startDate <= s.date && runEnd(r, data.today) >= s.date && (r.crops ?? []).some((c) => c.crop === s.crop));
+  if (open.length === 1) return [{ runId: open[0].id, share: 1, how: 'only' }];
+  return picked(s, data, known);
+}
+// The runs that picked the sale's crop in the SALE_DAYS up to its day, by their kg of it.
+// room: only that room's picks (null: every room's). The answer is kept per crop, day and room for the data's other sales.
+const PICKED = new WeakMap();
+function picked(s, data, known, room = null) {
+  if (!PICKED.has(data.harvests)) PICKED.set(data.harvests, new Map());
+  const memo = PICKED.get(data.harvests);
+  const key = `${s.crop}|${s.date}|${room ?? ''}|${data.runs.length}`;
+  if (!memo.has(key)) memo.set(key, pickedNow(s, data, known, room));
+  return memo.get(key);
+}
+function pickedNow(s, data, known, room) {
+  const from = addDays(s.date, -(SALE_DAYS - 1));
+  const list = picksOf(data, s.crop);
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) { // the first pick on or after `from`
+    const mid = (lo + hi) >> 1;
+    if (list[mid].date < from) lo = mid + 1;
+    else hi = mid;
+  }
+  const kg = new Map();
+  for (let i = lo; i < list.length && list[i].date <= s.date; i += 1) {
+    const h = list[i];
+    if (!known.has(h.runId) || (room !== null && h.roomId !== room)) continue;
+    kg.set(h.runId, (kg.get(h.runId) ?? 0) + h.kg);
+  }
+  const total = [...kg.values()].reduce((a, b) => a + b, 0);
+  if (!(total > 0)) return [];
+  return [...kg].sort((a, b) => a[0] - b[0]).map(([runId, k]) => ({ runId, share: k / total, how: 'picked' }));
+}
+// A sale line's RM and kg over the runs it reaches (saleRuns), split to the sen and to 0.01 kg, the last run the rest:
+// [{ runId, share, how, total, kg }].
+export function saleParts(s, data) {
+  const runs = saleRuns(s, data);
+  if (!runs.length) return [];
+  const totals = split(s.total, runs.map((r) => r.share));
+  const kgs = split(s.kg, runs.map((r) => r.share));
+  return runs.map((r, i) => ({ ...r, total: totals[i], kg: kgs[i] }));
+}
+// The sale lines in [from, to] that reach no run: { total, kg, count }.
+export function untiedOf(from, to, data, crop = null) {
+  const lines = data.sales.filter((s) => s.date >= from && s.date <= to && (crop === null || s.crop === crop) && !saleRuns(s, data).length);
+  return { total: sum(lines, 'total'), kg: sum(lines, 'kg'), count: lines.length };
+}
+// ---- end Money truth ----
+
 // An Inventory kind's cost category and line name (the contract's kinds; 'blocks' never comes: Batches wins).
 export const INVENTORY_LINES = {
   spawn: ['spawn', 'Spawn'], bags: ['other', 'Bags'], chemical: ['other', 'Chemicals'], packaging: ['packaging', 'Packaging'],
@@ -87,7 +180,10 @@ export const INVENTORY_LINES = {
 };
 const rm = (v) => `RM ${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const sum = (list, key) => round(list.reduce((s, x) => s + (x[key] ?? 0), 0), 2);
-const note = (kind, text, runId = null) => ({ kind, text, ...(runId === null ? {} : { runId }) });
+const note = (kind, text, runId = null, batchId = null) => ({ kind, text, ...(runId === null ? {} : { runId }), ...(batchId === null ? {} : { batchId }) });
+// "Plastic bags", "Lime and Plastic bags", "Lime, Gypsum and Plastic bags".
+const listText = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`);
+const qtyWords = (qty, unit) => `${qty.toLocaleString('en-US', { maximumFractionDigits: 3 })} ${unit ?? ''}`.trim();
 // The notes once each: the same text for two runs is two notes.
 const uniqueNotes = (notes) => {
   const key = (n) => `${n.kind}|${n.text}|${n.runId ?? ''}`;
@@ -95,6 +191,26 @@ const uniqueNotes = (notes) => {
 };
 // The notes of an input left out of the costs (they are then incomplete, never guessed).
 const LEFT_OUT = ['unpriced-batch', 'no-unit-cost'];
+
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 6.1) An equipment item's write-off charges in [from, to], none
+// after today: once a month on its bought day's day (the month's last when shorter), from the month bought for its months;
+// each (RM − resale) ÷ months floored to the sen, the last the rest. → [{ date, amount }].
+export function writeOffCharges(item, from, to, today) {
+  const end = to < today ? to : today;
+  const total = round(item.amount - item.resale, 2);
+  const each = Math.floor((total / item.lifeMonths) * 100 + 1e-9) / 100;
+  const out = [];
+  const first = monthOf(item.boughtOn);
+  const skip = Math.max(0, monthsBetween(first, monthOf(from)) - 1); // the months before the range, without walking them
+  for (let i = skip; i < item.lifeMonths; i++) {
+    const date = chargeDate(item.boughtOn, addMonths(first, i));
+    if (date > end) break;
+    if (date < from) continue;
+    out.push({ date, amount: i === item.lifeMonths - 1 ? round(total - each * (item.lifeMonths - 1), 2) : each });
+  }
+  return out;
+}
+const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 
 // Each room's measured kWh and litres over [from, to] grouped by the run open that day (null: none): groups [{ roomId, runId,
 // kWh, waterL }]; pending when a day is not worked out yet, pendingRuns the runs open on such a day; notKept when the range
@@ -249,37 +365,105 @@ export function linesOf(from, to, data) {
       });
     }
   }
+  // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 5.1) blocks are a cost when they go into a room: a batch row
+  // on its placing day (date), on its run (none: its room deleted, the farm month's, not shared); a row never placed, its blocks
+  // lost while waiting on each check's day, the farm month's, not shared. A made row's cost is its share of the delivery's
+  // materials at their lots; a material with no price named, and the costs incomplete.
   for (const b of data.batches) {
-    if (b.date < from || b.date > to) continue;
     const roomId = roomOf(b.roomId);
-    if (b.cost === null) {
-      const room = data.rooms.get(roomId);
-      const text = room ? `${room}’s blocks of ${dayMonth(b.date)} have no price` : `Blocks received ${dayMonth(b.date)} have no price`;
-      notes.push(note('unpriced-batch', text, b.runId));
+    if (b.date != null) {
+      if (b.date < from || b.date > to) continue;
+      const missing = b.missing ?? [];
+      if (b.cost === null || missing.length) {
+        const room = data.rooms.get(roomId);
+        const whose = room ? `${room}’s blocks of ${dayMonth(b.date)}` : `Blocks put in ${dayMonth(b.date)}`;
+        const text = b.cost === null || !missing.length ? `${whose} have no price` : `${whose}: no price for ${listText(missing)}`;
+        notes.push(note('unpriced-batch', text, b.runId, b.batchId ?? null));
+      }
+      if (b.cost === null) continue;
+      lines.push({
+        key: 'blocks-batches', category: 'blocks', label: 'Blocks', source: 'batches', amount: b.cost, date: b.date, roomId,
+        runId: b.runId, shared: false, blocks: b.blocks ?? null,
+      });
       continue;
     }
-    // no run (waiting to go in, or its container deleted): the farm month's, not shared (owner 2026-11-05); placed: its run's
-    lines.push({
-      key: 'blocks-batches', category: 'blocks', label: 'Blocks', source: 'batches', amount: b.cost, date: b.date, roomId,
-      runId: b.runId, shared: false, blocks: b.blocks ?? null,
-    });
+    for (const l of b.lost ?? []) {
+      if (l.date < from || l.date > to) continue;
+      if (l.cost === null) {
+        notes.push(note('unpriced-batch', `Blocks lost ${dayMonth(l.date)} before a room have no price`, null, b.batchId ?? null));
+        continue;
+      }
+      lines.push({
+        key: 'blocks-lost', category: 'blocks', label: 'Blocks lost before a room', source: 'batches', amount: l.cost, date: l.date,
+        roomId: null, runId: null, shared: false, blocks: l.blocks,
+      });
+    }
   }
-  for (const p of data.purchases) {
-    if (p.date < from || p.date > to) continue;
-    if (p.total === null) {
-      notes.push(note('no-unit-cost', `${p.name} bought ${dayMonth(p.date)} has no unit cost`));
-      continue;
-    }
-    const kind = p.kind in INVENTORY_LINES ? p.kind : 'other';
+  // Inventory's materials when used (a use, a count that found less, a throw-out), at what they took of the lots: a use in a
+  // room on the room's run open that day (none: the farm month's, not shared), else shared. Purchases are not a cost (boughtOf).
+  for (const u of data.uses ?? []) {
+    if (u.date < from || u.date > to) continue;
+    const kind = u.kind in INVENTORY_LINES ? u.kind : 'other';
     const [category, label] = INVENTORY_LINES[kind];
+    const roomId = roomOf(u.roomId);
+    const runId = roomId === null ? null : runOn(data.runs, roomId, u.date, data.today)?.id ?? null;
+    if (u.unpricedQty > 0) {
+      const many = u.unpricedQty !== 1 || u.unit !== 'pcs';
+      notes.push(note('no-unit-cost', `${u.name} used ${dayMonth(u.date)}: ${qtyWords(u.unpricedQty, u.unit)} ${many ? 'have' : 'has'} no price`, runId));
+    }
+    if (!(u.cost > 0)) continue;
+    // a use in a room since deleted (Inventory keeps it as room 0): the farm month's, not shared, as a batch row's
     lines.push({
-      key: `inventory-${kind}`, category, label, source: 'inventory', amount: p.total, date: p.date, roomId: null, runId: null,
-      shared: true, name: p.name,
+      key: `inventory-${kind}`, category, label, source: 'inventory', amount: u.cost, date: u.date, roomId, runId,
+      shared: u.roomId === null || u.roomId === undefined, name: u.name,
     });
   }
+  // The equipment register's write-off: a room's item on the room's run open that day (none: the farm month's, not shared),
+  // the farm's shared.
+  for (const item of data.equipment ?? []) {
+    const roomId = roomOf(item.roomId);
+    for (const { date, amount } of writeOffCharges(item, from, to, data.today)) {
+      if (!(amount > 0)) continue;
+      const runId = roomId === null ? null : runOn(data.runs, roomId, date, data.today)?.id ?? null;
+      lines.push({
+        key: 'equipment', category: 'equipment', label: 'Equipment written off', source: 'register', amount, date, roomId, runId,
+        shared: roomId === null, name: item.name, equipmentId: item.id,
+      });
+    }
+  }
+  // ---- end Money truth ----
   const m = measuredLines(from, to, data);
   if (m.pending) pending = true;
   return { lines: [...lines, ...m.lines], notes: [...notes, ...m.notes], pending, sharedPending, pendingRuns: m.pendingRuns };
+}
+
+// ---- Money truth ---- (spec 5.2) What was bought for stock in [from, to], at what was paid: Inventory's purchases (kind not
+// blocks) and the bought batches received. A cash line, never a cost. → { total, lines: [{ key, label, amount }] (biggest
+// first), unpriced: [what has no price] }.
+export function boughtOf(from, to, data) {
+  const by = new Map();
+  const unpriced = [];
+  const put = (key, label, amount) => {
+    const g = by.get(key) ?? { key, label, amount: 0 };
+    g.amount = round(g.amount + amount, 2);
+    by.set(key, g);
+  };
+  for (const p of data.purchases) {
+    if (p.date < from || p.date > to) continue;
+    if (p.total === null) {
+      unpriced.push(`${p.name} bought ${dayMonth(p.date)}`);
+      continue;
+    }
+    const kind = p.kind in INVENTORY_LINES ? p.kind : 'other';
+    put(`inventory-${kind}`, INVENTORY_LINES[kind][1], p.total);
+  }
+  for (const b of data.batches) {
+    if (b.kind === 'made' || !b.receivedDate || b.receivedDate < from || b.receivedDate > to) continue;
+    if (b.cost === null) unpriced.push(`Blocks received ${dayMonth(b.receivedDate)}`);
+    else put('blocks', 'Blocks', b.cost);
+  }
+  const lines = [...by.values()].filter((g) => g.amount > 0).sort((a, b) => b.amount - a.amount);
+  return { total: sum(lines, 'amount'), lines, unpriced: [...new Set(unpriced)] };
 }
 
 // The lines grouped by key: [{ key, label, source, category, amount, share (whole % of the costs) }], biggest first.
@@ -304,11 +488,12 @@ function unsoldOf(harvests, picked, sold, cropYield) {
   return { kg, value: value === null ? null : round((value * kg) / picked, 2) };
 }
 
-const PARTS = ['blocks', 'energy', 'water', 'own', 'shared'];
+const PARTS = ['blocks', 'energy', 'water', 'own', 'equipment', 'shared'];
 const emptyPart = () => ({
-  blocks: 0, energy: 0, water: 0, own: 0, shared: 0, income: 0, kgHarvested: 0, kgSold: 0, byCategory: {}, pending: false,
+  blocks: 0, energy: 0, water: 0, own: 0, equipment: 0, shared: 0, income: 0, kgHarvested: 0, kgSold: 0, byCategory: {}, pending: false,
 });
-const partOf = (l) => (l.source === 'batches' ? 'blocks'
+// equipment (Money truth): a room's own items written off; the farm's are in the shared costs
+const partOf = (l) => (l.source === 'batches' ? 'blocks' : l.source === 'register' ? 'equipment'
   : l.source === 'measured' ? (l.key === 'electricity' ? 'energy' : 'water') : 'own');
 
 // The figures of [from, to] (section 4): { from, to, lines, byCategory, income, costs, profit, kgHarvested, kgSold, costPerKg,
@@ -344,13 +529,13 @@ export function figuresOf(from, to, data) {
     });
   }
   const sales = data.sales.filter((s) => s.date >= from && s.date <= to);
-  // a sale's run: its own, else the run open in its room that day; a run not in data.runs: the month only
+  // a sale's runs (Money truth 7: saleParts); one it reaches no run of: the month only
   for (const s of sales) {
-    const runId = s.runId ?? (s.roomId === null ? null : runOn(data.runs, s.roomId, s.date, data.today)?.id ?? null);
-    if (runId === null || !known.has(runId)) continue;
-    const p = part(runId);
-    p.income = round(p.income + s.total, 2);
-    p.kgSold = round(p.kgSold + s.kg, 2);
+    for (const x of saleParts(s, data)) {
+      const p = part(x.runId);
+      p.income = round(p.income + x.total, 2);
+      p.kgSold = round(p.kgSold + x.kg, 2);
+    }
   }
   const harvests = data.harvests.filter((h) => h.date >= from && h.date <= to);
   for (const h of harvests) {
@@ -359,6 +544,7 @@ export function figuresOf(from, to, data) {
     p.kgHarvested = round(p.kgHarvested + h.kg, 2);
   }
   const costs = sum(lines, 'amount');
+  const writeOff = sum(lines.filter((l) => l.source === 'register'), 'amount'); // ---- Money truth ---- the register's
   const income = sum(sales, 'total');
   const kgSold = sum(sales, 'kg');
   const kgHarvested = sum(harvests, 'kg');
@@ -374,9 +560,10 @@ export function figuresOf(from, to, data) {
     notes.push(note('no-water-price', 'No water price is set: energy is electricity only'));
   }
   return {
-    from, to, lines, byCategory: categoryLines(lines, costs), income, kgHarvested, kgSold, unsold, runs,
+    from, to, lines, byCategory: categoryLines(lines, costs), income, kgHarvested, kgSold, unsold, runs, bought: boughtOf(from, to, data),
     costs: pending ? null : costs,
     profit: pending ? null : profit,
+    writeOff, profitBeforeWriteOff: pending ? null : round(profit + writeOff, 2),
     costPerKg: pending || kgHarvested === 0 ? null : costPerKgOf(costs, kgHarvested),
     profitPerKg: pending || kgSold === 0 ? null : costPerKgOf(profit, kgSold),
     notes: uniqueNotes(notes),
@@ -410,7 +597,7 @@ export function runTotals(run, figs, today) {
   const costs = round(PARTS.reduce((s, k) => s + t[k], 0), 2);
   const profit = round(t.income - costs, 2);
   const byCategory = [
-    ...CATEGORIES.filter((c) => t.byCategory[c]).map((c) => ({ category: c, amount: t.byCategory[c] })),
+    ...LINE_CATEGORIES.filter((c) => t.byCategory[c]).map((c) => ({ category: c, amount: t.byCategory[c] })),
     ...(t.shared > 0 ? [{ category: 'shared', amount: t.shared }] : []),
   ];
   return {
@@ -434,7 +621,7 @@ export function summaryOf(f) {
   for (const l of f.lines) if (l.source !== 'measured') by[l.category] = round((by[l.category] ?? 0) + l.amount, 2);
   const measured = (key) => sum(f.lines.filter((l) => l.source === 'measured' && l.key === key), 'amount');
   return {
-    total: f.costs, byCategory: CATEGORIES.filter((c) => by[c]).map((c) => ({ category: c, amount: by[c] })),
+    total: f.costs, byCategory: LINE_CATEGORIES.filter((c) => by[c]).map((c) => ({ category: c, amount: by[c] })),
     energy: f.pending ? null : measured('electricity'),
     water: f.pending || !f.waterPriced ? null : measured('water'),
     income: f.income, profit: f.profit, profitPerKg: f.profitPerKg,
@@ -443,11 +630,11 @@ export function summaryOf(f) {
 
 // ---- Export CSV (2026-11-05, the Business audit): GET /api/costs.csv?month= ----
 export const CSV_HEADER = 'date,type,category,what,room,run started,source,amount';
-const CSV_SOURCES = { manual: 'entered', batches: 'Batches', inventory: 'Inventory', measured: 'measured', bill: 'bill − measured' };
+const CSV_SOURCES = { manual: 'entered', batches: 'Batches', inventory: 'Inventory', measured: 'measured', bill: 'bill − measured', register: 'equipment register' };
 const PENDING_ROW = ['', 'cost', 'Utilities', 'Electricity and water still being worked out: export again in a minute', '', '', 'measured', ''];
 
-// A period's lines (figuresOf's f over data) as the CSV's lines, the header first: each cost line and each sale (income) by
-// date, the measured electricity and water (one line per room and run, no date) last; a row saying so while they are worked out.
+// A period's lines (figuresOf's f over data) as the CSV's lines, the header first: each cost line, each sale (income) and
+// each purchase for stock (bought) by date, the measured electricity and water (one line per room and run, no date) last; a row saying so while they are worked out.
 export function csvRows(f, data) {
   const runStart = (id) => data.runs.find((r) => r.id === id)?.startDate ?? '';
   const roomName = (id) => (id === null ? 'The farm' : data.rooms.get(id) ?? '');
@@ -459,7 +646,7 @@ export function csvRows(f, data) {
       return [c?.worker, c?.note].filter(Boolean).join(' · ');
     }
     if (l.source === 'batches') return l.blocks === null || l.blocks === undefined ? '' : `${l.blocks} blocks`;
-    if (l.source === 'inventory') return l.name ?? '';
+    if (l.source === 'inventory' || l.source === 'register') return l.name ?? ''; // the item used; the equipment written off
     if (l.source === 'bill') return `${l.label}, bill of ${dayMonth(costOf(l.costId)?.date ?? l.date)}`;
     return `${l.label} measured ${span}`;
   };
@@ -470,13 +657,24 @@ export function csvRows(f, data) {
       runStart(l.runId), CSV_SOURCES[l.source] ?? l.source, l.amount.toFixed(2)],
   }));
   data.sales.filter((s) => s.date >= f.from && s.date <= f.to).forEach((s, i) => {
-    const runId = s.runId ?? (s.roomId === null ? null : runOn(data.runs, s.roomId, s.date, data.today)?.id ?? null);
+    const parts = saleParts(s, data);
+    const runId = parts.length === 1 ? parts[0].runId : null; // shared over several: no one run's start
     rows.push({
       date: s.date, order: f.lines.length + i,
       cells: [s.date, 'income', 'Sales', `${cropShortName(s.crop)} ${s.kg} kg`, s.roomId === null ? '' : roomName(s.roomId),
         runId === null ? '' : runStart(runId), 'Sales', s.total.toFixed(2)],
     });
   });
+  // ---- Money truth ---- what was bought for stock: its own type, never in the costs (a cost once used)
+  const bought = [
+    ...data.purchases.filter((p) => p.total !== null && p.date >= f.from && p.date <= f.to).map((p) => {
+      const [category] = INVENTORY_LINES[p.kind in INVENTORY_LINES ? p.kind : 'other'];
+      return { date: p.date, cells: [p.date, 'bought', CATEGORY_LABELS[category], p.name, 'The farm', '', 'Inventory', p.total.toFixed(2)] };
+    }),
+    ...data.batches.filter((b) => b.kind !== 'made' && b.cost !== null && b.receivedDate && b.receivedDate >= f.from && b.receivedDate <= f.to)
+      .map((b) => ({ date: b.receivedDate, cells: [b.receivedDate, 'bought', 'Blocks', `${b.blocks} blocks`, roomName(b.roomId), '', 'Batches', b.cost.toFixed(2)] })),
+  ];
+  bought.forEach((r, i) => rows.push({ ...r, order: f.lines.length + data.sales.length + i }));
   rows.sort((a, b) => (a.date === b.date ? a.order - b.order : a.date === '' ? 1 : b.date === '' ? -1 : a.date < b.date ? -1 : 1));
   if (f.pending) rows.push({ cells: PENDING_ROW });
   return [CSV_HEADER, ...rows.map((r) => r.cells.map(cell).join(','))];

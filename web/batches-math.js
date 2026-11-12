@@ -206,7 +206,7 @@ export function stockNote(qty, itemId, items, stored = []) {
 export function batchLineFor(run, reply) {
   const list = Array.isArray(reply?.batches) ? reply.batches : [];
   if (!run || !list.length) return null;
-  const cost = finite(reply.blockCost) ? rmText(reply.blockCost) : null;
+  const cost = finite(reply.blockCost) ? `${rmText(reply.blockCost)}${reply.blockCostPartial ? ', some with no price' : ''}` : null;
   if (list.length === 1) {
     const [b] = list;
     return { text: ['Blocks', b.supplier, b.spawnBatch ? `spawn batch ${b.spawnBatch}` : null, blocksText(b.blocks), cost].filter(Boolean).join(DOT), href: batchHash(b.id) };
@@ -641,10 +641,15 @@ export function sterilisedNote(b) {
 // The amber note when the materials at Inventory's purchase prices come to over RM 1,000 a block (the server's priceOver; the
 // price is then null), else null.
 export const priceOverNote = (b) => (b.priceOver === true ? `The materials' price comes to over RM${NB}1,000 a block: check Inventory's purchase prices.` : null);
-// How a made block's price comes about (decision 6 of part 2), or why there is none; the farm without Inventory (the detail's
+// How a made block's price comes about, or why there is none; the farm without Inventory (the detail's
 // `inventory` false) is told what the price waits for.
+// "Plastic bags", "Lime and Plastic bags", "Lime, Gypsum and Plastic bags".
+const listText = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`);
+// Money truth (spec 2026-11-12-money-truth-design.md 4): what the draws took of Inventory's lots, a material with no price named.
 export const madePriceNote = (b) => (finite(b.pricePerBlock)
-  ? "The price per block is the materials at Inventory's latest purchase prices when the batch was last saved: a later purchase counts at its next change."
+  ? (b.priceMissing?.length
+    ? `The price per block counts the materials with a price; no price yet for ${listText(b.priceMissing)}: enter ${b.priceMissing.length === 1 ? 'its purchase' : 'their purchases'} in Inventory.`
+    : "The price per block is the materials at what their lots cost in Inventory, oldest first; a purchase entered later counts at once.")
   : b.inventory === false
     ? 'The price per block is worked out once Inventory has the materials and their purchase prices.'
     : 'No price per block yet: every material needs an Inventory item with a purchase price.');

@@ -304,15 +304,32 @@ export function createBatchStore(db) {
         if (!taken(own)) return Number(db.prepare("INSERT INTO stock_items (name, kind, unit, reorder_at) VALUES (?, 'blocks', 'blocks', NULL)").run(own).lastInsertRowid);
       }
     },
-    insertMove({ itemId, at, qty, unitCost, refId, note }) {
-      db.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, ?, ?, 'batch', ?, ?)")
-        .run(itemId, at, qty, unitCost ?? null, refId, note ?? null);
+    // → the move's id. lotId (Money truth): the lot a blocks move out takes (its delivery's receipt), when Inventory keeps it.
+    insertMove({ itemId, at, qty, unitCost, refId, note, lotId = null }) {
+      const lots = lotId !== null && db.prepare('PRAGMA table_info(stock_moves)').all().some((c) => c.name === 'lot_id');
+      const { lastInsertRowid } = lots
+        ? db.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note, lot_id) VALUES (?, ?, ?, ?, 'batch', ?, ?, ?)")
+          .run(itemId, at, qty, unitCost ?? null, refId, note ?? null, lotId)
+        : db.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, ?, ?, 'batch', ?, ?)")
+          .run(itemId, at, qty, unitCost ?? null, refId, note ?? null);
+      return Number(lastInsertRowid);
+    },
+    // ---- Money truth ---- every move of these items, oldest first, as Inventory's costedMoves reads them (a made batch's
+    // materials cost what their draws took of the lots).
+    itemMoves(itemIds) {
+      if (!hasStock() || !itemIds.length) return [];
+      const has = new Set(db.prepare('PRAGMA table_info(stock_moves)').all().map((c) => c.name));
+      return db.prepare(`SELECT id, item_id, at, qty, unit_cost, ref_kind, ref_id, ${has.has('total') ? 'total' : 'NULL AS total'},
+        ${has.has('lot_id') ? 'lot_id' : 'NULL AS lot_id'} FROM stock_moves WHERE item_id IN (${itemIds.map(() => '?').join(', ')}) ORDER BY at, id`)
+        .all(...itemIds).map((r) => ({
+          id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refKind: r.ref_kind, refId: r.ref_id, total: r.total, lotId: r.lot_id,
+        }));
     },
     // The 'batch' moves of these batch ids, by time.
     moves(refIds) {
       if (!refIds.length) return [];
       return db.prepare(`SELECT * FROM stock_moves WHERE ref_kind = 'batch' AND ref_id IN (${refIds.map(() => '?').join(', ')}) ORDER BY at, id`)
-        .all(...refIds).map((r) => ({ id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refId: r.ref_id, note: r.note }));
+        .all(...refIds).map((r) => ({ id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refId: r.ref_id, note: r.note, lotId: r.lot_id ?? null }));
     },
     deleteMoves(refIds) {
       if (!refIds.length) return;

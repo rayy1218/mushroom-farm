@@ -41,7 +41,7 @@ export function checkRecipe(body, { was = null, taken = () => false } = {}) {
 // Inoculate step). Ingredients in kg, the bags in pieces, the spawn in kg or bags.
 export const MIX_ITEMS = ['sawdust', 'bran', 'lime', 'gypsum', 'other', 'bags'];
 export const UNITS = { sawdust: ['kg'], bran: ['kg'], lime: ['kg'], gypsum: ['kg'], other: ['kg'], bags: ['pcs'], spawn: ['kg', 'bags'] };
-const ITEM_NAMES = { sawdust: 'Sawdust', bran: 'Bran', lime: 'Lime', gypsum: 'Gypsum', other: 'The other ingredient', bags: 'Plastic bags', spawn: 'Spawn' };
+export const ITEM_NAMES = { sawdust: 'Sawdust', bran: 'Bran', lime: 'Lime', gypsum: 'Gypsum', other: 'The other ingredient', bags: 'Plastic bags', spawn: 'Spawn' };
 
 // lines: the material lines sent ([{ item, name?, qty, unit, stockItemId? }]), one per item of `items`; known(id): that
 // Inventory item, or null (itemOf is null without Inventory: no item is kept); field: the field a refusal names. → the lines to store.

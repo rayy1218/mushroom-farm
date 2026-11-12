@@ -391,3 +391,21 @@ test('a batch move whose batch is gone has no title (the page says "Batch 999")'
   db.insertStockMoves([{ itemId: item.id, at: NOW, qty: -2, refKind: 'batch', refId: 999, note: 'spawn' }]);
   assert.equal(inv.item(item.id).moves[0].batchTitle, null);
 });
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 3): the stock's worth ----
+test('the list says what the stock is worth, each item its own, and names the items with no price; the item its lots\' worth', (t) => {
+  const { inv } = setup(t);
+  const sawdust = inv.addItem({ name: 'Sawdust', kind: 'other', unit: 'kg' });
+  const bags = inv.addItem({ name: 'Plastic bags', kind: 'bags', unit: 'pcs' });
+  const empty = inv.addItem({ name: 'Bleach', kind: 'chemical', unit: 'L' });
+  inv.purchase({ itemId: sawdust.id, qty: 1200, total: 1680 });
+  inv.use({ itemId: sawdust.id, qty: 360.5, reason: 'Mixing', worker: 'Ali' });
+  inv.count({ worker: 'Ali', counts: [{ itemId: bags.id, qty: 100 }] }); // found, never bought: no price
+  const list = inv.list();
+  const of = (id) => list.items.find((i) => i.id === id);
+  assert.deepEqual([of(sawdust.id).value, of(sawdust.id).unpriced], [1175.3, false]);
+  assert.deepEqual([of(bags.id).value, of(bags.id).unpriced], [0, true]);
+  assert.deepEqual([of(empty.id).value, of(empty.id).unpriced], [0, false]);
+  assert.deepEqual(list.value, { total: 1175.3, unpriced: ['Plastic bags'] });
+  assert.deepEqual(inv.item(sawdust.id).lots.map((l) => [l.left, l.unitCost, l.value]), [[839.5, 1.4, 1175.3]]);
+});

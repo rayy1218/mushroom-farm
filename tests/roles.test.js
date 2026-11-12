@@ -45,6 +45,11 @@ test("a worker's reply: every money key gone at any depth, kg and amounts kept",
   });
   assert.deepEqual(workerReply('/api/inventory/items/3', { id: 3, moves: [{ refKind: 'purchase', qty: 5, total: 50, unitCost: 10, supplier: 'Ah Seng' }] }),
     { id: 3, moves: [{ refKind: 'purchase', qty: 5, supplier: 'Ah Seng' }] });
+  // ---- Money truth ---- the stock's worth is the owner's: the list's, each item's and each lot's
+  assert.deepEqual(workerReply('/api/inventory', { items: [{ id: 3, qty: 839.5, value: 1175.3, unpriced: false }], value: { total: 1175.3, unpriced: [] } }),
+    { items: [{ id: 3, qty: 839.5 }] });
+  assert.deepEqual(workerReply('/api/inventory/items/3', { id: 3, value: 1175.3, unpriced: true, lots: [{ left: 839.5, unitCost: 1.4, value: 1175.3 }] }),
+    { id: 3, lots: [{ left: 839.5 }] });
   assert.deepEqual(workerReply('/api/rooms/1/tasks', { longterm: [{ id: 9, text: 'Aircon 9,000 → 12,000 BTU/h', source: { kind: 'plan', rmMonth: 3 } }], today: [{ amount: 2.5, unit: 'kg' }] }),
     { longterm: [{ id: 9, text: 'Aircon 9,000 → 12,000 BTU/h', source: { kind: 'plan' } }], today: [{ amount: 2.5, unit: 'kg' }] });
   assert.ok(MONEY_KEYS.has('value') && MONEY_KEYS.has('total') && !MONEY_KEYS.has('amount') && !MONEY_KEYS.has('totals'));

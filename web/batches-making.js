@@ -244,7 +244,7 @@ export function createMakingDialogs({ send, closing, ask, remember, ticket, aliv
       },
       {
         kind: 'group', legend: 'Materials', className: 'bt-group bt-materials',
-        hint: `Worked out from the recipe, and again when the recipe, bags, bag weight or water change: change them to what was used. An empty box is left out.${anyPicker ? " With an Inventory item on every line, its purchase prices give the price per block." : ''}`,
+        hint: `Worked out from the recipe, and again when the recipe, bags, bag weight or water change: change them to what was used. An empty box is left out.${anyPicker ? " With an Inventory item on every line, what its lots cost gives the price per block." : ''}`,
         fields: materials,
       },
       { name: 'note', label: 'Note', kind: 'area', value: v.note },

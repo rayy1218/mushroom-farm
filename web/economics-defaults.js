@@ -3,7 +3,7 @@
 // server (which resolves each figure's source) and by the page (which checks a typed figure before it is sent).
 //   ECONOMICS_CROPS · WAYS · LEFT · WAY_NAMES · FIGURES · figureOf(key) · figuresFor(crop) · placeOf(key, roomId, crop)
 //   checkFigure(key, value) · unitParts(unit) · researchOf(key, crop, room, blocks) · sizeOf(room) · SOURCES · keepTogether(text)
-//   · MAX_SIM_DAYS
+//   · MAX_SIM_DAYS · yoursName(type) · figureLabel(key, type) · EQUIPMENT_KEYS · PART_KEYS (Money truth)
 
 // A number keeps its unit at a wrap and RM or USD its number (a no-break space), and a range of numbers never breaks at its
 // dash (word joiners around it): the Units Rule, as text-math.js's keepUnits does for the climate's units. Every research
@@ -18,6 +18,8 @@ export { ECONOMICS_CROPS } from './economics-crops.js';
 
 // A simulation's longest run (Work it out); a longer block life is scaled from it. The server's body and the page's words.
 export const MAX_SIM_DAYS = 90;
+// Your sales (Money truth 8.1): the crop's sale lines of these last days, farm-wide. The server's figure and the page's words.
+export const SALES_DAYS = 90;
 
 // The ways compared per crop, Your container first (spec 4.1), and the ways left out with the reason the page words.
 export const WAYS = {
@@ -33,6 +35,14 @@ export const LEFT = {
   lionsmane: [{ way: 'shed', reason: 'warm-strain' }],
 };
 export const WAY_NAMES = { yours: 'Your container', shed: 'Lowland shed', highland: 'Highland grower', import: 'Import and resell', warm: 'Warm strain' };
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 10) Your way named by the room's type, and its building's figure.
+const YOURS_BY_TYPE = { container: 'Your container', built: 'Your room', shed: 'Your shed' };
+export const yoursName = (type) => YOURS_BY_TYPE[type] ?? YOURS_BY_TYPE.container;
+const BUILDING_BY_TYPE = { container: 'Container, delivered', built: 'Building, insulated', shed: 'Shed' };
+export const figureLabel = (key, type) => (key === 'yours.container' ? BUILDING_BY_TYPE[type] ?? BUILDING_BY_TYPE.container : figureOf(key)?.label);
+// Your container's equipment figures, and the equipment register's part each reads (Costs' equipment register, 6.3).
+export const PART_KEYS = { building: 'yours.container', cooling: 'yours.cooling', humidifier: 'yours.humidifier', fans: 'yours.fans', racks: 'yours.racks', other: 'yours.other' };
+export const EQUIPMENT_KEYS = Object.values(PART_KEYS);
 
 // A figure: key, label, unit (the box's suffix and the refusal's), scope ('farm', 'crop', 'room', 'roomCrop': where it is
 // saved, spec 4.2), its range, whole (a whole number), way ('shared' or the way it belongs to) and settings (read from
@@ -66,7 +76,7 @@ export const FIGURES = [
   fig('blockPrice', 'Block price, ready to fruit', 'RM a block', 'crop', 0, 100),
   { ...fig('tariff', 'Electricity price', 'RM/kWh', 'farm', 0, 10), settings: true },
   fig('fixedTnb', 'Electricity fixed charge', 'RM a month', 'farm', 0, 1000),
-  fig('wage', 'Labour cost', 'RM an hour', 'farm', 0, 200),
+  fig('wage', 'Labour cost, other ways', 'RM an hour', 'farm', 0, 200),
   fig('life', 'Equipment written off over', 'months', 'farm', 1, 240, true),
   fig('yours.blocks', 'Blocks in the room', 'blocks', 'room', 1, 100_000, true),
   fig('yours.yieldG', 'Yield per good block, all flushes', 'g', 'roomCrop', 0, 5000),
@@ -77,6 +87,9 @@ export const FIGURES = [
   fig('yours.turn', 'Rest and turnaround', 'days', 'roomCrop', 0, 120, true),
   fig('yours.kwhBlock', 'Electricity per block, over its life', 'kWh', 'roomCrop', 0, 100),
   fig('yours.labourMin', 'Labour per block handled', 'min', 'roomCrop', 0, 600),
+  // ---- Money truth ---- labour as people (9): the farm's workers and a worker's month, shared over the rooms by blocks
+  fig('yours.workers', 'Workers on the farm', 'workers', 'farm', 0, 100),
+  fig('yours.workerMonth', 'A worker\'s month, with EPF, SOCSO and EIS', 'RM a month', 'farm', 0, 100_000),
   fig('yours.transport', 'Transport to buyers', 'RM/kg', 'roomCrop', 0, 100),
   fig('yours.rent', 'Rent', 'RM a month', 'room', 0, RENT_MAX),
   fig('yours.container', 'Container, delivered', 'RM', 'room', 0, MONEY_MAX),
@@ -84,6 +97,7 @@ export const FIGURES = [
   fig('yours.humidifier', 'Humidifier', 'RM', 'room', 0, MONEY_MAX),
   fig('yours.fans', 'Fans, controller and wiring', 'RM', 'room', 0, MONEY_MAX),
   fig('yours.racks', 'Racks', 'RM', 'room', 0, MONEY_MAX),
+  fig('yours.other', 'Other equipment', 'RM', 'room', 0, MONEY_MAX), // ---- Money truth ---- the register's Other
   ...houseWay('shed'),
   ...houseWay('highland'),
   ...houseWay('warm'),
@@ -284,6 +298,11 @@ const RESEARCH = {
   'yours.transport': r(0, 0, 2, 'low', [], 'No source; a lowland farm near the Klang Valley. Enter your own'),
   'yours.rent': r(0, 0, 4000, 'low', ['L01', 'L35'], 'The owner, 2026-10-27: likely 0'),
   'yours.fans': r(3300, 1700, 7500, 'low', ['L01'], 'Fan pair 800, controller 1,500, wiring 1,000; none sourced'),
+  // ---- Money truth ----
+  'yours.other': r(0, 0, 5000, 'low', [], 'Anything else bought for the room; add it to Costs’ equipment register'),
+  'yours.workers': r(1, 1, 3, 'low', [], 'One worker for the farm; set yours, or enter their base wages in Costs'),
+  'yours.workerMonth': r(1954.15, 1954.15, 2299, 'medium', ['L21', 'G17', 'G18'],
+    'RM 1,700 minimum wage + EPF 13 %, SOCSO 1.75 % and EIS 0.2 %; high: the RM 2,000 minimum from June 2027. A foreign worker: EPF 2 % and a RM 640 yearly levy instead'),
   ...SHED,
   ...HIGHLAND,
   ...WARM,
@@ -299,8 +318,40 @@ const RESEARCH = {
 const BLOCKS_PER_M3 = 22;
 const BIG_ROOM_M3 = 40;
 const HUMIDIFIER_LH = 6; // one humidifier per 6 L/h of the room's humidifier output, at least one
-export const sizeOf = (room) => (room.volume > BIG_ROOM_M3 ? '40 ft' : '20 ft');
+export const sizeOf = (room) => ((room.type ?? room.roomType ?? 'container') !== 'container' ? null : room.volume > BIG_ROOM_M3 ? '40 ft' : '20 ft');
+// ---- Money truth ---- (spec 10) a built room's insulated panels by their area, its cooling by its volume; a shed's house as
+// the lowland shed's (its racks in it), not cooled.
+const PANEL_RM_M2 = 160;
+const COOLING_M3 = 38; // one 2.5 hp unit per 38 m³: a 40 ft holds two
+const COOLING_UNIT = 4520; // a Daikin FTKF 2.5 hp at RM 4,170 + RM 350 fitting
+const SHED_HOUSE = 5000; // RM a 2,000-block shed, the lowland shed's house
+function typeResearch(key, room, blocks) {
+  const type = room.type ?? room.roomType ?? 'container';
+  if (type === 'built') {
+    if (key === 'yours.container') {
+      const { length: l, width: w, height: h } = room;
+      const area = Number.isFinite(l * w * h) ? 2 * (l * w + l * h + w * h) : 6 * room.volume ** (2 / 3);
+      const m2 = Math.round(area * 10) / 10;
+      return r(Math.round(m2 * PANEL_RM_M2), Math.round(m2 * 100), Math.round(m2 * 250), 'low', [],
+        `${m2.toLocaleString('en-US')} m² of insulated panel walls, roof and floor at RM 160 a m² (100–250); no source: enter your own quote`);
+    }
+    if (key === 'yours.cooling') {
+      const units = Math.max(1, Math.ceil(room.volume / COOLING_M3));
+      return r(units * COOLING_UNIT, Math.max(1, units - 1) * COOLING_UNIT, (units + 1) * COOLING_UNIT, 'low', ['G16', 'L23'],
+        `${units} × Daikin FTKF 2.5 hp at RM 4,170 + RM 350 fitting for ${Math.round(room.volume)} m³, one per 38 m³ as a container's; size it with Suggest machines on the room's page`);
+    }
+  }
+  if (type === 'shed') {
+    const houses = Math.max(1, Math.ceil((Number.isFinite(blocks) ? blocks : roomResearch('yours.blocks', room).value) / 2000));
+    if (key === 'yours.container') return r(SHED_HOUSE * houses, 1300 * houses, 10_000 * houses, 'low', ['L01', 'G20', 'G21'], `The lowland shed's house and racks, ${houses === 1 ? 'one' : houses} for up to 2,000 blocks${houses === 1 ? '' : ' each'}`);
+    if (key === 'yours.cooling') return r(0, 0, 9040, 'low', [], 'A lowland shed isn’t cooled; set yours if it is');
+    if (key === 'yours.racks') return r(0, 0, 0, 'low', [], 'In the shed\'s house');
+  }
+  return undefined;
+}
 function roomResearch(key, room, blocks) {
+  const typed = typeResearch(key, room, blocks);
+  if (typed) return typed;
   const big = room.volume > BIG_ROOM_M3;
   if (key === 'yours.blocks') {
     const cap = (n) => Math.min(figureOf('yours.blocks').max, n); // a huge room's count stays a figure the page may save

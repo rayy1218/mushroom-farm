@@ -2,12 +2,13 @@
 // of "A month, each way", the lines under it, the months and a figure with its unit. Pure: the results are the model's
 // (web/economics-model.js compare), every RM through Costs' formatter and every kg through Harvest's (the One Format Rule).
 //   monthsText · figureText · rangeText · wayName · headline · ROWS · rows · fillLine · sizedLine · neverLine · leftLine
+//   · labourLine (Money truth)
 
 import { moneyText, perKgText } from './costs-math.js';
 import { kgText } from './harvest-math.js';
 import { grouped } from './overview-math.js';
 import { cropShortName } from './crops.js';
-import { figureOf, WAY_NAMES, keepTogether } from './economics-defaults.js';
+import { figureOf, WAY_NAMES, keepTogether, yoursName } from './economics-defaults.js';
 import { HOUSE_BLOCKS } from './economics-model.js';
 
 const NB = '\u00a0'; // a number keeps its unit at a wrap (the Units Rule)
@@ -51,6 +52,7 @@ function parts(key, v) {
     case 'hours a day': return ['', upTo(v, 1), `${NB}${plural('hour', 'hours')} a${NB}day`];
     case 'months': return ['', grouped(v, 0), `${NB}${plural('month', 'months')}`];
     case 'blocks': return ['', grouped(v, 0), `${NB}${plural('block', 'blocks')}`];
+    case 'workers': return ['', upTo(v, 1), `${NB}${plural('worker', 'workers')}`]; // Money truth: part-time is 0.5
     default: return ['', grouped(v, 0), `${NB}${plural('flush', 'flushes')}`]; // flushes per block
   }
 }
@@ -68,8 +70,9 @@ export function rangeText(key, low, high) {
 
 // A way's name: as a column head, or in a sentence ("A highland grower", lower-cased after a comma).
 const IN_A_SENTENCE = { shed: 'A lowland shed', highland: 'A highland grower', import: 'Importing and reselling', warm: 'A warm strain in a lowland shed' };
-export const wayName = (way, { sentence = false, lower = false } = {}) => {
-  const name = sentence ? IN_A_SENTENCE[way] : WAY_NAMES[way];
+// type (Money truth): the room's, naming Your way (Your container, Your room, Your shed).
+export const wayName = (way, { sentence = false, lower = false, type = 'container' } = {}) => {
+  const name = sentence ? IN_A_SENTENCE[way] : way === 'yours' ? yoursName(type) : WAY_NAMES[way];
   return lower ? name[0].toLowerCase() + name.slice(1) : name;
 };
 
@@ -161,3 +164,19 @@ const LEFT_WORDS = {
   lionsmane: `Not compared: a lowland shed with the usual strain (it fruits at 18–24${NB}°C); the warm strain is the lowland shed for lion's mane.`,
 };
 export const leftLine = (crop) => (LEFT_WORDS[crop] ? keepTogether(LEFT_WORDS[crop]) : null);
+
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 9) The line under the table on Your container's labour: its
+// share of the workers and what its blocks' handling takes of that share's hours; { text, tone } (warn when they take more),
+// or null when its labour is the minutes a block (no workers figure).
+export function labourLine(yours, room) {
+  const h = yours.labourHours;
+  if (!h) return null;
+  const share = `${Math.round(h.share * 100)}${NB}%`;
+  const workers = `${upTo(h.workers, 1)}${NB}${h.workers === 1 ? 'worker' : 'workers'}`;
+  const lead = `Labour: ${room}’s share (${share}, by blocks) of ${workers} at ${moneyText(h.each)} a${NB}month.`;
+  const needed = `${grouped(h.needed, 1)}${NB}h`;
+  const there = `${grouped(h.there, 1)}${NB}h`;
+  return h.needed > h.there
+    ? { text: `${lead} Handling its blocks takes ${needed} a${NB}month, more than the ${there} that share gives.`, tone: 'warn' }
+    : { text: `${lead} Handling its blocks takes ${needed} a${NB}month of the ${there} that share gives.` };
+}
