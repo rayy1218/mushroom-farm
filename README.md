@@ -1,5 +1,7 @@
 # Mushroom farm
 
+[![Tests](https://github.com/rayy1218/mushroom-farm/actions/workflows/test.yml/badge.svg)](https://github.com/rayy1218/mushroom-farm/actions/workflows/test.yml) ![Node 22.13+](https://img.shields.io/badge/node-%E2%89%A5%2022.13-339933) ![No dependencies](https://img.shields.io/badge/dependencies-none-blue)
+
 Keeps a small mushroom farm's grow rooms in the right climate, tells the team what to do each day, and shows what every kilogram costs and earns.
 
 ![The Overview: four rooms with their temperature, humidity and CO₂ against the crop's bands; one room's humidity is above its band](docs/images/overview.png)
