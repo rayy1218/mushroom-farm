@@ -1,25 +1,129 @@
 # Mushroom farm
 
-A web app for a small mushroom farm in Malaysia. It controls the climate of the fruiting rooms over Modbus TCP, guides the daily work, and keeps the farm's books. The owner and the workers each sign in. A device simulator plays the rooms' sensors and machines, so you can run everything without hardware.
+[![Tests](https://github.com/rayy1218/mushroom-farm/actions/workflows/test.yml/badge.svg)](https://github.com/rayy1218/mushroom-farm/actions/workflows/test.yml) ![Node 22.13+](https://img.shields.io/badge/node-%E2%89%A5%2022.13-339933) ![No dependencies](https://img.shields.io/badge/dependencies-none-blue)
 
-Plain JavaScript. No build step, no npm dependencies. Needs Node 22.13 or newer (it uses the built-in `node:sqlite`).
+Keeps a small mushroom farm's grow rooms in the right climate, tells the team what to do each day, and shows what every kilogram costs and earns.
 
-## What it does
+![The Overview: four rooms with their temperature, humidity and CO₂ against the crop's bands; one room's humidity is above its band](docs/images/overview.png)
 
-| Area | What you get |
+Built for one farm in lowland Malaysia. The owner and the workers each sign in, on a desk or a phone.
+
+| Jump to | For |
 |---|---|
-| Climate | Live temperature, humidity and CO₂ per room; automatic control of intake, exhaust and circulation fans, humidifier, dehumidifier, aircon and lights from the room's bands; free cooling and outdoor drying from an outdoor probe |
-| Safety | Sensor checks (no answer, out of range, jump, frozen), alarms on the room page, the Overview and a menu badge, optional Telegram messages (Settings) |
-| Rooms | Crops and stage program (spawn run, pinning, fruiting, rest, flushes), intake filter tracking, energy (kWh, RM) and water (L), history up to 30 days |
-| Simulation | Simulation runs for a room's walls, weather and machines, and Suggest machines for sizing |
-| Tasks | Daily stage tasks, upkeep, long-term tasks, the Today page, the Calendar, a CSV log and printable myGAP sheets |
-| Harvest | kg per run, flush, room and crop; kg per block and biological efficiency |
-| Business | Summary, Batches, Inventory, Sales, Costs, Runs and Economics (owner only) |
-| Sign-in | Workers sign in with a 6-digit PIN, owners with a password. Workers see no money. Sessions, lockouts and a live stream that follows the session |
+| [For farm owners](#for-farm-owners) | What it does for the farm, what it costs to run |
+| [For engineers](#for-engineers) | How it is built, how to run and deploy it |
 
-## Quick start
+## For farm owners
 
-Needs Node 22.13 or newer. Use two terminals.
+### The problems it solves
+
+| Problem | What the app does |
+|---|---|
+| A room runs too hot, too dry or too stuffy for a few hours, and a crop is lost | It reads every room every 5 seconds and runs the fans, humidifier, dehumidifier, aircon and lights to keep the room inside the crop's bands. Each crop stage (spawn run, pinning, fruiting, rest) has its own bands |
+| Nobody notices a problem until the morning | Alarms show on every page, with a count in the menu. Telegram messages reach a phone (optional) |
+| Outside air is free cooling, but only some hours | An outdoor probe tells the app when outside air can cool or dry a room, so the aircon runs less |
+| Workers forget a task, or do it on the wrong day | The Today page lists each room's tasks for the stage it is in, plus upkeep that is due. Workers tick them off on a phone |
+| You don't know what a kilogram costs to grow | Energy (kWh and RM) and water (L) per room, harvests per room and crop, costs and sales give a profit per run and per kg |
+| You are about to buy a container, an aircon or a new crop and can't tell if it pays | Economics compares a month of your room with the other ways to get the crop (a highland grower, a lowland shed, importing), with the break-even price and the payback. A simulator tests a room's walls, weather and machines before you buy them |
+| myGAP paperwork | Printable task, harvest and batch sheets, and CSV exports |
+
+### What you see each day
+
+| Screen | What it tells you |
+|---|---|
+| Overview | Is the farm OK? Every room's readings against its bands, alarms, the outdoor air, today's energy cost and the harvest |
+| A room | Its readings, a drawing of the room with every machine on or off, the crop's stage and day, and the next fresh-air change |
+| Today | The day's tasks for every room, by morning, afternoon and upkeep. Made for a phone |
+| Harvest | kg picked per day, room and crop, its expected value and the energy cost per kg |
+| Business | This month's profit, what needs attention, and each run's profit so far. Owner only: workers see no money |
+| Economics | One room's month with one crop against the other ways to grow or buy it |
+
+### Screens
+
+The money and kg figures in these pictures are a made-up example month, not the farm's own. The readings come from the device simulator.
+
+| Screen | Picture |
+|---|---|
+| **A room.** Readings against the bands, the room's machines as they run, and the crop's progress | <img src="docs/images/room.png" alt="Room 1's Now tab: temperature 21.1 °C and humidity 82.7 % RH in band, CO₂ below the stop point, a drawing of the room with the aircon, circulation fan and dehumidifier on, the list of seven machines and the crop card for lion's mane on day 10 of 10" width="560"> |
+| **Today, on a phone.** Each room's tasks in the order of the day. Tick one when it is done, or skip it | <img src="docs/images/today-phone.png" alt="The Today page on a phone: 26 tasks due; Container 1 with grey oyster on fruiting day 1, morning tasks (footbath, humidifier, harvest check), afternoon tasks and overdue upkeep" width="260"> |
+| **Harvest.** What the rooms picked, what it is worth and the electricity per kg | <img src="docs/images/harvest.png" alt="The Harvest page over 30 days: 500.3 kg picked, an expected value of RM 12,044.40, RM 0.68 of electricity per kg, a bar chart of kg per day and tables by room and by crop" width="560"> |
+| **Business Summary.** The month's profit, the problems that need you, and every run in progress | <img src="docs/images/summary.png" alt="The Business Summary: November so far, a profit of RM 1,700.17 on RM 11,420 income and RM 9,719.83 costs, 45.3 kg not sold yet, one buyer's unpaid deliveries, and the four runs in progress with their profit so far" width="560"> |
+| **Economics.** A month of lion's mane in Room 1 against a highland grower, importing, and a warm strain | <img src="docs/images/economics.png" alt="The Economics page for lion's mane in Room 1: a month of income, blocks, electricity, labour, packing, transport, rent and equipment for four ways to grow or buy it; Room 1 makes RM 3,583.76 a month, breaks even at RM 30.25 a kg and pays back in 10 months" width="560"> |
+
+### What it needs
+
+| Need | Detail |
+|---|---|
+| A computer | Any PC that stays on, or a small cloud VM (it runs on a free Oracle Cloud VM). No database server, no licences to buy |
+| Sensors and machines | Modbus sensors and relays: temperature and humidity probes, a CO₂ sensor, an energy meter, a relay module for the fans, humidifier, dehumidifier and lights, an aircon gateway. Wired over RS-485 to an Ethernet gateway |
+| No hardware yet | The built-in device simulator plays the sensors and machines, so you can try everything first |
+| Phones | Any phone browser. Workers sign in with a 6-digit PIN, owners with a password |
+| Phone alarms | Optional: a Telegram bot, set up on the Settings page |
+
+## For engineers
+
+### Architecture
+
+```mermaid
+flowchart TB
+  UI["Browser, desk or phone<br/>web/: plain ES modules, no build"]
+  subgraph Farm["Farm app: server/, one Node process"]
+    HTTP["HTTP API, static files<br/>and live stream"]
+    Poller["Poller"]
+    Ctrl["Controller"]
+    Mach["Machines"]
+    Alarms["Alarms and<br/>daily tasks"]
+    Sim["Simulations<br/>(worker thread)"]
+    DB[("SQLite<br/>node:sqlite")]
+  end
+  TG["Telegram<br/>(optional)"]
+  GW["Modbus TCP gateway<br/>(the farm's, or a room's own)"]
+  subgraph Field["Farm floor, or the device simulator: device/"]
+    Sensors["T/RH probes, CO₂ sensor,<br/>outdoor probe, energy meter,<br/>filter pressure"]
+    Relays["Relay module: fans,<br/>humidifier, dehumidifier, lights"]
+    AC["Aircon gateway"]
+  end
+
+  UI <-->|"JSON over HTTP,<br/>live stream (SSE)"| HTTP
+  HTTP <--> DB
+  Sim <--> DB
+  Poller --> DB
+  Poller --> Ctrl
+  Ctrl -->|"the stage's bands"| Mach
+  Ctrl --> Alarms
+  Alarms --> DB
+  Alarms --> TG
+  Poller -->|"read every 5 s"| GW
+  Mach -->|"switch"| GW
+  GW --> Sensors
+  GW --> Relays
+  GW --> AC
+```
+
+| Part | What it does |
+|---|---|
+| Poller (`poller.js`, `modbus.js`, `gateways.js`) | Reads every wired sensor and machine each interval (5 s default). Each gateway is polled at the same time, so a silent one does not slow the other rooms |
+| Controller (`controller.js`, `machines.js`) | Compares each room's readings with its bands and switches the machines. Auto or manual per room. Raises the alarms and makes each day's tasks |
+| Alarms to phones (`telegram.js`) | Sends alarms to a Telegram chat when one is set up in Settings |
+| Live stream (`live.js`, `events.js`) | Served next to the HTTP API. Server-Sent Events push readings, alarms and machine states to every open page. It follows the session: a signed-out browser stops receiving |
+| Database (`db.js`) | One SQLite file through the built-in `node:sqlite`. Migrations run on start and only move up |
+| Simulations (`simulate.js`, `simulate-worker.js`) | Room physics (walls, weather, machines) in a worker thread, for test runs and machine sizing |
+| Device simulator (`device/`) | A Modbus TCP server and a control page that play the sensors, relays and aircon, with room physics |
+
+### Stack
+
+| Item | Choice |
+|---|---|
+| Runtime | Node 22.13 or newer (for `node:sqlite`) |
+| Dependencies | None. No npm packages, server or browser |
+| Language | Plain JavaScript (ES modules) |
+| Build | None. The server sends `web/` as it is |
+| Tests | Built-in `node:test` |
+| Licence | All rights reserved, see [LICENSE](LICENSE) |
+
+### Quick start
+
+Use two terminals.
 
 ```bash
 npm run device    # the device simulator: http://localhost:8090
@@ -34,13 +138,15 @@ npm run owner -- "<name>"
 
 Open http://localhost:8080 and sign in. Then:
 
-1. On the device page, add sensors (address and kind) and type their values.
-2. In the farm app, give a room the same addresses (room page, Equipment tab).
-3. For a live-looking room, add a simulated room on the device page, link its sensors and machines, and enable it.
+| Step | Where | What |
+|---|---|---|
+| 1 | Device page | Add sensors (address and kind) and type their values |
+| 2 | Farm app, room page, Setup tab | Give a room the same addresses |
+| 3 | Device page | For a live-looking room, add a simulated room, link its sensors and machines, and enable it |
 
 The database is created at `data/v2.db` on the first start and moved up to the current version by itself. Copy it first when you update an existing farm. It never moves back down.
 
-## Configuration
+### Configuration
 
 Environment variables. All are optional.
 
@@ -57,7 +163,7 @@ Environment variables. All are optional.
 
 Everything else (bands, prices, poll interval, Telegram, outdoor probe address, workers, task rules) is set on the Settings page and stored in the database.
 
-## Devices
+### Devices
 
 The farm app polls every wired sensor and machine each reading interval (5 s by default, 1–300 s in Settings). A sensor is online when the last poll answered, timeout after 1–2 failed polls, offline after 3 or more.
 
@@ -71,11 +177,12 @@ The farm app polls every wired sensor and machine each reading interval (5 s by 
 | Relay module | coils 0–5 (fn 01 read, fn 05 write); inputs 0–5 (fn 02, current switches) | outputs: 0 intake, 1 exhaust, 2 circulation, 3 humidifier, 4 dehumidifier, 5 lights |
 | Aircon gateway | holding 0–3 (fn 03 read, fn 16 write); input 0–1 (fn 04) | power, mode (0 cool, 1 heat, 2 dry, 3 fan), setpoint × 10, fan (0 auto, 1 low, 2 high); room T × 10, error code |
 
-A real RS-485 farm uses the same requests through an Ethernet-to-RS-485 gateway. Point `FARM_GATEWAY` at it.
+| Wiring | How |
+|---|---|
+| A real RS-485 farm | The same requests through an Ethernet-to-RS-485 gateway. Point `FARM_GATEWAY` at it |
+| A gateway per room | A room on its own RS-485 bus takes that gateway's `host:port` in the Modbus gateway card at the top of its Setup tab. Empty means `FARM_GATEWAY`. The room's sensors, meter, filter sensor, relay module and aircon go through it, so their addresses only need to differ on that gateway. The outdoor probe always uses the farm's gateway |
 
-**A gateway per room.** A room behind its own gateway (its own RS-485 bus) takes that gateway's `host:port` in the Modbus gateway card at the top of its Equipment (Setup tab). Empty means `FARM_GATEWAY`. The room's sensors, meter, filter sensor, relay module and aircon go through it, so their addresses only need to differ on that gateway. The outdoor probe always uses the farm's gateway. Gateways are polled at the same time, so a silent one does not slow the other rooms.
-
-## Run with Docker
+### Run with Docker
 
 Needs Docker (Docker Desktop on Windows or macOS). From the project folder:
 
@@ -110,7 +217,7 @@ docker compose run --rm --no-deps --user root device chown -R node:node /data
 docker compose start
 ```
 
-## Run on a cloud VM
+### Run on a cloud VM
 
 `deploy/oracle/` runs the live farm on one Linux VM (written for an Oracle Cloud Always Free Ampere VM, Ubuntu 24.04) as systemd services. It uses plain Node, not Docker: the rooms' own gateways are stored as `127.0.0.1:1512` to `:1514`, which only work when all the apps share one host.
 
@@ -131,10 +238,9 @@ The scripts run on the dev machine. `<vm-host>` is an SSH host name for the VM.
 | Status | `ssh <vm-host> systemctl status 'mushroom-*'` |
 | Logs | `ssh <vm-host> journalctl -u mushroom-farm -f` |
 | Back up the database | `ssh <vm-host> sudo systemctl stop mushroom-farm`, `scp <vm-host>:/opt/mushroom-farm/data/v2.db ./v2-backup.db`, `ssh <vm-host> sudo systemctl start mushroom-farm` |
+| Funnel off again | `sudo tailscale funnel --bg 8080 off && sudo tailscale serve --bg 8080` |
 
-Safety notes:
-
-| Note | Why |
+| Safety note | Why |
 |---|---|
 | `push-data.sh` replaces the VM's database and simulator state | Use it for the first move only. It refuses to run while local apps listen on the farm's ports |
 | Run one farm app per farm | After the data moves, keep the old machine's apps stopped. Two would keep two histories |
@@ -142,9 +248,7 @@ Safety notes:
 | Only SSH should be open on the VM | Reach the pages through Tailscale: `tailscale serve` for the tailnet only, `tailscale funnel --bg 8080` to put the farm app on the internet. The device apps stay on the tailnet |
 | With Funnel on, the sign-in is public | `GET /api/login/names` needs no session, so anyone can read the active workers' names, and wrong PINs can lock a worker until the owner's Unlock. Use long owner passwords |
 
-Funnel off again: `sudo tailscale funnel --bg 8080 off && sudo tailscale serve --bg 8080`.
-
-## Project layout
+### Project layout
 
 | Path | What |
 |---|---|
@@ -154,19 +258,20 @@ Funnel off again: `sudo tailscale funnel --bg 8080 off && sudo tailscale serve -
 | `tests/` | `node:test` files, `*.test.js` |
 | `deploy/oracle/` | systemd units, `push-code.sh`, `push-data.sh`, `setup-vm.sh` |
 | `docs/` | `specs/` (design per feature) and `plans/` (implementation plans) |
+| `docs/images/` | The pictures in this README |
 | `docs/research/`, `docs/mockups/`, `docs/screenshots/` | Research notes, design mockups, captures |
 | `Dockerfile`, `compose.yaml` | One image for both apps |
 | `data/` | Created at run time: the database. Not in git |
 
-## Tests
+### Tests
 
 ```bash
 npm test
 ```
 
-Runs `tests/*.test.js` with the built-in `node:test` runner (60 s per file). They cover the Modbus layer, the device simulator, automatic control, alarms, the HTTP API of every area, sign-in, the database migrations and the UI's math.
+Runs `tests/*.test.js` with the built-in `node:test` runner (60 s per file). They cover the Modbus layer, the device simulator, automatic control, alarms, the HTTP API of every area, sign-in, the database migrations and the UI's math. CI runs them on Node 22.
 
-## Docs
+### Docs
 
 | Doc | What |
 |---|---|
