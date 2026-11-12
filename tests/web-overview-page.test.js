@@ -28,7 +28,7 @@ const alarm = (id, level, raisedAt, extra = {}) => ({
   id, roomId: 1, roomName: 'A', key: 'k', level, text: 't', raisedAt, clearedAt: null, ackedAt: null, ...extra,
 });
 
-test('the page loads /api/overview and /api/alarms; the list is sorted and cut to 10', async (t) => {
+test('the page loads /api/overview and /api/alarms; the list is sorted and whole (spec 2026-11-12-alarms-triage-design.md 5)', async (t) => {
   const many = Array.from({ length: 12 }, (_, i) => alarm(i + 1, 'warning', 100 + i));
   const calls = stubFetch(t, {
     '/api/overview': { status: 200, body: { rooms: [], alarms: [] } },
@@ -36,7 +36,7 @@ test('the page loads /api/overview and /api/alarms; the list is sorted and cut t
   });
   const r = await loadOverview();
   assert.deepEqual(calls.sort(), ['/api/alarms', '/api/overview']);
-  assert.equal(r.alarms.length, 10);
+  assert.equal(r.alarms.length, 12);
   assert.equal(r.alarms[0].id, 12);
   assert.deepEqual(r.failed, { overview: false, alarms: false });
 });

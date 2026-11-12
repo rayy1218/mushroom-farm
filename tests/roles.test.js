@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { workerMay, workerReply, filterWorkerReplies, MONEY_KEYS } from '../server/roles.js';
 
-test('the allow-list: floor work and a room\'s alarms and filter changes yes; Business, Settings, Setup, usage, CSV, edits, acks no', () => {
+test('the allow-list: floor work, a room\'s alarms, bands and filter changes, and acks yes; Business, Settings, Setup, usage, CSV, edits no', () => {
   const yes = [
     ['GET', '/api/overview'], ['GET', '/api/rooms'], ['GET', '/api/rooms/12'], ['GET', '/api/rooms/12/sensors'],
     ['GET', '/api/rooms/12/history'], ['GET', '/api/rooms/12/crop'], ['GET', '/api/rooms/12/machines'], ['GET', '/api/alarms'],
@@ -15,16 +15,18 @@ test('the allow-list: floor work and a room\'s alarms and filter changes yes; Bu
     ['GET', '/api/rooms/12/harvests'], ['GET', '/api/harvest'], ['POST', '/api/rooms/12/harvests'], ['GET', '/api/inventory'],
     ['GET', '/api/inventory/items/3'], ['POST', '/api/inventory/uses'], ['POST', '/api/inventory/counts'],
     ['GET', '/api/rooms/12/alarms'], ['GET', '/api/rooms/12/filter/changes'],
+    // spec 2026-11-12-alarms-triage-design.md 7
+    ['GET', '/api/rooms/12/control'], ['POST', '/api/alarms/5/ack'], ['POST', '/api/rooms/12/alarms/ack'], ['POST', '/api/alarms/ack'],
   ];
   const no = [
-    ['PUT', '/api/settings'], ['GET', '/api/usage'], ['GET', '/api/rooms/12/usage'], ['GET', '/api/rooms/12/control'],
+    ['PUT', '/api/settings'], ['GET', '/api/usage'], ['GET', '/api/rooms/12/usage'], ['PUT', '/api/rooms/12/control'],
     ['PUT', '/api/rooms/12/crop'], ['PUT', '/api/rooms/12/machines/ac'], ['POST', '/api/rooms'], ['DELETE', '/api/rooms/12'],
     ['GET', '/api/rooms/12/tasks/log.csv'], ['POST', '/api/rooms/12/tasks'], ['POST', '/api/tasks/7/cancel'], ['PUT', '/api/workers'],
     ['GET', '/api/task-rules'], ['PUT', '/api/harvests/4'], ['GET', '/api/harvest.csv'], ['GET', '/api/batches'],
     ['PUT', '/api/inventory/items/3'], ['GET', '/api/inventory/purchases'], ['POST', '/api/inventory/purchases'],
     ['PUT', '/api/inventory/moves/9'], ['POST', '/api/inventory/lots/9/throw-out'], ['GET', '/api/inventory/sheet'], ['GET', '/api/sales'],
     ['GET', '/api/costs'], ['GET', '/api/runs'], ['GET', '/api/business/summary'], ['GET', '/api/workers/accounts'],
-    ['POST', '/api/workers/1/secret'], ['POST', '/api/alarms/5/ack'], ['POST', '/api/rooms/12/alarms/ack'],
+    ['POST', '/api/workers/1/secret'], ['GET', '/api/alarms/5/ack'], ['POST', '/api/alarms/05/ack'],
     ['POST', '/api/rooms/12/filter/changed'], ['GET', '/api/rooms/12/filter/changed'], ['POST', '/api/rooms/12/filter/changes'],
     ['GET', '/api/rooms/012'], ['GET', '/api/rooms/12/'], ['HEAD', '/api/rooms'], ['GET', '/api'],
   ];

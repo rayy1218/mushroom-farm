@@ -59,11 +59,16 @@ export function alarmTime(ms, now = Date.now()) {
   return today ? hm : `${d.getDate()} ${MONTHS[d.getMonth()]} ${hm}`;
 }
 
-// "Raised 10:42", "Raised 10:42 · Acknowledged" while acknowledged and active (a word, not the dimming alone) and, once
-// cleared, "Raised 10:42 · Cleared 10:50".
+// "Acknowledged by Ray" (database 27 keeps the name), or "Acknowledged" for one from before.
+export const ackedWords = (a) => (a.ackedBy ? `Acknowledged by ${a.ackedBy}` : 'Acknowledged');
+
+// "Raised 10:42", "Raised 10:42 · Acknowledged by Ray" while acknowledged and active (a word, not the dimming alone) and, once
+// cleared, "Raised 10:42 · Cleared 10:50" ("· Acknowledged by Ray" after it when the name is known).
 export function timesLine(a, now = Date.now()) {
   const raised = `Raised ${alarmTime(a.raisedAt, now)}`;
-  if (isDimmed(a)) return `${raised} · Acknowledged`;
+  if (isDimmed(a)) return `${raised} · ${ackedWords(a)}`;
+  // History: who acknowledged a cleared one, when the database kept the name (27)
+  if (a.clearedAt != null && a.ackedBy) return `${raised} · Cleared ${alarmTime(a.clearedAt, now)} · ${ackedWords(a)}`;
   return a.clearedAt == null ? raised : `${raised} · Cleared ${alarmTime(a.clearedAt, now)}`;
 }
 
@@ -102,10 +107,96 @@ export function newAlarmText(seen, alarms) {
   return `${fresh.length === 1 ? 'New alarm' : 'New alarms'}: ${fresh.map((a) => `${levelLabel(a.level)}, ${a.text}`).join('; ')}`;
 }
 
+// The live line for an alarm that went up a tier since the last paint (the same id: newAlarmText does not see it), or ''.
+// levels: id → the level painted last.
+export function tierText(levels, alarms) {
+  const up = (alarms ?? []).filter((a) => isActive(a) && levels?.has(a.id) && (LEVELS[a.level]?.rank ?? 0) > (LEVELS[levels.get(a.id)]?.rank ?? 0));
+  return up.length ? `Now ${up.map((a) => `${levelLabel(a.level)}, ${a.text}`).join('; ')}` : '';
+}
+
 // How many alarms of the list still need an acknowledgement.
 export const unackedCount = (alarms) => alarms.filter((a) => a.ackedAt == null).length;
 
 // The accessible name of an Acknowledge button.
 export function ackLabel(a) {
   return `Acknowledge ${levelLabel(a.level).toLowerCase()} alarm: ${a.text}`;
+}
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 5, 6) ----
+
+// The current alarms as { active, cleared } (each in the order given: the server's, active first).
+export function splitAlarms(alarms) {
+  const list = alarms ?? [];
+  return { active: list.filter(isActive), cleared: list.filter((a) => !isActive(a)) };
+}
+
+const capital = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const after = (text) => { const i = text.indexOf(': '); return i < 0 ? text : text.slice(i + 2); };
+const SENSOR_KEYS = ['sensorTrh', 'sensorCo2'];
+// A device that did not answer (a relay module, an aircon gateway, a sensor with no reading, a gateway): one cause per room, as
+// one outage (UI check 2026-11-12: a room's outage had been three rows, relay, aircon and sensors).
+const silent = (a) => a.key === 'gateway' || a.key === 'relayNoAnswer'
+  || (a.key.startsWith('machine.') && after(a.text).startsWith('no answer'))
+  || (SENSOR_KEYS.includes(a.key) && after(a.text) === 'no reading');
+// The cause of an alarm, for grouping: { family, detail }. Devices that did not answer group as one; other machine and sensor
+// faults by what went wrong; the rest by key.
+function causeOf(a) {
+  if (silent(a)) return { family: 'silent', detail: '' };
+  if (a.key.startsWith('machine.')) return { family: 'machine', detail: after(a.text) };
+  if (SENSOR_KEYS.includes(a.key)) return { family: 'sensor', detail: after(a.text) };
+  return { family: a.key, detail: '' };
+}
+const nOf = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+// "No answer (6 machines, 2 sensors)": what a group of silent devices held.
+function silentText(alarms) {
+  const machines = alarms.filter((a) => a.key.startsWith('machine.')).length;
+  const sensors = alarms.filter((a) => SENSOR_KEYS.includes(a.key)).length;
+  const parts = [machines ? nOf(machines, 'machine', 'machines') : null, sensors ? nOf(sensors, 'sensor', 'sensors') : null].filter(Boolean);
+  const gateway = alarms.some((a) => a.key === 'gateway');
+  return `${gateway ? 'Gateway not answering' : 'No answer'}${parts.length ? ` (${parts.join(', ')})` : ''}`;
+}
+
+// The cleared alarms of one room and one cause as one row each, newest clear first: [{ key, roomId, roomName, ids, unacked,
+// text, lastCleared }]. text: "No answer (6 machines, 2 sensors)" for devices that did not answer, "Not running (switch on, no
+// current) (2 machines)", "Sensor fault: jump (2 sensors)", the newest text with "(2 times)", or the alarm's own text alone.
+export function causeGroups(cleared) {
+  const groups = new Map();
+  for (const a of cleared ?? []) {
+    const { family, detail } = causeOf(a);
+    const key = `${a.roomId}|${family}|${detail}`;
+    if (!groups.has(key)) groups.set(key, { key, roomId: a.roomId, roomName: a.roomName, family, detail, alarms: [] });
+    groups.get(key).alarms.push(a);
+  }
+  return [...groups.values()].map((g) => {
+    const newest = g.alarms.reduce((x, y) => (y.clearedAt > x.clearedAt ? y : x));
+    const n = g.alarms.length;
+    const text = n === 1 ? newest.text
+      : g.family === 'silent' ? silentText(g.alarms)
+      : g.family === 'machine' ? `${capital(g.detail)} (${n} machines)`
+        : g.family === 'sensor' ? `Sensor fault: ${g.detail} (${n} sensors)`
+          : `${newest.text} (${n} times)`;
+    return { key: g.key, roomId: g.roomId, roomName: g.roomName, ids: g.alarms.map((a) => a.id), unacked: unackedCount(g.alarms), text, lastCleared: newest.clearedAt };
+  }).sort((x, y) => y.lastCleared - x.lastCleared);
+}
+
+// "8 cleared to review": the fold's line.
+export const foldText = (n) => `${n} cleared to review`;
+
+// The room page's line off the Now tab: "1 active alarm · 7 cleared to review · Open on Now" (the parts that are not 0; with no
+// active one "7 cleared alarms to review", so the line says what it is about), or null.
+export function stripText({ active, cleared }) {
+  if (!active && !cleared) return null;
+  const parts = active ? [`${active} active ${active === 1 ? 'alarm' : 'alarms'}`, cleared ? foldText(cleared) : null]
+    : [`${cleared} cleared ${cleared === 1 ? 'alarm' : 'alarms'} to review`];
+  return [...parts.filter(Boolean), 'Open on Now'].join(' · ');
+}
+
+const roomHeld = (h) => [...h.machines, ...h.sensors].join(', ');
+
+// What a gateway or relay module alarm holds (its `held`), by name in one line (the alarm's text has the counts); '' for none.
+// Several rooms: each room's, by its name.
+export function heldText(held) {
+  if (!held?.length) return '';
+  if (held.length === 1) return `Waiting on it: ${roomHeld(held[0])}`;
+  return `Waiting on it: ${held.map((h) => `${h.roomName}: ${roomHeld(h)}`).join(' · ')}`;
 }

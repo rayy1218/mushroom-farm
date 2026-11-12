@@ -41,11 +41,15 @@ const MACHINES = {
   },
 };
 const POLLS_KEPT = 2;
+// Whether the gateway itself answered a poll that failed with err (spec 2026-11-12-alarms-triage-design.md 4): no connection
+// and a timeout are the gateway (or the wires behind it) silent; an exception or a bad reply came from it.
+const answered = (err) => !(err instanceof ModbusError && (err.message === 'no connection' || err.message === 'timeout'));
 const EMPTY = () => ({ address: null, polls: [] });
 
 // Polls sensors and machines. clients: the gateways (server/gateways.js, forRoom(gateway) → client; null: the farm's), or
 // client: one client for every gateway. log is only for errors that are not sensor failures (a database error).
-// afterCycle(cycleStart), when given, is awaited at the end of each complete cycle (automatic control).
+// afterCycle(cycleStart, gateways), when given, is awaited at the end of each complete cycle (automatic control); gateways:
+// [{ gateway (null: the farm's), roomIds, polls, failed, down }], each gateway's health in the cycle.
 // clock (milliseconds, monotonic), setTimer and clearTimer are only replaced by tests.
 export function createPoller({
   db, client = null, clients = { forRoom: () => client }, intervalMs = 5000, now = Date.now, log = console.error, afterCycle = null,
@@ -62,12 +66,15 @@ export function createPoller({
     const at = now();
     began(at);
     const reading = { roomId, kind, address, at };
+    let ok = true;
     try {
       Object.assign(reading, { ok: true }, values(await client.readRegisters(address, fn, start, qty)));
     } catch (err) {
+      ok = answered(err);
       Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
     }
     db.addReading(reading);
+    return ok;
   }
 
   // The outdoor probe is a T/RH probe whose readings go to their own table. The address is read from the settings each
@@ -77,26 +84,32 @@ export function createPoller({
     const at = now();
     began(at);
     const reading = { address, at };
+    let ok = true;
     try {
       Object.assign(reading, { ok: true }, values(await client.readRegisters(address, fn, start, qty)));
     } catch (err) {
+      ok = answered(err);
       Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
     }
     db.addOutdoorReading(reading);
+    return ok;
   }
 
   async function pollFilter(client, { roomId, address }, began) {
     const at = now();
     began(at);
     const reading = { roomId, address, at };
+    let ok = true;
     try {
       const [raw] = await client.readRegisters(address, FILTER.fn, FILTER.start, FILTER.qty);
       const pa = ((raw << 16) >> 16) / 10;
       Object.assign(reading, pa >= FILTER.min && pa <= FILTER.max ? { ok: true, pa } : { ok: false, pa, error: 'Out of range' });
     } catch (err) {
+      ok = answered(err);
       Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
     }
     db.addFilterReading(reading);
+    return ok;
   }
 
   // Two reads (power, then energy); a failed read, or a value that is not a number, makes the poll a failed one.
@@ -104,24 +117,29 @@ export function createPoller({
     const at = now();
     began(at);
     const reading = { roomId, address, at };
+    let ok = true;
     try {
       const powerW = registersToFloat(await client.readRegisters(address, 4, METER.power.start, METER.power.qty));
       const energyKwh = registersToFloat(await client.readRegisters(address, 4, METER.energy.start, METER.energy.qty));
       if (!Number.isFinite(powerW) || !Number.isFinite(energyKwh)) throw new ModbusError('bad reply');
       Object.assign(reading, { ok: true, powerW, energyKwh });
     } catch (err) {
+      ok = answered(err);
       Object.assign(reading, { ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' });
     }
     db.addMeterReading(reading);
+    return ok;
   }
 
   async function pollMachine(client, { roomId, kind, address, outputs, gateway = null }, began) {
     const at = now();
     began(at);
     let poll;
+    let ok = true;
     try {
       poll = { at, ok: true, ...await MACHINES[kind](client, address, outputs) };
     } catch (err) {
+      ok = answered(err);
       poll = { at, ok: false, error: err instanceof ModbusError ? err.message : 'bad reply' };
     }
     const key = `${roomId}/${kind}`;
@@ -129,6 +147,7 @@ export function createPoller({
     if (entry?.address !== address || entry.gateway !== gateway) machines.set(key, entry = { address, gateway, polls: [] });
     entry.polls.push(poll);
     if (entry.polls.length > POLLS_KEPT) entry.polls.shift();
+    return ok;
   }
 
   async function runCycle() {
@@ -151,25 +170,30 @@ export function createPoller({
         if (!groups.has(gateway)) groups.set(gateway, []);
         groups.get(gateway).push(roomId);
       }
+      // Each gateway's health (spec 2026-11-12-alarms-triage-design.md 4): its polls and those the gateway did not answer.
+      const health = [];
       async function pollGateway(gateway, ids) {
         const link = clients.forRoom(gateway);
-        if (gateway === null && outdoor !== null && !stopped) await pollOutdoor(link, outdoor, began);
+        const h = { gateway, roomIds: ids, polls: 0, failed: 0 };
+        health.push(h);
+        const count = (ok) => { h.polls++; if (!ok) h.failed++; };
+        if (gateway === null && outdoor !== null && !stopped) count(await pollOutdoor(link, outdoor, began));
         for (const roomId of ids) {
           for (const sensor of sensors.filter((s) => s.roomId === roomId)) {
             if (stopped) return;
-            await pollOne(link, sensor, began);
+            count(await pollOne(link, sensor, began));
           }
           for (const filter of filters.filter((f) => f.roomId === roomId)) {
             if (stopped) return;
-            await pollFilter(link, filter, began);
+            count(await pollFilter(link, filter, began));
           }
           for (const meter of meters.filter((m) => m.roomId === roomId)) {
             if (stopped) return;
-            await pollMeter(link, meter, began);
+            count(await pollMeter(link, meter, began));
           }
           for (const machine of wired.filter((m) => m.roomId === roomId)) {
             if (stopped) return;
-            await pollMachine(link, machine, began);
+            count(await pollMachine(link, machine, began));
           }
         }
       }
@@ -177,7 +201,8 @@ export function createPoller({
       const results = await Promise.allSettled([...groups].map(([gateway, ids]) => pollGateway(gateway, ids)));
       const failed = results.find((r) => r.status === 'rejected');
       if (failed) throw failed.reason;
-      if (afterCycle && !stopped) await afterCycle(cycleStart ?? now());
+      const gateways = health.map((h) => ({ ...h, down: h.polls > 0 && h.failed === h.polls }));
+      if (afterCycle && !stopped) await afterCycle(cycleStart ?? now(), gateways);
     } catch (err) {
       log(err);
     }

@@ -663,6 +663,45 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
   .al-level { grid-column: 1; justify-self: start; }
   .al-body { grid-column: 1 / -1; }
 }
+/* ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 4-6): what an outage holds, the cleared fold, the strip off Now ---- */
+.al-held { color: var(--ink-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.al-level[data-level="cleared"] { color: var(--ink-2); border-color: var(--border-strong); } /* neutral: cleared is not red */
+.al-cleared-item .al-text { font-weight: 400; }
+.al-list:not([hidden]) + .al-fold { border-top: 1px solid var(--border); }
+.al-fold-toggle { display: flex; align-items: center; gap: 0 12px; width: 100%; min-height: 44px; padding: 0;
+  background: none; border: 0; border-radius: 0; color: var(--ink-2); font: inherit; text-align: left; cursor: pointer; }
+.al-fold-word { color: var(--accent-text); font-weight: 600; }
+.al-fold-toggle:hover .al-fold-word { text-decoration: underline; }
+.al-cleared { padding-bottom: 4px; }
+.al-ack-cleared { margin: 4px 0 8px; }
+/* Acknowledge in a row is a compact button on a desk (DESIGN.md Compact), as the Overview's active rows; 44 px on a phone */
+.al-ack, .al-ack-cleared { min-height: 32px; padding: 2px 12px; font-size: var(--fs-sm); }
+@media (max-width: 600px) {
+  .al-item.al-cleared-item .al-ack { grid-column: 2; grid-row: 1; } /* beside its chip: a cleared row stays short on a phone */
+  .al-ack, .al-ack-cleared { min-height: 44px; }
+  .al-ack-cleared { width: 100%; }
+}
+/* Quiet: no active alarm, only cleared ones to review: the card is its one 44 px line ("Alarms  8 cleared to review  Review")
+   until Review opens it */
+.al-fold-title { display: none; color: var(--ink); font-size: var(--fs-lg); font-weight: 600; }
+[data-quiet="true"] .al-fold-title { display: inline; } /* open too: the toggle stays where the finger was (UI audit 2026-11-12) */
+.al-fold-text { margin-right: auto; }
+[data-quiet="true"] { padding-top: 4px; }
+[data-quiet="true"]:not(:has(.al-fold-toggle[aria-expanded="true"])) { padding-bottom: 4px; }
+/* the title stays for a screen reader (critique 2026-11-12: display none had taken the card out of the headings) */
+[data-quiet="true"] > :is(.al-head, h2) {
+  position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[data-quiet="true"]:not(:has(.al-fold-toggle[aria-expanded="true"])) > .al-history { display: none; }
+.al-fold-more { margin: 8px 0 4px; min-height: 44px; }
+.al-strip { display: flex; align-items: center; min-height: 44px; margin-bottom: 16px; padding: 0 16px; border: 1px solid var(--border);
+  border-radius: var(--radius-card); background: var(--surface); color: var(--ink-2); font-weight: 600; text-decoration: none; }
+/* one line whatever the width: the words give way with an ellipsis, the chevron stays (critique 2026-11-12) */
+.al-strip-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-strip::after { content: '›'; flex: none; margin-left: auto; padding-left: 12px; color: inherit; opacity: .8; }
+.al-strip-cleared { color: var(--ink-2); font-weight: 400; } /* cleared is never red, beside a red count too */
+.al-strip[data-tone="warning"] { border-color: var(--warning-text); color: var(--warning-text); background: var(--warning-soft); }
+.al-strip[data-tone="critical"] { border-color: var(--critical-text); color: var(--critical-text); background: var(--critical-bg); }
+.al-strip:not([data-tone="warning"]):not([data-tone="critical"]):hover { border-color: var(--border-strong); }
 
 .c-safety { grid-template-columns: minmax(0, 240px) minmax(0, 120px); }
 .c-checks { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; }
@@ -728,7 +767,11 @@ button.toggle[data-on="true"]:hover { background: color-mix(in srgb, var(--accen
 .ov-alarm.acked .ov-alarm-text, .ov-alarm.acked .ov-alarm-room { color: var(--ink-2); font-weight: 400; }
 .ov-alarm.acked .ov-chip { background: none; border-color: var(--border-strong); color: var(--ink-2); }
 .ov-alarm-now { color: var(--ink-2); }
-.ov-alarm-room { color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.ov-alarm-held { display: block; color: var(--ink-2); font-size: var(--fs-sm); }
+.ov-alarms[data-tone="warning"] { border-color: var(--warning-text); } /* toned by its worst active alarm, as the room page's */
+.ov-alarms[data-tone="critical"] { border-color: var(--critical-text); }
+.ov-alarm.al-cleared-item .ov-alarm-text { color: var(--ink-2); }
+.ov-alarm-room { justify-self: start; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; } /* the link is its words, not the cell */
 .ov-alarm-text { overflow-wrap: anywhere; }
 .ov-alarm-time { color: var(--muted); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ov-alarm button { min-height: 32px; padding: 2px 12px; font-size: var(--fs-sm); }
@@ -1129,7 +1172,7 @@ progress { width: 100%; height: 14px; accent-color: var(--s-rh); }
    at the right. A phone: one column, the readings first, then the alarms, the control, the machines, the picture, the crop. */
 .now { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 16px; align-items: start; }
 .now-main, .now-side { display: grid; gap: 16px; min-width: 0; align-content: start; }
-.now-side .alarms { margin: 0; }
+.now > .alarms { grid-column: 1 / -1; margin: 0; } /* across the page above the readings (spec 2026-11-12-alarms-triage-design.md 6) */
 @media (max-width: 1099px) {
   .now { display: flex; flex-direction: column; align-items: stretch; }
   .now-main, .now-side { display: contents; }

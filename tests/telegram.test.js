@@ -315,3 +315,52 @@ test('Settings › Telegram step 3 is a plain step, the getUpdates way a smaller
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.match(css, /\.tg-fallback \{ display: block; margin-top: 2px; font-size: var\(--fs-xs\); color: var\(--muted\);/);
 });
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 2): a tier change is a message of its own ----
+test('an alarm that turns Serious or Critical is sent at its new level; Critical repeats; a level not chosen stays quiet', async (t) => {
+  const { db, roomId, state, live, fire } = setup(t);
+  const id = db.raiseAlarm(roomId, 'tHigh', 'warning', 'Temperature 28.0 °C: more than 1 °C over the band (24–26 °C)', T0);
+  await flush();
+  assert.equal(state.calls.length, 0, 'a warning is not chosen');
+  state.time = T0 + 25 * MIN;
+  db.escalateAlarm(id, 'serious', 'Temperature 28.4 °C: more than 1 °C over the band (24–26 °C) for 30 min');
+  await flush();
+  assert.equal(state.calls.at(-1).text, '🟠 Serious · Room 1 · Temperature 28.4 °C: more than 1 °C over the band (24–26 °C) for 30 min · 26 Oct 16:45');
+  assert.equal(live().length, 0, 'serious does not repeat');
+  state.time = T0 + 40 * MIN;
+  db.escalateAlarm(id, 'critical', 'Temperature 33.1 °C: above 32 °C, the hot limit for Grey oyster, for 10 min');
+  await flush();
+  assert.equal(state.calls.at(-1).text, '🔴 Critical · Room 1 · Temperature 33.1 °C: above 32 °C, the hot limit for Grey oyster, for 10 min · 26 Oct 17:00');
+  const [repeat] = live();
+  assert.equal(repeat.ms, 30 * MIN);
+  state.time = T0 + 70 * MIN;
+  await fire(repeat);
+  assert.match(state.calls.at(-1).text, /^🔁 Still on for 70 min, not acknowledged · Room 1 · Temperature 33\.1 °C/);
+  db.clearAlarm(roomId, 'tHigh', T0 + 80 * MIN);
+  await flush();
+  assert.match(state.calls.at(-1).text, /^✅ Cleared after 80 min · Room 1 · /);
+  assert.equal(state.calls.length, 4);
+});
+
+test('a tier change to a level not chosen sends nothing', async (t) => {
+  const { db, roomId, state } = setup(t, { settings: { telegramLevels: ['critical'] } });
+  const id = db.raiseAlarm(roomId, 'tHigh', 'warning', 'w', T0);
+  db.escalateAlarm(id, 'serious', 's');
+  await flush();
+  assert.equal(state.calls.length, 0);
+  db.clearAlarm(roomId, 'tHigh', T0 + MIN);
+  await flush();
+  assert.equal(state.calls.length, 0, 'no Cleared for an alarm never sent');
+});
+
+test('acknowledging a group stops the repeats of its critical alarms (one acked-many change)', async (t) => {
+  const { db, roomId, state, live } = setup(t);
+  const a = db.raiseAlarm(roomId, 'co2Safety', 'critical', 'x', T0);
+  const b = db.raiseAlarm(roomId, 'tHigh', 'critical', 'y', T0);
+  await flush();
+  assert.equal(live().length, 2);
+  db.ackAlarms([a, b], T0 + MIN, 'Me');
+  await flush();
+  assert.equal(live().length, 0);
+  assert.equal(state.calls.length, 2);
+});

@@ -4,10 +4,10 @@
 import { request as realRequest } from './api.js';
 import { sortAlarms, badgeCount } from './overview-math.js';
 
-export const OVERVIEW_ALARMS = 10;
 
 // Loads the overview and the current alarms side by side; each part fails on its own.
-// Returns { overview (null when unreadable), alarms (at most 10, critical first then newest),
+// Returns { overview (null when unreadable), alarms (every current one, critical first then newest; the page puts the active
+//           ones first and folds the cleared ones, spec 2026-11-12-alarms-triage-design.md 5),
 //           failed: { overview, alarms } } where alarms counts as failed only for something other than a 404.
 export async function loadOverview(request = realRequest) {
   const [o, a] = await Promise.allSettled([request('GET', '/api/overview'), request('GET', '/api/alarms')]);
@@ -16,7 +16,7 @@ export async function loadOverview(request = realRequest) {
   const alarms = a.status === 'fulfilled' ? a.value : overview?.alarms ?? [];
   return {
     overview,
-    alarms: sortAlarms(alarms).slice(0, OVERVIEW_ALARMS),
+    alarms: sortAlarms(alarms),
     failed: { overview: o.status === 'rejected', alarms: a.status === 'rejected' && a.reason?.status !== 404 },
   };
 }

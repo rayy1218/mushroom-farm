@@ -142,3 +142,21 @@ test('bands are written only on a change: during a ramp, not on every cycle', as
   await s.cycle({ dt: HOUR });
   assert.equal(writes, before + 1, 'an hour later the bands moved: one write');
 });
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 2, 3): the alarms get the room's crop limits and its stage ----
+test('the alarms get the crop limits of the room and its stage; none without crops', async (t) => {
+  for (const [crops, want] of [[OYSTER, { hot: 32, stage: 'fruiting' }], [[], { hot: undefined, stage: null }]]) {
+    const db = openDb(':memory:');
+    t.after(() => db.close());
+    const seen = [];
+    const alarms = { evaluate: (room, input) => seen.push(input), evaluateGateways() {}, forget() {}, reset() {} };
+    const poller = { machineState: () => ({ relay: { address: null, polls: [] }, ac: { address: null, polls: [] } }) };
+    const machines = createMachines({ db, client: { async writeCoil() {}, async writeRegisters() {} }, poller, now: () => 1_000_000 });
+    const controller = createController({ db, machines, now: () => 1_000_000, alarms, log: (e) => { throw e; } });
+    const id = db.createRoom({ name: 'Room 1', length: 6, width: 4, height: 2.5, trhAddress: 1 }).id;
+    if (crops.length) db.setProgram(id, { ...db.getProgram(id), crops, stage: 'fruiting' });
+    await controller.run(999_000);
+    assert.equal(seen.at(-1).limits?.hot, want.hot);
+    assert.equal(seen.at(-1).stage, want.stage);
+  }
+});

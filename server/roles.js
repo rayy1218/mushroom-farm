@@ -7,9 +7,13 @@ const WORKER_ROUTES = [
   ['GET', '/api/overview'],
   ['GET', '/api/rooms'],
   ['GET', `/api/rooms/${ID}`],
-  // a room's alarms and filter changes: read only (the acks and a filter change are the owner's)
-  ['GET', `/api/rooms/${ID}/(?:sensors|history|crop|machines|tasks|tasks/log|harvests|alarms|filter/changes)`],
+  // a room's alarms, filter changes and control settings (the bands, spec 2026-11-12-alarms-triage-design.md 7): read only (a
+  // filter change and the control settings are the owner's)
+  ['GET', `/api/rooms/${ID}/(?:sensors|history|crop|machines|tasks|tasks/log|harvests|alarms|filter/changes|control)`],
   ['GET', '/api/alarms'],
+  // acknowledging alarms (spec 2026-11-12-alarms-triage-design.md 7): at 2 am only the worker is there
+  ['POST', `/api/alarms/(?:${ID}/)?ack`],
+  ['POST', `/api/rooms/${ID}/alarms/ack`],
   ['GET', '/api/outdoor'],
   ['GET', '/api/outdoor/history'],
   ['GET', '/api/settings'], // only pollSeconds (below)
@@ -39,10 +43,14 @@ export const MONEY_KEYS = new Set([
 // The settings a worker's pages read: how often to read again. (No prices, no Telegram chat or token, no gateway.)
 const WORKER_SETTINGS = ['pollSeconds'];
 
+// The keys a worker never gets that are not money: a gateway alarm's address (the farm app is on the internet; review
+// 2026-11-12). Matched everywhere, as MONEY_KEYS.
+export const HIDDEN_KEYS = new Set(['gatewayAddress']);
+
 function withoutMoney(v) {
   if (Array.isArray(v)) return v.map(withoutMoney);
   if (v !== null && typeof v === 'object') {
-    return Object.fromEntries(Object.entries(v).filter(([k]) => !MONEY_KEYS.has(k)).map(([k, x]) => [k, withoutMoney(x)]));
+    return Object.fromEntries(Object.entries(v).filter(([k]) => !MONEY_KEYS.has(k) && !HIDDEN_KEYS.has(k)).map(([k, x]) => [k, withoutMoney(x)]));
   }
   return v;
 }

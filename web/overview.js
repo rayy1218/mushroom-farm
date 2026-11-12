@@ -8,7 +8,8 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { loadOverview } from './overview-data.js';
 import { farmStatus, phoneAlarms, settleRooms, roomCard, roomReadings, alarmTimeText, grouped, SPARK_W, SPARK_H } from './overview-math.js';
-import { nowText, isDimmed } from './alarms-math.js';
+import { nowText, isDimmed, splitAlarms, heldText, ackedWords, ackLabel, cardTone } from './alarms-math.js';
+import { createFold, groupAck, originOf, focusAfterAck } from './alarms.js';
 import { outdoorCard } from './outdoor-math.js';
 import { roomLines, USAGE_DAYS, USAGE_REFRESH_MS } from './usage-math.js';
 import { usageTileNodes } from './usage.js';
@@ -393,39 +394,68 @@ export function mount(container) {
     return card;
   }
 
+  // The active alarms, then one line for the cleared ones nobody acknowledged, grouped by room and cause inside it (spec
+  // 2026-11-12-alarms-triage-design.md 5): the status line's count is these active rows.
+  // A cleared group in the active rows' columns (critique 2026-11-12: two grids, two left edges): the chip, the room, the text,
+  // when it last cleared, Acknowledge.
+  const clearedRow = (g) => {
+    const li = node('li', 'ov-alarm al-cleared-item');
+    const room = node('a', 'ov-alarm-room', g.roomName);
+    room.href = `#/rooms/${g.roomId}`;
+    li.append(levelChip('cleared', 'Cleared'), room, node('span', 'ov-alarm-text', g.text), node('span', 'ov-alarm-time', `Last cleared ${alarmTimeText(g.lastCleared)}`));
+    if (g.unacked > 0) li.append(groupAck(g));
+    return li;
+  };
+  const fold = createFold({ item: clearedRow });
+  els.alarms.append(fold.node);
+  els.alarms.querySelector('h2').tabIndex = -1; // the focus after an Acknowledge that leaves nothing near it
+  let ackOrigin = null; // where the last Acknowledge was used (alarms.js originOf)
   function renderAlarms(alarms) {
     els.alarms.hidden = alarms.length === 0;
     const now = Date.now();
-    els.alarmList.replaceChildren(...alarms.map((a) => {
+    const { active, cleared } = splitAlarms(alarms);
+    els.alarms.dataset.quiet = String(active.length === 0); // only cleared ones: one line until Review opens it
+    els.alarms.dataset.tone = cardTone(active); // toned by its worst active alarm, as the room page's card
+    els.alarmList.hidden = active.length === 0;
+    fold.paint(cleared);
+    els.alarmList.replaceChildren(...active.map((a) => {
       const li = node('li', 'ov-alarm');
       if (isDimmed(a)) li.classList.add('acked'); // quieter, and the word says why (not the colour alone)
       const room = node('a', 'ov-alarm-room', a.roomName);
       room.href = `#/rooms/${a.roomId}`;
       const raised = alarmTimeText(a.raisedAt, now);
       const when = node('span', 'ov-alarm-time', a.clearedAt !== null ? `${raised} · Cleared ${alarmTimeText(a.clearedAt, now)}`
-        : isDimmed(a) ? `${raised} · Acknowledged` : raised);
+        : isDimmed(a) ? `${raised} · ${ackedWords(a)}` : raised);
       // the text keeps the value that raised the alarm; the value now goes beside it
       const text = node('span', 'ov-alarm-text', a.text);
       const valueNow = nowText(a, readings.get(a.roomId));
       if (valueNow) text.append(node('span', 'ov-alarm-now', ` · ${valueNow}`));
+      const held = heldText(a.held); // a gateway or relay module alarm: what waits under it
+      if (held) text.append(node('span', 'ov-alarm-held', held));
       li.append(levelChip(a.level), room, text, when);
       if (a.ackedAt === null) {
-        const ack = node('button', '', 'Acknowledge');
+        const ack = node('button', '', 'Acknowledge'); // a worker acknowledges too (spec 2026-11-12-alarms-triage-design.md 7)
         ack.type = 'button';
-        ack.dataset.ownerOnly = ''; // ---- Login ---- a worker reads the alarms; the owner acknowledges them
         ack.dataset.ack = a.id;
+        ack.setAttribute('aria-label', ackLabel(a));
         li.append(ack);
       }
       return li;
     }));
+    if (ackOrigin && !els.alarms.contains(document.activeElement)) {
+      focusAfterAck(els.alarms, ackOrigin, () => container.querySelector('.page-title')?.focus());
+    }
+    ackOrigin = null;
   }
 
-  els.alarmList.addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-ack]');
+  els.alarms.addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-ack], button[data-ack-ids]');
     if (!button) return;
     button.disabled = true;
+    ackOrigin = originOf(button, els.alarms);
     try {
-      await request('POST', `/api/alarms/${button.dataset.ack}/ack`);
+      if (button.dataset.ackIds) await request('POST', '/api/alarms/ack', { ids: button.dataset.ackIds.split(',').map(Number) });
+      else await request('POST', `/api/alarms/${button.dataset.ack}/ack`);
       window.dispatchEvent(new Event(ALARMS_CHANGED)); // the nav badge counts again at once
     } catch (err) {
       if (!alive()) return;

@@ -49,9 +49,10 @@ let live = null;
 const events = createEvents();
 watchAlarms(db, events);
 const { pollSeconds } = readSettings(db);
-const afterCycle = async (cycleStart) => {
+const afterCycle = async (cycleStart, gatewayHealth) => {
   try {
-    await controller.run(cycleStart);
+    // each gateway's address, the farm's too (null in the poller's health), for a gateway alarm to keep
+    await controller.run(cycleStart, gatewayHealth?.map((g) => ({ ...g, address: g.gateway ?? gatewayText })));
   } finally {
     live.afterCycle(); // the pages hear of the readings even when the controller failed
   }

@@ -12,6 +12,7 @@ import { wOf, dewOf } from '../device/sim-model.js';
 import { lightsNow, localAt } from '../web/light-math.js';
 import { humidifierPoints } from '../web/band-math.js';
 import { localDate } from './task-rules.js';
+import { roomLimits } from '../web/crops.js';
 
 export const DEFAULTS = {
   auto: false, co2Low: 600, co2High: 750, tLow: 21, tHigh: 23, rhLow: 85, rhHigh: 95, humidifierDuringExchange: false, acFan: 'auto',
@@ -531,7 +532,7 @@ export function createController({ db, machines, now = Date.now, log = console.e
 
   const stillAuto = (roomId) => Boolean(db.getControl(roomId)?.auto);
 
-  async function runRoom(room, cycleStart, prevStart) {
+  async function runRoom(room, cycleStart, prevStart, held = false) {
     let c = db.getControl(room.id);
     if (!c) return;
     const at = now();
@@ -673,7 +674,11 @@ export function createController({ db, machines, now = Date.now, log = console.e
     // landed while an earlier room of this run was sending (listRooms was read once, before them).
     try {
       const filter = filterInput(db, db.getRoom(room.id) ?? room, at, view);
-      alarms.evaluate(room, { readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone, filter });
+      const crops = program.crops.length > 0;
+      alarms.evaluate(room, {
+        readings: good, bands: c, faults, clear, cappedInRow, machines: view, blocksDone, filter,
+        limits: crops ? roomLimits(program.crops, c) : null, stage: crops ? program.stage : null, held,
+      });
     } catch (err) {
       log(err);
     }
@@ -732,14 +737,21 @@ export function createController({ db, machines, now = Date.now, log = console.e
       return get(roomId);
     },
 
-    // Called after each poll cycle; cycleStart is the time that cycle began. Every room gets its sensors checked and
-    // its alarms evaluated; only rooms with auto on are controlled.
-    async run(cycleStart) {
+    // Called after each poll cycle; cycleStart is the time that cycle began, gateways the poller's health of each gateway
+    // (spec 2026-11-12-alarms-triage-design.md 4; missing: not known). The gateway alarms first; then every room gets its
+    // sensors checked and its alarms evaluated (held behind a down gateway); only rooms with auto on are controlled.
+    async run(cycleStart, gateways = null) {
       const prevStart = lastStart;
       lastStart = cycleStart;
+      let held = new Set();
+      try {
+        if (gateways) held = alarms.evaluateGateways(gateways);
+      } catch (err) {
+        log(err);
+      }
       for (const room of db.listRooms()) {
         try {
-          await runRoom(room, cycleStart, prevStart);
+          await runRoom(room, cycleStart, prevStart, held.has(room.id));
         } catch (err) {
           log(err);
         }

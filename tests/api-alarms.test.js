@@ -45,18 +45,19 @@ test('GET /api/alarms: the current alarms of every room, critical first, then ne
   assert.deepEqual(r.body.map((x) => x.id), [crit, newer, warn]);
   assert.deepEqual(r.body[0], {
     id: crit, roomId: b, roomName: 'Room B', key: 'co2Safety', level: 'critical',
-    text: 'CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)', raisedAt: 900, clearedAt: null, ackedAt: null,
+    text: 'CO₂ 1,300 ppm: at or above the safety level (1,250 ppm)', raisedAt: 900, clearedAt: null, ackedAt: null, ackedBy: null,
   });
 });
 
 test('GET /api/alarms leaves out cleared and acknowledged alarms but keeps cleared or acknowledged ones', async () => {
-  const x = db.raiseAlarm(a, 'tHigh', 'warning', 'x', 1);
-  const y = db.raiseAlarm(a, 'tLow', 'warning', 'y', 2);
-  const z = db.raiseAlarm(a, 'rhLow', 'warning', 'z', 3);
-  db.clearAlarm(a, 'tHigh', 10);
-  db.clearAlarm(a, 'tLow', 10);
-  db.ackAlarm(y, 11);
-  db.ackAlarm(z, 11);
+  const t = Date.now(); // a cleared alarm waits 12 h for review (spec 2026-11-12-alarms-triage-design.md 5)
+  const x = db.raiseAlarm(a, 'tHigh', 'warning', 'x', t - 30);
+  const y = db.raiseAlarm(a, 'tLow', 'warning', 'y', t - 20);
+  const z = db.raiseAlarm(a, 'rhLow', 'warning', 'z', t - 10);
+  db.clearAlarm(a, 'tHigh', t - 5);
+  db.clearAlarm(a, 'tLow', t - 5);
+  db.ackAlarm(y, t - 4);
+  db.ackAlarm(z, t - 4);
   assert.deepEqual((await call('GET', '/api/alarms')).body.map((r) => r.id), [z, x]);
 });
 
@@ -110,4 +111,45 @@ test('deleting a room deletes its alarms', async () => {
   db.raiseAlarm(a, 'tHigh', 'warning', 'x', 1);
   assert.equal((await call('DELETE', `/api/rooms/${a}`)).status, 204);
   assert.deepEqual((await call('GET', '/api/alarms')).body, []);
+});
+
+// ---- Alarms triage (spec 2026-11-12-alarms-triage-design.md 4, 5, 7) ----
+test('POST /api/alarms/ack acknowledges a group: the count of new ones; a bad list is 400', async () => {
+  const x = db.raiseAlarm(a, 'machine.intake', 'serious', 'x', Date.now());
+  const y = db.raiseAlarm(a, 'machine.exhaust', 'serious', 'y', Date.now());
+  db.ackAlarm(y, Date.now());
+  const post = async (body) => {
+    const res = await fetch(`${base}/api/alarms/ack`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: res.status, body: await res.json() };
+  };
+  assert.deepEqual(await post({ ids: [x, y, 99999] }), { status: 200, body: { acked: 1 } });
+  assert.notEqual(db.getAlarm(x).ackedAt, null);
+  for (const bad of [{}, { ids: [] }, { ids: ['1'] }, { ids: [0] }, { ids: Array.from({ length: 501 }, (_, i) => i + 1) }]) {
+    assert.deepEqual(await post(bad), { status: 400, body: { error: 'ids must be a list of 1 to 500 alarm ids', field: 'ids' } });
+  }
+  assert.equal((await call('GET', '/api/alarms/ack')).status, 404);
+});
+
+test('a gateway alarm holds the rooms behind the gateway; the other rooms behind it show it too', async () => {
+  for (const room of db.listRooms()) db.deleteRoom(room.id);
+  const wired = { length: 6, width: 2.4, height: 2.4 };
+  const one = db.createRoom({ ...wired, name: 'Room 1', trhAddress: 1, relayAddress: 3 }).id;
+  const two = db.createRoom({ ...wired, name: 'Room 2', trhAddress: 11, co2Address: 12, acAddress: 14 }).id;
+  const own = db.createRoom({ ...wired, name: 'Container 1', trhAddress: 1, gateway: '127.0.0.1:1512' }).id;
+  const g = db.raiseAlarm(one, 'gateway', 'serious', "The farm's gateway not answering", Date.now(), { gateway: '127.0.0.1:1502' });
+  const r = db.raiseAlarm(own, 'relayNoAnswer', 'serious', 'Relay module', Date.now());
+  const list = (await call('GET', '/api/alarms')).body;
+  assert.deepEqual(list.find((x) => x.id === g).held, [
+    { roomId: one, roomName: 'Room 1', machines: ['Intake fan', 'Exhaust fan', 'Circulation fan', 'Humidifier'], sensors: ['T/RH probe'] },
+    { roomId: two, roomName: 'Room 2', machines: ['Aircon'], sensors: ['T/RH probe', 'CO₂ sensor'] },
+  ]);
+  assert.deepEqual(list.find((x) => x.id === r).held, []); // Container 1 has no relay module wired now
+  assert.deepEqual((await call('GET', `/api/rooms/${two}/alarms`)).body.current.map((x) => [x.id, x.roomName]), [[g, 'Room 1']]);
+  assert.deepEqual((await call('GET', `/api/rooms/${own}/alarms`)).body.current.map((x) => x.id), [r]);
+  // the address is History's (and the current one's field), not the text's
+  assert.equal(list.find((x) => x.id === g).gatewayAddress, '127.0.0.1:1502');
+  db.raiseAlarm(own, 'gateway', 'serious', "Container 1's gateway not answering", Date.now(), { gateway: '127.0.0.1:1512' });
+  assert.equal((await call('GET', `/api/rooms/${own}/alarms`)).body.history.find((x) => x.key === 'gateway').gatewayAddress, '127.0.0.1:1512');
+  const overview = (await call('GET', '/api/overview')).body;
+  assert.equal(overview.alarms.find((x) => x.id === g).held.length, 2);
 });

@@ -22,12 +22,15 @@ const PANELS = {
   setup: ['data-control', 'data-equipment', 'data-filter', 'data-profile', 'data-delete'],
 };
 
-test('the tabs under the title; the alarms before the panels (moved into the Now tab\'s side column while it shows)', () => {
+// spec 2026-11-12-alarms-triage-design.md 6: the strip before the panels (off Now), the Alarms card first in the Now panel,
+// across its two columns
+test('the tabs under the title; the alarm strip before the panels, the Alarms card first in the Now panel', () => {
   const head = template.indexOf('class="page-head room-head"'), bar = template.indexOf('data-tabs'), main = template.indexOf('class="room-main"');
-  const alarms = template.indexOf('data-alarms'), panel = template.indexOf('data-panel=');
-  assert.ok(head >= 0 && bar > head && main > bar && alarms > main && panel > alarms, 'the head, the tab bar, then the content: alarms, then the panels');
-  assert.match(page, /if \(tab === 'now'\) \{ if \(alarmsNode\.parentNode !== nowSide\) nowSide\.prepend\(alarmsNode\); \}/);
-  assert.match(page, /else if \(alarmsNode\.parentNode !== main\) main\.prepend\(alarmsNode\);/);
+  const strip = template.indexOf('data-alarm-strip'), now = template.indexOf('data-panel="now"'), alarms = template.indexOf('data-alarms');
+  const readings = template.indexOf('class="now-main"');
+  assert.ok(head >= 0 && bar > head && main > bar && strip > main && now > strip && alarms > now && readings > alarms,
+    'the head, the tab bar, then the strip, then the Now panel with the alarms before the readings');
+  assert.match(page, /alarmStrip\?\.show\(tab !== 'now'\);/);
   const css = readFileSync(new URL('../web/styles.css', import.meta.url), 'utf8');
   assert.doesNotMatch(css, /\.room-layout/, 'no side bar any more');
   assert.match(css, /\.room-tabs a\[aria-current="page"\] \{ color: var\(--ink\); border-bottom-color: var\(--accent\); \}/);

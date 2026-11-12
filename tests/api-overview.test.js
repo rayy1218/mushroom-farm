@@ -157,7 +157,7 @@ test('a failing sensor shows its status word and the last good value', async () 
   assert.deepEqual(r.co2, { status: 'offline', co2: 650, at: now - 30_000 });
 });
 
-test('alarm counts count active alarms, the level is the highest; the list holds current alarms, critical first then newest', async () => {
+test('alarm counts count active alarms, the level is the highest; the list holds current alarms, active first, critical first then newest', async () => {
   reset();
   const a = db.createRoom(fields);
   const b = db.createRoom({ ...fields, name: 'B' });
@@ -169,19 +169,19 @@ test('alarm counts count active alarms, the level is the highest; the list holds
   alarm(b.id, 'rhLow', 'warning', { raisedAt: t - 4000, clearedAt: t - 3000, ackedAt: t - 2500 }); // done: history only
   const { rooms, alarms } = await overview();
   assert.deepEqual(rooms.map((r) => r.alarms), [{ count: 2, level: 'serious' }, { count: 1, level: 'critical' }]);
-  assert.deepEqual(alarms.map((x) => x.id), [c, cleared, s, w]);
+  assert.deepEqual(alarms.map((x) => x.id), [c, s, w, cleared]);
   assert.deepEqual(alarms[0], {
     id: c, roomId: b.id, roomName: 'B', key: 'co2Safety', level: 'critical', text: 'co2Safety text',
-    raisedAt: t - 5000, clearedAt: null, ackedAt: null,
+    raisedAt: t - 5000, clearedAt: null, ackedAt: null, ackedBy: null,
   });
 });
 
-test('the alarm list has at most 10 entries', async () => {
+test('the alarm list holds every active alarm, so the count and the rows agree (spec 2026-11-12-alarms-triage-design.md 5)', async () => {
   reset();
   const a = db.createRoom(fields);
   for (let i = 0; i < 12; i++) alarm(a.id, `machine.k${i}`, 'serious', { raisedAt: 1000 + i });
   const { rooms, alarms } = await overview();
-  assert.equal(alarms.length, 10);
+  assert.equal(alarms.length, 12);
   assert.equal(alarms[0].raisedAt, 1011);
   assert.equal(rooms[0].alarms.count, 12);
 });

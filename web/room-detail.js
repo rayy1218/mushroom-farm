@@ -4,7 +4,8 @@
 // switches), History (the charts, electricity and water, the machine timeline, the energy and water card), Crop, Tasks (the
 // day's stage tasks, upkeep, long-term tasks and the log), Harvest (this run's figures and harvests, the past runs),
 // Simulations and Setup (the bands and automatic control, the sensors and the intake filter, the equipment cards, the
-// room's name and size and Delete room). The alarms sit in the Now tab's side column, above the panel on the other tabs.
+// room's name and size and Delete room). The alarms span the Now tab above the readings (under them on a phone); the other tabs
+// have one line instead, to Now (spec 2026-11-12-alarms-triage-design.md 6).
 // Every tab is loaded and kept up to date; a tab change only shows and hides panels.
 // Refreshes every reading interval (2–30 s; 5 s when the settings cannot be read) while shown.
 
@@ -17,7 +18,7 @@ import { cardOf } from './equipment-cards.js';
 import { roomSubLine } from './room-fields.js';
 import { createMachines } from './machines.js';
 import { createControl } from './control.js';
-import { createAlarmsCard } from './alarms.js';
+import { createAlarmsCard, createAlarmStrip } from './alarms.js';
 import { createCropCard } from './crop-card.js';
 import { createSimulationsCard } from './sim-card.js';
 import { createTasksCard } from './tasks-card.js';
@@ -87,8 +88,9 @@ const TEMPLATE = `
   <div data-body hidden>
     <nav class="room-tabs" data-tabs aria-label="Room sections"></nav>
     <div class="room-main">
-      <section data-alarms hidden></section>
+      <a data-alarm-strip hidden></a>
       <div class="now" data-panel="now">
+        <section data-alarms hidden></section>
         <section class="card now-bare" data-bare hidden>
           <h2>Nothing wired yet</h2>
           <p data-bare-text>Give the room's T/RH probe, CO₂ sensor and relay module their addresses on the Setup tab. The readings, the drawing and the machines show here once they answer.</p>
@@ -217,10 +219,9 @@ export function mount(container, { id, tab = 'now', week = null }) {
     tasksDot.dataset.level = dot.level;
     tasksLink.setAttribute('aria-label', `Tasks: ${dot.label}`);
   }
-  // The alarms: in the Now tab's side column, above the panel on the other tabs.
-  const alarmsNode = q('[data-alarms]');
-  const nowSide = q('[data-now-side]');
-  const main = q('.room-main');
+  // The alarms: the card on the Now tab, the strip on the others (made with the card, on the first render).
+  let alarmStrip = null;
+  let focusAlarms = false; // the strip was used: the card takes the focus once Now shows
   const roomHead = q('.room-head'); // a phone hides the size line on the Now tab
   function setTab(next) {
     tab = next;
@@ -233,8 +234,11 @@ export function mount(container, { id, tab = 'now', week = null }) {
     }
     for (const panel of container.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== tab;
     if (tab === 'tasks') tasksCard?.show(); // the grid reads its week the first time the tab shows
-    if (tab === 'now') { if (alarmsNode.parentNode !== nowSide) nowSide.prepend(alarmsNode); }
-    else if (alarmsNode.parentNode !== main) main.prepend(alarmsNode);
+    alarmStrip?.show(tab !== 'now');
+    if (tab === 'now' && focusAlarms) {
+      focusAlarms = false;
+      alarmsCard?.focus();
+    }
     if (tab === 'setup' && pendingField) {
       container.querySelector(cardOf(pendingField)?.key === 'filter' ? '#setup-filter' : '#setup-equipment').open = true; // folded on a phone
       equipmentTab?.focus(pendingField);
@@ -356,8 +360,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
         request('GET', `/api/rooms/${id}/sensors`),
         // The machines are optional: a failing or missing route must not take the sensors down.
         request('GET', `/api/rooms/${id}/machines`).catch(() => null),
-        // optional in the same way; ---- Login ---- the control settings are the owner's (a worker's card stays hidden)
-        isOwner() ? request('GET', `/api/rooms/${id}/control`).catch(() => null) : null,
+        // optional in the same way; a worker reads them for the bands (spec 2026-11-12-alarms-triage-design.md 7), the card is the owner's
+        request('GET', `/api/rooms/${id}/control`).catch(() => null),
         request('GET', '/api/settings').catch(() => null), // a failure keeps the 5 s refresh
         request('GET', `/api/rooms/${id}/alarms`).catch(() => null), // optional: alarms
         request('GET', '/api/outdoor').catch(() => null), // optional: the outdoor sensor
@@ -590,12 +594,18 @@ export function mount(container, { id, tab = 'now', week = null }) {
     // (online sensors only; the filter's pressure from its last reading with the intake on).
     const online = (s, field) => (s?.status === 'online' ? s.lastOk?.[field] ?? null : null);
     alarmsCard.update(alarmData, { t: online(sensors.trh, 't'), rh: online(sensors.trh, 'rh'), co2: online(sensors.co2, 'co2'), pa: filterNow?.pa ?? null });
+    alarmStrip.update(alarmData);
     // The drawing keeps only replies a card painted: a stale one (a command began since its fetch) must not show. The aircon
     // panel shows in Manual once a good reply came (paintDrawing); later failures keep the last good data.
     if (machineData) {
       if (machines.update(machineData, token ?? machines.token())) lastMachines = machineData;
     }
-    if (controlData) {
+    if (controlData && !isOwner()) { // ---- a worker: the bands and Auto or Manual, read only; no Automatic control card
+      bands = controlData;
+      lastControl = controlData;
+      const bandKey = BAND_KEYS.map((k) => controlData[k]).join();
+      if (bandKey !== shownBandKey) { shownBandKey = bandKey; cropCard?.bandsChanged(); }
+    } else if (controlData) {
       const bandKey = BAND_KEYS.map((k) => controlData[k]).join();
       bands = controlData;
       if (bandKey !== shownBandKey) { shownBandKey = bandKey; cropCard?.bandsChanged(); }
@@ -635,16 +645,17 @@ export function mount(container, { id, tab = 'now', week = null }) {
       CO2: trace('CO2', p.CO2, c?.co2Low, c?.co2High),
     };
     const trends = { T: trendOf(p.T, TREND_MS), RH: trendOf(p.RH, TREND_MS), CO2: trendOf(p.CO2, TREND_MS) }; // near an edge: rising or falling
-    const switches = { // Manual: a switch on each relay machine's row
-      manual: Boolean(lastControl) && !lastControl.auto,
+    const inManual = Boolean(lastControl) && !lastControl.auto;
+    const switches = { // Manual: a switch on each relay machine's row (the owner's; a worker reads the control settings for the bands)
+      manual: inManual && isOwner(),
       state: (key) => (RELAY_KEY[key] ? machines?.switchState(RELAY_KEY[key]) ?? null : null),
     };
     els.machinesHost.hidden = !switches.manual || !lastMachines || room.acAddress == null; // the aircon's own panel, in Manual with an aircon only
     roomCardUi.paint(roomCard({ draw, control: lastControl, filter, crop: cropData, now, trends, points: p }), draw, traces, switches);
     // Manual on every tab, by the room's name, with the time it began when the server knows it (a link to the switch).
     const controllable = room.relayAddress != null || room.acAddress != null; // a room with nothing to switch is not "in Manual"
-    els.manualChip.hidden = !switches.manual || !controllable;
-    if (switches.manual && controllable) {
+    els.manualChip.hidden = !inManual || !controllable;
+    if (inManual && controllable) {
       const t = Number.isFinite(lastControl.autoChangedAt) ? new Date(lastControl.autoChangedAt) : null;
       const text = t ? `Manual since ${manualSince(t, now)}` : 'Manual';
       if (els.manualChip.textContent !== text) els.manualChip.textContent = text;
@@ -689,6 +700,8 @@ export function mount(container, { id, tab = 'now', week = null }) {
 
   // ---- Alarms card (spec 2026-10-19-safety-and-history-design.md section 6) ----
   function makeAlarms() {
+    alarmStrip = createAlarmStrip(q('[data-alarm-strip]'), { href: roomHash(id, 'now'), onOpen: () => { focusAlarms = true; } });
+    alarmStrip.show(tab !== 'now');
     alarmsCard = createAlarmsCard(els.alarmsHost, {
       roomId: id,
       onChange: () => { if (alive()) load(); },
