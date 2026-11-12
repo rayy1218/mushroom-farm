@@ -27,7 +27,7 @@ function setup(t, { stock = false } = {}) {
     db.setProgram(id, { ...db.getProgram(id), crops }, { change: 'start', at: NOW - 5 * DAY });
     return id;
   }
-  return { db, batches, told, room, tick: (ms) => { clock += ms; }, item: inventory?.item, buy: inventory?.buy, archive: inventory?.archive, drop: inventory?.drop, move: inventory?.move };
+  return { db, batches, told, room, tick: (ms) => { clock += ms; }, item: inventory?.item, buy: inventory?.buy, archive: inventory?.archive, drop: inventory?.drop, move: inventory?.move, reprice: inventory?.reprice };
 }
 
 const status = (fn) => {
@@ -238,12 +238,12 @@ test('sterilising loads: record, by time, edit, delete; not before the mix; bags
   assert.equal(status(() => batches.editLoad(l1.id, { bags: 1 }))[0], 404, "a batch's loads go with it");
 });
 
-test("the made price per block and the stock moves, from Inventory's items and purchase prices", (t) => {
+test("the made price per block and the stock moves, from what the draws took of Inventory's lots (Money truth 4)", (t) => {
   const { db, batches, room, item, buy } = setup(t, { stock: true });
   const sawdust = item('Sawdust');
   const bran = item('Rice bran');
   const spawn = item('Grey oyster spawn', 'spawn');
-  buy(sawdust, 0.35);
+  buy(sawdust, 0.35, 1000, 1000);
   buy(bran, 1.2);
   const b = made(batches, { materials: [{ item: 'sawdust', qty: 287, unit: 'kg', stockItemId: sawdust }, { item: 'bran', qty: 73.6, unit: 'kg', stockItemId: bran }] });
   assert.equal(b.pricePerBlock, 0.4719, '(287 × 0.35 + 73.6 × 1.2) ÷ 400 blocks made');
@@ -255,16 +255,19 @@ test("the made price per block and the stock moves, from Inventory's items and p
     [bran, NOW - 2 * DAY, -73.6, null, 'mixed'],
   ]);
   const i = batches.edit(b.id, { inoculatedAt: NOW - DAY, spawn: { qty: 12, unit: 'kg', stockItemId: spawn } });
-  assert.equal(i.pricePerBlock, null, 'the spawn has no purchase price yet');
+  assert.deepEqual([i.pricePerBlock, i.priceMissing], [0.4719, ['Grey oyster spawn']], 'the spawn has no lot yet: the rest priced, the spawn named');
   assert.deepEqual(batches.detail(b.id).materials.map((m) => [m.itemName, m.unitCost]), [['Sawdust', 0.35], ['Rice bran', 1.2], ['Grey oyster spawn', null]]);
   buy(spawn, 8);
-  assert.equal(batches.detail(b.id).pricePerBlock, null, 'a later purchase counts at the next write');
-  assert.equal(batches.edit(b.id, { note: 'spawn bought' }).pricePerBlock, 0.7119, '+ 12 × 8, ÷ 400');
+  assert.deepEqual([batches.detail(b.id).pricePerBlock, batches.detail(b.id).priceMissing], [0.7119, []], 'a purchase entered later prices the draw at once: + 12 × 8, ÷ 400');
+  assert.equal(batches.edit(b.id, { note: 'spawn bought' }).pricePerBlock, 0.7119, 'and is stored at the next write');
+  assert.equal(db.batches.get(b.id).pricePerBlock, 0.7119);
+  assert.equal(db.batches.moves([b.id])[0].unitCost, 0.7119, "the blocks' receipt at the price");
   assert.deepEqual(moves().at(-1), [spawn, NOW - DAY, -12, null, 'spawn'], 'the spawn out at the inoculation');
   assert.deepEqual(batches.list().batches[0].spawn, { qty: 12, unit: 'kg', unitCost: 8 }, "the 4-2 sheet's price per unit");
   const p = batches.place(b.id, { roomId: room(), blocks: 100 });
   assert.equal(p.pricePerBlock, 0.7119, "a part has the delivery's price: the blocks made, not the row's");
   assert.deepEqual(db.batches.moves([p.id]).map((m) => m.qty), [-100], 'into a room');
+  buy(bran, 1.2, 1000, 5000);
   assert.deepEqual(status(() => made(batches, { blocks: 1, materials: [{ item: 'sawdust', qty: 5000, unit: 'kg', stockItemId: bran }] })),
     [400, 'materials', 'The materials come to RM 6,000 a block, over RM 1,000']);
   assert.deepEqual(status(() => made(batches, { materials: [{ item: 'sawdust', qty: 1, unit: 'kg', stockItemId: 999 }] }))?.slice(0, 2), [400, 'materials'], 'no such item');
@@ -322,7 +325,7 @@ test("a material linked to an Inventory item is counted in the item's unit; arch
 test('the made price over RM 1,000 a block is refused on any write that works it out, not left to the column', (t) => {
   const { batches, room, item, buy } = setup(t, { stock: true });
   const gold = item('Gold dust');
-  buy(gold, 900);
+  buy(gold, 900, 1000, 3000);
   const b = made(batches, { blocks: 1000, materials: [{ item: 'sawdust', qty: 1000, unit: 'kg', stockItemId: gold }] });
   assert.equal(b.pricePerBlock, 900);
   const over = [400, 'materials', 'The materials come to RM 1,800 a block, over RM 1,000'];
@@ -475,18 +478,18 @@ test('the archived recipe keeps its name for the check; blocks below the lost; p
 function priced(t) {
   const s = setup(t, { stock: true });
   const gold = s.item('Gold dust');
-  s.buy(gold, 1);
+  s.buy(gold, 1, 1000, 1000);
   const b = made(s.batches, { materials: [{ item: 'sawdust', qty: 1000, unit: 'kg', stockItemId: gold }] });
   s.batches.edit(b.id, { inoculatedAt: NOW - DAY });
   return { ...s, gold, b };
 }
 
 test('the RM 1,000 cap refuses only the writes that send the amounts; any other write stores the price unknown, with priceOver', (t) => {
-  const { batches, room, buy, gold, b } = priced(t);
+  const { batches, room, reprice, gold, b } = priced(t);
   assert.equal(b.pricePerBlock, 2.5);
   const p = batches.place(b.id, { roomId: room(), blocks: 100 });
   const part = batches.place(b.id, { roomId: room(), blocks: 50 });
-  buy(gold, 900); // a later purchase: 900 × 1000 ÷ 400 = RM 2,250 a block
+  reprice(gold, 900); // the purchase's price edited in Inventory: 900 × 1000 ÷ 400 = RM 2,250 a block
   const check = batches.addCheck(b.id, { lost: 1, cause: 'green', worker: 'Ali', at: NOW - DAY });
   assert.ok(check);
   let v = batches.detail(b.id);
@@ -503,7 +506,7 @@ test('the RM 1,000 cap refuses only the writes that send the amounts; any other 
   assert.deepEqual(status(() => batches.edit(b.id, { materials: [{ item: 'sawdust', qty: 1000, unit: 'kg', stockItemId: gold }] }))?.slice(0, 2), [400, 'materials']);
   assert.deepEqual(status(() => batches.edit(b.id, { blocks: 300 }))?.slice(0, 2), [400, 'materials']);
   assert.deepEqual(status(() => batches.edit(b.id, { spawn: null, note: 'x' }))?.slice(0, 2), [400, 'materials'], 'spawn sent counts');
-  buy(gold, 1);
+  reprice(gold, 1);
   v = batches.edit(b.id, { note: 'price back' });
   assert.deepEqual([v.pricePerBlock > 0, v.priceOver], [true, false], 'the price is worked out again when it is fine');
 });
@@ -511,9 +514,9 @@ test('the RM 1,000 cap refuses only the writes that send the amounts; any other 
 test('the cap message shows 4 decimals when two would round to RM 1,000', (t) => {
   const { batches, item, buy } = setup(t, { stock: true });
   const gold = item('Gold dust');
-  buy(gold, 1);
-  assert.deepEqual(status(() => made(batches, { blocks: 1, materials: [{ item: 'sawdust', qty: 1000.004, unit: 'kg', stockItemId: gold }] })),
-    [400, 'materials', 'The materials come to RM 1,000.0040 a block, over RM 1,000']);
+  buy(gold, 1, 1000, 4000);
+  assert.deepEqual(status(() => made(batches, { blocks: 3, materials: [{ item: 'sawdust', qty: 3000.01, unit: 'kg', stockItemId: gold }] })),
+    [400, 'materials', 'The materials come to RM 1,000.0033 a block, over RM 1,000'], 'RM 3,000.01 ÷ 3');
 });
 
 test('a mix refused by the cap leaves no row, no line and no stock move', (t) => {
@@ -530,13 +533,13 @@ test('an Inventory item that is gone: the line gives no move and the price is un
   const { db, batches, item, buy, drop } = setup(t, { stock: true });
   const sawdust = item('Sawdust');
   const bran = item('Bran');
-  buy(sawdust, 0.35);
+  buy(sawdust, 0.35, 1000, 1000);
   buy(bran, 1.2);
   const b = made(batches, { materials: [{ item: 'sawdust', qty: 287, unit: 'kg', stockItemId: sawdust }, { item: 'bran', qty: 73.6, unit: 'kg', stockItemId: bran }] });
   assert.equal(b.pricePerBlock, 0.4719);
   drop(bran);
   const n = batches.edit(b.id, { note: 'bran item deleted' });
-  assert.equal(n.pricePerBlock, null, 'unknown');
+  assert.deepEqual([n.pricePerBlock, n.priceMissing], [0.2511, ['Bran']], 'the sawdust alone, 287 × 0.35 ÷ 400; the bran named');
   assert.deepEqual(db.batches.moves([b.id]).map((m) => [m.itemId === sawdust, m.qty]), [[false, 400], [true, -287]], 'no move for the gone item');
   assert.ok(batches.addCheck(b.id, { lost: 1, cause: 'green', worker: 'Ali', at: NOW - DAY }));
   assert.equal(batches.detail(b.id).materials.find((m) => m.item === 'bran').itemName, null);
@@ -545,7 +548,7 @@ test('an Inventory item that is gone: the line gives no move and the price is un
 test('deleting a part raises the made price per block: the blocks made are the delivery\'s total', (t) => {
   const { batches, room, item, buy } = setup(t, { stock: true });
   const sawdust = item('Sawdust');
-  buy(sawdust, 0.35);
+  buy(sawdust, 0.35, 1000, 1000);
   const b = made(batches, { blocks: 400, materials: [{ item: 'sawdust', qty: 1000, unit: 'kg', stockItemId: sawdust }] });
   batches.edit(b.id, { inoculatedAt: NOW - DAY });
   assert.equal(b.pricePerBlock, 0.875);
@@ -599,4 +602,49 @@ test('the blocks item name: a taken "(batches)" goes on to "(batches 2)", "(batc
   item('King oyster blocks (batches)', 'other');
   item('King oyster blocks (batches 2)', 'other');
   assert.equal(nameOf(db.batches.blocksItem('King oyster blocks')), 'King oyster blocks (batches 3)');
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 4) ----
+test("a made batch: RM 1,340.90 of materials at their lots, RM 2.7935 a block, the plastic bags named", (t) => {
+  const { db, batches, item, buy } = setup(t, { stock: true });
+  const ids = {};
+  for (const [name, kind, unit, price, qty] of [['Sawdust', 'other', 'kg', 1.4, 1200], ['Rice bran', 'other', 'kg', 2.1, 400], ['Lime', 'other', 'kg', 0.9, 80],
+    ['Gypsum', 'other', 'kg', 1.2, 80], ['Grain spawn', 'spawn', 'kg', 11, 300]]) {
+    ids[name] = item(name, kind, unit);
+    buy(ids[name], price, 1000, qty);
+  }
+  const bags = item('Plastic bags', 'bags', 'pcs'); // never bought
+  const b = batches.mix({
+    crop: 'oyster', blocks: 480, mixedAt: NOW - 2 * DAY, inoculatedAt: NOW - 2 * DAY,
+    materials: [{ item: 'sawdust', qty: 360.5, unit: 'kg', stockItemId: ids.Sawdust }, { item: 'bran', qty: 92.4, unit: 'kg', stockItemId: ids['Rice bran'] },
+      { item: 'lime', qty: 4.6, unit: 'kg', stockItemId: ids.Lime }, { item: 'gypsum', qty: 4.6, unit: 'kg', stockItemId: ids.Gypsum },
+      { item: 'bags', qty: 480, unit: 'pcs', stockItemId: bags }],
+    spawn: { qty: 57.5, unit: 'kg', stockItemId: ids['Grain spawn'] },
+  });
+  assert.deepEqual([b.pricePerBlock, b.priceMissing, b.priceOver], [2.7935, ['Plastic bags'], false], 'RM 1,340.90 ÷ 480');
+  const receipt = () => db.batches.moves([b.id]).find((m) => m.qty === 480).unitCost;
+  assert.equal(receipt(), null, 'Inventory does not value the blocks at a part price');
+  buy(bags, 0.05, 1000, 1000); // the bags' purchase entered later, dated before the mix
+  assert.deepEqual([batches.detail(b.id).pricePerBlock, batches.detail(b.id).priceMissing], [2.8435, []], '+ 480 × RM 0.05');
+  batches.edit(b.id, { note: 'bags bought' });
+  assert.equal(receipt(), 2.8435, 'whole: the receipt at the price, from the next write');
+});
+
+test('a made delivery\'s block cost is its materials split over its rows, the figure Costs charges; partial when a material has no price', (t) => {
+  const { batches, item, buy, room } = setup(t, { stock: true });
+  const ids = {};
+  for (const [name, price, qty] of [['Sawdust', 1.4, 1200], ['Rice bran', 2.1, 400], ['Lime', 0.9, 80], ['Gypsum', 1.2, 80], ['Grain spawn', 11, 300]]) {
+    ids[name] = item(name, name === 'Grain spawn' ? 'spawn' : 'other');
+    buy(ids[name], price, 1000, qty);
+  }
+  const bags = item('Plastic bags', 'bags', 'pcs');
+  const b = batches.mix({
+    crop: 'oyster', blocks: 480, mixedAt: NOW - 2 * DAY, inoculatedAt: NOW - 2 * DAY,
+    materials: [['sawdust', 'Sawdust', 360.5], ['bran', 'Rice bran', 92.4], ['lime', 'Lime', 4.6], ['gypsum', 'Gypsum', 4.6]]
+      .map(([it, name, qty]) => ({ item: it, qty, unit: 'kg', stockItemId: ids[name] })).concat([{ item: 'bags', qty: 480, unit: 'pcs', stockItemId: bags }]),
+    spawn: { qty: 57.5, unit: 'kg', stockItemId: ids['Grain spawn'] },
+  });
+  const p = batches.place(b.id, { roomId: room([{ crop: 'oyster', blocks: 480 }]) });
+  const list = batches.list({ run: p.runId });
+  assert.deepEqual([list.blockCost, list.blockCostPartial], [1340.9, true], 'not 480 × 2.7935 = 1,340.88');
 });

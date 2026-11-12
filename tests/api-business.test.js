@@ -34,8 +34,8 @@ test('GET /api/business/summary: the month, last month, the needs, the open runs
   const { call, runId } = await app(t);
   const r = await call('GET', '/api/business/summary');
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.deepEqual(Object.keys(r.body), ['month', 'lastMonth', 'needs', 'runs', 'errors']);
-  assert.deepEqual(Object.keys(r.body.month), ['month', 'today', 'pending', 'tiles', 'repeating']);
+  assert.deepEqual(Object.keys(r.body), ['month', 'lastMonth', 'needs', 'runs', 'stock', 'errors']);
+  assert.deepEqual(Object.keys(r.body.month), ['month', 'today', 'pending', 'tiles', 'repeating', 'bought']);
   assert.deepEqual(r.body.needs, []);
   assert.deepEqual(r.body.runs.map((x) => [x.id, x.roomName]), [[runId, 'Container 1']]);
   assert.deepEqual(r.body.errors, {});

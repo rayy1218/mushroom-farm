@@ -106,3 +106,28 @@ test('compare: your container first, import selling your kg sold', () => {
   assert.equal(out[2].kind, 'trade');
   assert.equal(out[1].kind, 'grow');
 });
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 6.3 and 9) ----
+test('labour as people: Your container\'s share of the workers by its blocks; the minutes a block only its hours', () => {
+  const v = { ...VALUES, 'yours.workers': 1, 'yours.workerMonth': 1954.15 };
+  const x = inputsOf(v, 'yours', { otherBlocks: 2610 }); // 1,740 of 4,350 blocks: 40 %
+  assert.deepEqual([r2(x.labourShare), r2(x.labourMonth), r2(x.hoursThere)], [0.4, 781.66, 83.2]);
+  const g = grow(x);
+  assert.equal(r2(g.cost.labour), 781.66, 'not 1,259 blocks × 2.52 min × RM 10 an hour');
+  assert.deepEqual([r2(g.labourHours.needed), r2(g.labourHours.there)], [52.9, 83.2]);
+  assert.equal(inputsOf(v, 'yours').labourShare, 1, 'no other room: all of it');
+  assert.equal(grow(inputsOf(VALUES, 'yours')).labourHours, null, 'no workers figure: the minutes × the hourly cost, as before');
+  assert.equal(r2(grow(inputsOf(VALUES, 'highland')).cost.labour), 528.96, 'the other ways keep the minutes a block');
+});
+
+test('the register: the parts it has written off as it has them, the rest over the months; a part set over it: as before', () => {
+  const v = { ...VALUES, 'yours.cooling': 8340, 'yours.other': 1200 }; // container 18,500, humidifier 3,000, fans 3,300, racks 2,610 research
+  const reg = { total: 9540, writeOffMonth: 139 + 50, parts: { 'yours.cooling': 8340, 'yours.other': 1200 } };
+  const x = inputsOf(v, 'yours', { register: reg });
+  assert.equal(x.equipment, 36950);
+  assert.equal(r2(x.writeOffMonth), r2(189 + (36950 - 9540) / 60), 'the register\'s 189 + the research parts ÷ 60 months');
+  assert.equal(r2(grow(x).cost.writeOff), r2(x.writeOffMonth));
+  const changed = inputsOf({ ...v, 'yours.cooling': 9000 }, 'yours', { register: reg });
+  assert.equal(changed.writeOffMonth, undefined, 'a register part set over it: equipment ÷ the months, as before');
+  assert.equal(r2(grow(changed).cost.writeOff), r2(37610 / 60));
+});

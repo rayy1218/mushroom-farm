@@ -421,3 +421,25 @@ export const sheetRange = ({ from, to }) => `${longDayText(from)} – ${longDayT
 // The sheet's dates before its reply: the last `days` farm days up to today ('YYYY-MM-DD'), as the server reads them.
 export const sheetPeriod = (days, today) => ({ from: daysBefore(today, days - 1), to: today });
 export const sheetEmpty = (days) => `No chemical purchases or uses in the last ${days} days.`;
+
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 3): what the stock is worth. A worker's reply has no value:
+// these give null and nothing is drawn.
+// The page's line: { text: "Stock worth RM 4,647.10", note: "at what each lot cost · Plastic bags: no price" }, or null.
+export function worthLine(value) {
+  if (!value || !finite(value.total)) return null;
+  const n = value.unpriced?.length ?? 0;
+  const missing = n === 0 ? null : n === 1 ? `${value.unpriced[0]}: no price` : `${n} items have no price`;
+  return { text: `Stock worth ${rmText(value.total)}`, note: joined('at what each lot cost', missing) };
+}
+// An item's worth beside its stock: "RM 1,175.30", "no price", "RM 1,175.30 · part with no price"; null with nothing to say.
+export function itemWorth(item) {
+  if (!item || !finite(item.value)) return null;
+  if (item.unpriced) return item.value > 0 ? `${rmText(item.value)}${DOT}part with no price` : 'no price';
+  return item.value > 0 ? rmText(item.value) : null;
+}
+// A lot's cost and worth: "RM 1.40 per kg · RM 1,175.30", "no price"; null for a worker.
+export function lotWorth(lot, unit) {
+  if (!lot || lot.value === undefined) return null;
+  if (!finite(lot.unitCost)) return 'no price';
+  return joined(perUnitText(lot.unitCost, 1, unit), rmText(lot.value), lot.partial ? 'part with no price' : null);
+}

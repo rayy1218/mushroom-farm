@@ -103,7 +103,7 @@ route call after Runs', and `businessRoutes.close()` in `api.close`.
 | Title | "November so far"; "This month so far" without `month` |
 | Tiles | Costs' own: "Profit" "RM 357.18" (a loss "−RM 340.00" in the critical text token with "Loss"); "Income" with "10.0 kg sold" or "Nothing sold"; "Costs" with "Some costs have no price" when `incomplete`. Pending: Profit and Costs "—" with "working out" |
 | Still to come | Costs' `toComeNote` words, the first line: "Still to come this month: RM 1,500.00 (rent)"; none once every monthly item is charged |
-| Not sold | Tile (≥ 1100 px): "Not sold" "140.6 kg" "about RM 4,921.35 at your expected prices" (no line without an expected price). Line (below): "140.6 kg not sold yet, about RM 4,921.35 at your expected prices"; "12.0 kg not sold yet" when `unsold.value` is null. Neither when `unsold` is null |
+| Not sold | Tile (≥ 1100 px): "Not sold" "124.4 kg" "about RM 4,354.00 at your expected prices" (no line without an expected price). Line (below): "124.4 kg not sold yet, about RM 4,354.00 at your expected prices"; "12.0 kg not sold yet" when `unsold.value` is null. Neither when `unsold` is null |
 | Last month | Tile (≥ 1100 px): "October" with "RM 1,200.00" "Profit"; "−RM 13,412.23" "Loss" in the critical text token; "RM 0.00" "Nothing recorded"; "—" "working out". Line (below): "October: RM 1,200.00 profit"; "October: −RM 13,412.23 loss" (only the figure in the critical text token); "October: nothing recorded"; "October: working out"; "December 2025: …" when its year is not this month's. Neither without `lastMonth` |
 | Costs not read | The card holds only "Couldn't read Costs just now · trying again every minute" in the warning text tone and Retry |
 
@@ -116,7 +116,7 @@ the state, so the colour is never the only sign.
 | # | Kind | Words (exact) | Tone | Link |
 |---|---|---|---|---|
 | 1 | `owed` | "RM 604.00 owed by Kedai Ah Seng and Pasar Tani · oldest 50 days (Kedai Ah Seng)" (the oldest sale's buyer when more than one owes); three or more buyers: "… owed by A, B and 2 more · …"; the age is Sales' `ageText` ("today", "1 day", "12 days") | Amber when the oldest is over 30 days, else none | Sales |
-| 2 | `below-zero` | One item: "Below zero: Sawdust −430.60 kg · a purchase is missing"; several: "Below zero: Grain spawn, Plastic bags, Gypsum and 2 more · purchases are missing" (up to 3 names) | Red | The item's page; Inventory for several |
+| 2 | `below-zero` | One item: "Below zero: Sawdust −360.50 kg · a purchase is missing"; several: "Below zero: Grain spawn, Plastic bags, Gypsum and 2 more · purchases are missing" (up to 3 names) | Red | The item's page; Inventory for several |
 | 3 | `low` | One item: "Low stock: Grow bags 120 pcs, reorder at 200 pcs"; several: "Low stock: Bags and Gloves", "Low stock: A, B, C and 1 more" | Amber | As #2 |
 | 4 | `use-by` | "Lime · 10.00 kg expired 4 Nov"; "Bleach · 5.00 L use by 9 Nov" (Inventory's `useByLine`) | Red expired, amber soon (Inventory's pills) | The item's page |
 | 5 | `blocks` | "400 Pink oyster blocks ready for a room"; several crops: "1,200 blocks ready for a room" (Batches' `blocksText`); one block: "1 Grey oyster block ready for a room" | None | Batches |
@@ -153,8 +153,8 @@ the state, so the colour is never the only sign.
 | The month tiles | `monthTiles` | `web/costs-math.js` |
 | A month's name | `monthTitle`, `monthName` ("November", exported for the Summary in the fix pass) | `web/costs-math.js` (Calendar's) |
 | The monthly items still to come | `toComeNote` | `web/costs-math.js` |
-| kg ("140.6 kg", "20.0 kg picked") | `kgText` | `web/harvest-math.js` |
-| A stock qty ("−430.60 kg", "120 pcs"), a use-by line | `qtyText`, `useByLine` | `web/inventory-math.js` |
+| kg ("124.4 kg", "20.0 kg picked") | `kgText` | `web/harvest-math.js` |
+| A stock qty ("−360.50 kg", "120 pcs"), a use-by line | `qtyText`, `useByLine` | `web/inventory-math.js` |
 | Blocks of one crop ("400 Pink oyster blocks"), of several ("1,200 blocks") | `countBlocks`, `blocksText` | `web/batches-math.js` |
 | The oldest unpaid sale's age | `ageText` | `web/sales-math.js` |
 | A run's crops, days and its link's name | `cropsText`, `runDates`, `runPageLabel` | `web/runs-math.js` |

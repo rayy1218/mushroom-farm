@@ -7,11 +7,13 @@ import { CROP_KEYS, cropShortName } from '../web/crops.js';
 import { localDate, addDays } from './task-rules.js';
 import { checkWorker, TaskError } from './tasks.js';
 import { cell } from './csv.js';
-import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf, madePrice } from './batches-math.js';
+import { goodOf, dryKgOf, runDryKg, blockCost, statusOf, runBlocksOf, movesOf, madeCost, madePerBlock, madeOver } from './batches-math.js';
+import { costedMoves } from './inventory-math.js'; // ---- Money truth ---- a made batch's materials at what their lots cost
+import { split } from './costs-math.js';
 import {
   BatchError, MAX_BLOCKS, MAX_NOTE, EARLIEST, bad, conflict, isPlain, intIn, numIn, isDate, grouped, textOf, weightOf,
 } from './batches-fields.js';
-import { checkRecipe, checkMade, checkMaterials, checkLoad, MIX_ITEMS } from './batches-making.js';
+import { checkRecipe, checkMade, checkMaterials, checkLoad, MIX_ITEMS, ITEM_NAMES } from './batches-making.js';
 
 export { BatchError, MAX_BLOCKS };
 export const CAUSES = ['green', 'black', 'bacterial', 'pests', 'other'];
@@ -97,24 +99,67 @@ function viewOf(b, priceOf) {
   };
 }
 
+// A made batch's material lines as they price: a line whose Inventory item is gone has no item (no move, an unknown price).
+function liveMaterialsOf(store, firstId) {
+  const stock = store.hasStock();
+  return store.materials(firstId).map((m) => (stock && m.stockItemId != null && !store.stockItem(m.stockItemId) ? { ...m, stockItemId: null } : m));
+}
+
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 4) A made delivery's cost: its materials at what their draws
+// took of Inventory's lots (oldest first), worked out on each read so a purchase entered later prices an earlier draw.
+// madePricer(store) → (firstId) → { cost: { total, missing }, blocks (made), price (per block; null over RM 1,000), perBlock,
+// over, shares: Map row id → its RM (the total split over the rows by blocks, to the sen) }. One pricer per reply keeps each
+// item's moves costed once. Inventory values a made delivery's blocks with it too (one rule for both).
+export function madePricer(store) {
+  const items = new Map(); // stock item id → costedMoves of its moves
+  const costedOf = (itemId) => {
+    if (!items.has(itemId)) items.set(itemId, costedMoves(store.itemMoves([itemId])));
+    return items.get(itemId);
+  };
+  const memo = new Map();
+  return (firstId) => {
+    if (memo.has(firstId)) return memo.get(firstId);
+    const draws = store.hasStock() ? store.moves([firstId]).filter((m) => m.qty < 0) : []; // without Inventory: no draw, no price
+    const drawOf = (itemId) => {
+      const own = draws.filter((m) => m.itemId === itemId);
+      if (!own.length) return null;
+      const outs = costedOf(itemId).outs;
+      return own.reduce((s, m) => {
+        const o = outs.get(m.id);
+        return { cost: s.cost + (o?.cost ?? 0), unpricedQty: s.unpricedQty + (o ? o.unpricedQty : -m.qty) };
+      }, { cost: 0, unpricedQty: 0 });
+    };
+    const nameOf = (m) => (m.stockItemId != null ? store.stockItem(m.stockItemId)?.name : null) ?? (m.item === 'other' ? m.name : ITEM_NAMES[m.item]);
+    const cost = madeCost(liveMaterialsOf(store, firstId), drawOf, nameOf);
+    const family = store.family(firstId);
+    const blocks = family.reduce((s, x) => s + x.blocks, 0);
+    const perBlock = madePerBlock(cost, blocks);
+    const over = madeOver(cost, blocks); // a slip in the amounts or the prices: unknown, and the view says why
+    const shares = new Map();
+    if (cost.total !== null && !over && family.length) split(cost.total, family.map((x) => x.blocks)).forEach((v, i) => shares.set(family[i].id, v));
+    const out = { cost, blocks, price: over ? null : perBlock, perBlock, over, shares };
+    memo.set(firstId, out);
+    return out;
+  };
+}
+
 // db: the farm database (db.batches is the store); now is injectable.
 export function createBatches({ db, now = Date.now, log = console.error }) {
   const store = db.batches;
   const listeners = new Set();
   const firstOf = (b) => b.parentId ?? b.id;
-  // A made batch's material lines as they price: a line whose Inventory item is gone has no item (no move, an unknown price).
-  const liveMaterials = (firstId) => {
-    const stock = store.hasStock();
-    return store.materials(firstId).map((m) => (stock && m.stockItemId != null && !store.stockItem(m.stockItemId) ? { ...m, stockItemId: null } : m));
-  };
+  const liveMaterials = (firstId) => liveMaterialsOf(store, firstId);
   const priceOf = (itemId) => store.purchasePrice(itemId);
-  // priceOver: the price came to over RM 1,000 a block at today's purchase prices, so it is stored unknown (additive to the row).
-  const over = (b) => {
-    if (b.kind !== 'made' || b.pricePerBlock != null) return false;
-    const price = madePrice(liveMaterials(firstOf(b)), priceOf, store.family(firstOf(b)).reduce((s, x) => s + x.blocks, 0));
-    return price !== null && price > 1000;
+  const pricer = () => madePricer(store);
+  // A made batch's view carries its live price (priceOver: over RM 1,000 a block, so unknown; priceMissing: the materials with
+  // no price); a bought batch its own.
+  const view = (b, price = pricer()) => {
+    if (b.kind !== 'made') return { ...viewOf(b, priceOf), priceOver: false };
+    const p = price(firstOf(b));
+    // cost: the row's share of its delivery's materials, as Costs charges it (null: no whole price known)
+    return { ...viewOf({ ...b, pricePerBlock: p.price }, priceOf), priceOver: p.over, priceMissing: p.cost.missing, cost: p.shares.get(b.id) ?? null };
   };
-  const view = (b) => ({ ...viewOf(b, priceOf), priceOver: over(b) });
+  // ---- end Money truth ----
 
   // After a write: fn({ batchId, roomId, runId, harvestRooms }) — harvestRooms: the rooms of the placed rows it touched
   // (before or after), whose Harvest figures may change (3.2).
@@ -149,32 +194,43 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
     return `The materials come to RM ${price.toLocaleString('en-US', { minimumFractionDigits: places === 4 ? 4 : 0, maximumFractionDigits: places })} a block, over RM 1,000`;
   };
 
-  // After a write to a delivery, inside its transaction (`gone`: ids of rows just deleted): a made batch's price per block worked
-  // out again from its materials at Inventory's latest purchase prices and the blocks made, on every row (spec 4); over RM 1,000
-  // a block is a slip in the amounts: refused when the write sent them (`capped`), otherwise stored unknown (a later purchase
-  // price made it so: the view says why); then Inventory's moves written again from the rows (3.1), when its tables exist.
-  // A line whose Inventory item is gone gives no move and an unknown price.
+  // After a write to a delivery, inside its transaction (`gone`: ids of rows just deleted): Inventory's moves written again from
+  // the rows (3.1), when its tables exist; then a made batch's price per block worked out again from what those draws took of
+  // the lots and the blocks made, on every row (Money truth 4); over RM 1,000 a block is a slip in the amounts: refused when the
+  // write sent them (`capped`), otherwise stored unknown (the view says why). A line whose Inventory item is gone gives no move
+  // and no price.
   function sync(firstId, gone = [], capped = false) {
     let family = store.family(firstId);
     const first = family.find((b) => b.parentId == null);
     const stock = store.hasStock();
     const materials = first?.kind === 'made' ? liveMaterials(first.id) : [];
-    if (first?.kind === 'made') {
-      let price = madePrice(materials, priceOf, family.reduce((s, b) => s + b.blocks, 0));
-      if (price !== null && price > 1000) {
-        if (capped) throw bad(overMessage(price), 'materials');
-        price = null;
+    const writeMoves = (receiptCost = undefined) => {
+      if (!stock) return;
+      store.deleteMoves([...family.map((b) => b.id), ...gone]);
+      if (!family.length) return;
+      const itemId = store.blocksItem(`${cropShortName(family[0].crop)} blocks`);
+      // the receipt first; the delivery's blocks going out (lost, into a room) take that lot, not an older delivery's
+      // (Money truth: else another delivery's blocks would be costed out and this one's left in stock)
+      let receipt = null;
+      for (const m of movesOf(family, (id) => store.checks(id), materials, receiptCost)) {
+        const blocksMove = m.itemId === undefined;
+        const id = store.insertMove({ itemId, ...m, lotId: blocksMove && m.qty < 0 ? receipt : null });
+        if (blocksMove && m.qty > 0) receipt = id;
       }
-      if (family.some((b) => b.pricePerBlock !== price)) {
-        for (const b of family) store.update(b.id, { pricePerBlock: price });
+    };
+    writeMoves();
+    // ---- Money truth ---- a made batch's price from the draws just written (their lots), stored on every row and on its
+    // blocks' receipt (the column's readers and the blocks lot's worth)
+    if (first?.kind === 'made') {
+      const p = pricer()(first.id);
+      if (p.over && capped) throw bad(overMessage(p.perBlock), 'materials');
+      if (family.some((b) => b.pricePerBlock !== p.price)) {
+        for (const b of family) store.update(b.id, { pricePerBlock: p.price });
         family = store.family(firstId);
       }
+      // the blocks' receipt at the whole price, none while a material has no price (Inventory values the lot by it)
+      writeMoves(p.cost.missing.length ? null : p.price);
     }
-    if (!stock) return;
-    store.deleteMoves([...family.map((b) => b.id), ...gone]);
-    if (!family.length) return;
-    const itemId = store.blocksItem(`${cropShortName(family[0].crop)} blocks`);
-    for (const m of movesOf(family, (id) => store.checks(id), materials)) store.insertMove({ itemId, ...m });
   }
 
   // Edit a made batch (spec 5): the Mix's fields and materials, the Inoculate step's (the spawn supplier, strain, spawn batch,
@@ -287,17 +343,20 @@ export function createBatches({ db, now = Date.now, log = console.error }) {
       // a run's rows come from its own query (byRun is by id), newest received first as all() is
       const source = run === null ? store.all() : store.byRun(run).toSorted((a, b) => b.receivedAt - a.receivedAt || b.id - a.id);
       const rows = source.filter((b) => (from === null || localDate(b.receivedAt) >= from) && (to === null || localDate(b.receivedAt) <= to));
-      const batches = rows.map(view).filter((b) => status === null || b.status === status);
-      return { batches, blockCost: blockCost(batches) };
+      const price = pricer();
+      const batches = rows.map((b) => view(b, price)).filter((b) => status === null || b.status === status);
+      // blockCostPartial (Money truth): a made batch's material has no price, so the figure counts only the priced part
+      return { batches, blockCost: blockCost(batches), blockCostPartial: batches.some((b) => b.priceMissing?.length > 0) };
     },
 
     // A batch with its delivery, its checks (newest first) and, when placed, the run's batches' blocks of its crop.
     detail(id) {
       const b = batchOf(id);
       const sameRun = b.runId == null ? null : store.byRun(b.runId).filter((x) => x.crop === b.crop);
+      const price = pricer();
       return {
-        ...view(b),
-        delivery: store.family(firstOf(b)).map(view),
+        ...view(b, price),
+        delivery: store.family(firstOf(b)).map((x) => view(x, price)),
         checks: store.checks(b.id).toReversed(),
         batchBlocks: sameRun === null ? null : sameRun.reduce((s, x) => s + x.blocks, 0),
         // part 2 (spec 6): a made batch's recipe, its material lines (with their Inventory item's name and latest purchase price)

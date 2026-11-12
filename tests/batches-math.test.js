@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { goodOf, dryKgOf, runDryKg, blockCost, madePrice, statusOf, runBlocksOf, movesOf } from '../server/batches-math.js';
+import { goodOf, dryKgOf, runDryKg, blockCost, madeCost, madePerBlock, statusOf, runBlocksOf, movesOf } from '../server/batches-math.js';
 
 const b = (o) => ({ id: 1, parentId: null, crop: 'oyster', blocks: 100, lost: 0, pricePerBlock: 2, blockKg: null, waterPct: null,
   runId: null, runEndedAt: null, runCrops: null, placedAt: null, receivedAt: 1000, ...o });
@@ -69,14 +69,27 @@ test('a made batch is making until it is ready: in an area with its ready day, o
   assert.equal(statusOf(made({ incubation: 'room' })), 'making', 'taken out of its grow room: it still incubates');
 });
 
-test('the made price per block: the materials at their purchase prices over the blocks made; null when one is unknown', () => {
-  const prices = { 1: 0.35, 2: 1.2, 3: 0.08 };
-  const priceOf = (id) => prices[id] ?? null;
-  const lines = [{ qty: 287, stockItemId: 1 }, { qty: 73.6, stockItemId: 2 }, { qty: 400, stockItemId: 3 }];
-  assert.equal(madePrice(lines, priceOf, 400), 0.5519, '(100.45 + 88.32 + 32) ÷ 400, to 4 places');
-  assert.equal(madePrice([...lines, { qty: 5, stockItemId: null }], priceOf, 400), null, 'a line with no item');
-  assert.equal(madePrice([{ qty: 5, stockItemId: 9 }], priceOf, 400), null, 'an item with no purchase price');
-  assert.equal(madePrice([], priceOf, 400), null, 'no materials');
+test('a made batch\'s materials at what their lots cost (Money truth 4): RM 1,340.90, the bags missing', () => {
+  const draws = { 5: { cost: 504.7, unpricedQty: 0 }, 6: { cost: 194.04, unpricedQty: 0 }, 7: { cost: 4.14, unpricedQty: 0 }, 8: { cost: 5.52, unpricedQty: 0 },
+    10: { cost: 0, unpricedQty: 480 }, 9: { cost: 632.5, unpricedQty: 0 } };
+  const drawOf = (id) => draws[id] ?? null;
+  const names = { 5: 'Sawdust', 6: 'Rice bran', 7: 'Lime', 8: 'Gypsum', 9: 'Grain spawn', 10: 'Plastic bags' };
+  const nameOf = (m) => names[m.stockItemId] ?? m.label;
+  const lines = [[5, 360.5], [6, 92.4], [7, 4.6], [8, 4.6], [10, 480], [9, 57.5]].map(([stockItemId, qty]) => ({ stockItemId, qty }));
+  const cost = madeCost(lines, drawOf, nameOf);
+  assert.deepEqual(cost, { total: 1340.9, missing: ['Plastic bags'] });
+  assert.equal(madePerBlock(cost, 480), 2.7935, 'RM 1,340.90 ÷ 480 blocks made, to 4 places');
+  assert.deepEqual(madeCost([...lines, { stockItemId: null, label: 'The other ingredient' }], drawOf, nameOf).missing, ['Plastic bags', 'The other ingredient'], 'a line with no item');
+  assert.deepEqual(madeCost([{ stockItemId: 11, label: 'Bran' }], drawOf, nameOf), { total: null, missing: ['Bran'] }, 'no draw (its item gone): no price at all');
+  assert.deepEqual(madeCost([{ stockItemId: 10 }], drawOf, nameOf), { total: null, missing: ['Plastic bags'] }, 'only an unpriced draw');
+  assert.deepEqual(madeCost([], drawOf, nameOf), { total: null, missing: [] }, 'no materials');
+  assert.deepEqual(madeCost([{ stockItemId: 5 }, { stockItemId: 5 }], drawOf, nameOf), { total: 504.7, missing: [] }, 'two lines on one item: its draws once');
+});
+
+test('madePerBlock: no blocks or no total is unknown; a total of 0 is a known price', () => {
+  assert.equal(madePerBlock({ total: 5, missing: [] }, 0), null);
+  assert.equal(madePerBlock({ total: null, missing: [] }, 10), null);
+  assert.equal(madePerBlock({ total: 0, missing: [] }, 10), 0);
 });
 
 test("the stock moves of a made batch: its blocks at the mix, each material with an item out at the mix, the spawn at the inoculation", () => {
@@ -116,8 +129,3 @@ test('statusOf: a made batch whose room was deleted is past; ready in an area, t
   assert.equal(statusOf(made({ placedAt: 4000, runId: 3 })), 'placed');
 });
 
-test('madePrice: no blocks, and a price of 0 is known', () => {
-  assert.equal(madePrice([{ qty: 5, stockItemId: 1 }], () => 1, 0), null);
-  assert.equal(madePrice([{ qty: 5, stockItemId: 1 }], () => 1, null), null);
-  assert.equal(madePrice([{ qty: 5, stockItemId: 1 }], () => 0, 10), 0, 'a free material is a known price');
-});

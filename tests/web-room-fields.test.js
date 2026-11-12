@@ -29,12 +29,12 @@ test('the groups, in the order of the dialog and the tabs, and each field in one
     ['power', 'Power and water (for the usage estimates)'],
     ['filter', 'Intake filter'],
   ]);
-  assert.deepEqual(fieldsOf('profile').map((f) => f.name), ['name', 'length', 'width', 'height']);
+  assert.deepEqual(fieldsOf('profile').map((f) => f.name), ['name', 'length', 'width', 'height', 'roomType']);
   assert.deepEqual(fieldsOf('sensors').map((f) => f.name), ['trhAddress', 'co2Address', 'meterAddress', 'dpAddress']);
   assert.deepEqual(fieldsOf('machines').map((f) => f.name), ['relayAddress', 'acAddress', 'dehumidifier', 'lights']);
   assert.deepEqual(fieldsOf('power').map((f) => f.name), ['intakeW', 'exhaustW', 'circulationW', 'humidifierW', 'humidifierLH', 'acInputW', 'dehumidifierW', 'dehumidifierLday', 'lightsW']);
   assert.deepEqual(fieldsOf('filter').map((f) => f.name), ['fanMaxPa', 'filterCleanPa', 'filterFinalPa', 'filterChangeDays']);
-  assert.deepEqual(PROFILE_NAMES, ['name', 'length', 'width', 'height']);
+  assert.deepEqual(PROFILE_NAMES, ['name', 'length', 'width', 'height', 'roomType']);
   assert.equal(EQUIPMENT_NAMES.length + PROFILE_NAMES.length, ROOM_FIELDS.length);
   // The gateway is set on the Equipment tab only: its group is none of the dialog's.
   assert.deepEqual(ROOM_FIELDS.filter((f) => !ROOM_GROUPS.some((g) => g.key === f.group)).map((f) => [f.name, f.group]), [['gateway', 'gateway']]);

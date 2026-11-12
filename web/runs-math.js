@@ -5,7 +5,7 @@
 
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
-import { kgText, perBlockText, beText, dayRange } from './harvest-math.js';
+import { kgText, perBlockText, beText, dayRange, whenMs } from './harvest-math.js';
 import { moneyText, perKgText, monthNotes, runParts, runRow } from './costs-math.js';
 import { dateText, countBlocks, rmText } from './batches-math.js';
 import { deliveryRow, priceText } from './sales-math.js';
@@ -102,7 +102,7 @@ export function pageTiles(v) {
 
 // Electricity or water at 0, in words: "working out" while pending, "no price set" without a price in Settings, else "not
 // recorded yet" (with a price, a 0 means the room recorded nothing to price).
-const PARTS = [['blocks', 'Blocks'], ['energy', 'Electricity'], ['water', 'Water'], ['own', 'Own'], ['shared', 'Shared']];
+const PARTS = [['blocks', 'Blocks'], ['energy', 'Electricity'], ['water', 'Water'], ['own', 'Own'], ['equipment', 'Equipment'], ['shared', 'Shared']];
 const PRICE_OF = { energy: 'electricity', water: 'water' };
 const unpricedWord = (v, key) => (v.pending ? WORKING : v.prices?.[PRICE_OF[key]] > 0 ? 'not recorded yet' : 'no price set');
 
@@ -122,15 +122,16 @@ export function costsMix(v) {
   return words.length ? words.join(DOT) : null;
 }
 
-// A made batch's note: its blocks' cost is in Costs already, as the Inventory it was made from.
-export const MADE_NOTE = 'Its materials count in Costs as Inventory purchases';
+// A made batch's note: its blocks' cost is its materials at what their lots cost (Money truth), charged when they went in.
+export const MADE_NOTE = 'Its materials at what their lots cost, charged to the run as its blocks went in';
 const wholeDate = (ms, today) => dateText(ms, today).replace(/ /g, NB); // "28 Sep" kept whole at a wrap (Batches' way)
 // The Blocks card's rows: { href (the batch), title ("600 Grey oyster blocks"), line (a bought batch's supplier and day
 // received, a made one's day made; the price a block), note (MADE_NOTE for a made batch, else null) }. No money total: the
 // Costs card's Blocks is the run's one block cost.
 export const batchRows = (batches, today) => (batches ?? []).map((b) => {
   const made = b.kind === 'made';
-  const price = b.pricePerBlock === null || b.pricePerBlock === undefined ? 'no price' : `${rmText(b.pricePerBlock)} a block`;
+  const missing = made && b.priceMissing?.length ? `no price for ${b.priceMissing.join(', ')}` : null;
+  const price = b.pricePerBlock === null || b.pricePerBlock === undefined ? 'no price' : [`${rmText(b.pricePerBlock)} a block`, missing].filter(Boolean).join(DOT);
   const from = made ? [`made ${wholeDate(b.mixedAt ?? b.receivedAt, today)}`] : [b.supplier, `received ${wholeDate(b.receivedAt, today)}`];
   return { href: batchHash(b.id), title: countBlocks(b.blocks, b.crop), line: [...from, price].filter(Boolean).join(DOT), note: made ? MADE_NOTE : null };
 });
@@ -142,19 +143,57 @@ export const saleRows = (lines) => (lines ?? []).map((l) => {
   const r = deliveryRow({ ...l, lines: [l] });
   return { day: r.day, buyer: r.buyer, reference: r.reference, sold: r.lines, price: priceText(l.priceKg), total: r.total, paid: r.paid };
 });
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 7) How a sale line reached the run, under its Sold: the only
+// run growing its crop that day, or shared by the kg picked here; nothing for its own run or its container's.
+export function tieText(line) {
+  const tie = line?.tie;
+  if (!tie) return null;
+  if (tie.how === 'only') return `Tied here: the only run growing ${cropShortName(line.crop)} that day`;
+  if (tie.how === 'picked') return `Shared: ${kgText(line.kg)} of a ${kgText(tie.kg)} sale, by the kg picked here`;
+  return null;
+}
+// A partial run's line on its page (spec 8.2): Economics counts it only once the owner gives the day its blocks went in.
+// → null for a whole run, else { text, action (the button), stop (a second, quiet button, once counted) }.
+export function countLine(run, today) {
+  if (!run?.partial) return null;
+  const start = wholeDate(run.startedAt, today);
+  if (run.blocksInAt === null || run.blocksInAt === undefined) {
+    return { text: `Recorded from ${start}, when the app began keeping runs; its blocks went in earlier, so Economics leaves it out.`, action: 'Count it in Economics' };
+  }
+  return { text: `Counted in Economics from ${wholeDate(run.blocksInAt, today)}, the day its blocks went in.`, action: 'Change the day', stop: 'Stop counting it' };
+}
+export const COUNT_TITLE = 'Count this run in Economics';
+export const countLead = (run, today) => `Economics counts a finished run's yield, sales, blocks and electricity. This run was recorded from ${wholeDate(run.startedAt, today)}: give the day its blocks went in. Count it only if every pick since then is recorded.`;
+// The dialog's day → { body: { blocksInAt } } (noon on the farm's day) or { field, message }, as the server checks it.
+export function countBody(day, run) {
+  const start = farmDate(run.startedAt);
+  const earliest = new Date(Date.parse(`${start}T00:00:00Z`) - 365 * 86_400_000).toISOString().slice(0, 10);
+  const ok = /^\d{4}-\d{2}-\d{2}$/.test(day ?? '') && day <= start && day >= earliest;
+  if (!ok) return { field: 'day', message: `Pick a day up to ${wholeDate(run.startedAt, start)}, at most 365 days before it` };
+  return { body: { blocksInAt: whenMs(day, '12:00') } };
+}
+export const countRange = (run) => {
+  const start = farmDate(run.startedAt);
+  return { max: start, min: new Date(Date.parse(`${start}T00:00:00Z`) - 365 * 86_400_000).toISOString().slice(0, 10) };
+};
+
+// The Runs tab's line when some sales reach no run: "RM 384.00 of sales not tied to a run"; null when none.
+export const untiedText = (untied) => (untied?.total > 0 ? `${rmText(untied.total)} of sales not tied to a run` : null);
+// ---- end Money truth ----
+
 // The Sales card's foot: "48.0 kg · RM 576.00".
 export const salesTotal = (sales) => `${kgText(sales.kg)}${DOT}${rmText(sales.total)}`;
 
 const NOT_COSTS = new Set(['Income', 'Picked', 'Sold']); // runParts' last rows: the tiles say them
 // The Costs card's rows: Costs' run breakdown (its runParts: Blocks a link to the run's batches, Electricity, Water, Own costs,
-// Share of shared costs; the parts that are not 0), Electricity and Water kept at 0 in words (unpricedWord), [[label, value,
+// Equipment written off (Money truth), Share of shared costs; the parts that are not 0), Electricity and Water kept at 0 in words (unpricedWord), [[label, value,
 // href?, quiet?]] (quiet: words, not a figure); none before Costs answers.
 export function costRows(v) {
   if (!v.costsByKind) return [];
   const run = { id: v.id, parts: v.costsByKind.parts, notes: v.costsByKind.notes, income: v.income, kgHarvested: v.kg, kgSold: v.kgSold };
   const rows = new Map(runParts(run).filter(([label]) => !NOT_COSTS.has(label)).map((r) => [r[0], r]));
   for (const [key, label] of [['energy', 'Electricity'], ['water', 'Water']]) if (!rows.has(label)) rows.set(label, [label, unpricedWord(v, key), null, true]);
-  return ['Blocks', 'Electricity', 'Water', 'Own costs', 'Share of shared costs'].map((l) => rows.get(l)).filter(Boolean);
+  return ['Blocks', 'Electricity', 'Water', 'Own costs', 'Equipment written off', 'Share of shared costs'].map((l) => rows.get(l)).filter(Boolean);
 }
 // The Costs card's Total: the Costs tile's figure.
 export const costsTotal = (v) => (v.pending ? DASH : moneyText(v.costs));

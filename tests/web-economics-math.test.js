@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthsText, figureText, rangeText, wayName, headline, rows, fillLine, sizedLine, neverLine, leftLine } from '../web/economics-math.js';
+import { monthsText, figureText, rangeText, wayName, headline, rows, fillLine, sizedLine, neverLine, leftLine, labourLine } from '../web/economics-math.js';
 import { compare, grow } from '../web/economics-model.js';
 import { ECONOMICS_CROPS, WAYS, figuresFor, researchOf } from '../web/economics-defaults.js';
 
@@ -35,10 +35,11 @@ test('golden: the headline at the model page\'s inputs in Container 1', () => {
 test('11.2: the headline of every crop at the research defaults in a 40 ft container', () => {
   const room = { volume: 67.4, humidifierLH: 2 };
   const want = {
-    oyster: 'Grey oyster in Container 1: −RM 1,400.38 a month loss, break-even RM 18.68 a kg, never pays back. A lowland shed loses less, −RM 814.18, on a tenth of the equipment.',
-    pink: 'Pink oyster in Container 1: −RM 234.97 a month loss, break-even RM 20.76 a kg, never pays back. Every other way loses more.',
-    woodear: 'Black jelly (wood ear) in Container 1: RM 159.56 a month, break-even RM 23.68 a kg, pays back in 55 months. Importing and reselling makes RM 641.32 with no equipment.',
-    lionsmane: "Lion's mane in Container 1: RM 2,183.70 a month, break-even RM 39.95 a kg, pays back in 21 months. A highland grower makes RM 2,649.57 on a fifth of the equipment.",
+    // Money truth: Your container's labour the farm's one worker (RM 1,954.15 a month, all in its one room)
+    oyster: 'Grey oyster in Container 1: −RM 3,016.63 a month loss, break-even RM 28.70 a kg, never pays back. A lowland shed loses less, −RM 814.18, on a tenth of the equipment.',
+    pink: 'Pink oyster in Container 1: −RM 1,849.73 a month loss, break-even RM 26.00 a kg, never pays back. A lowland shed loses less, −RM 757.61, on a tenth of the equipment.',
+    woodear: 'Black jelly (wood ear) in Container 1: −RM 1,456.25 a month loss, break-even RM 37.09 a kg, never pays back. Importing and reselling makes RM 641.32 with no equipment.',
+    lionsmane: "Lion's mane in Container 1: RM 680.07 a month, break-even RM 46.87 a kg, pays back in 41 months. A highland grower makes RM 2,649.57 on a fifth of the equipment.",
   };
   for (const crop of ECONOMICS_CROPS) {
     const values = Object.fromEntries(figuresFor(crop).map((f) => [f.key, f.key === 'tariff' ? 0.55 : researchOf(f.key, crop, room, 1482).value]));
@@ -188,4 +189,17 @@ test('the audit: break-even never breaks at its hyphen; a sentence keeps "never 
   const words = h.first.map((p) => (typeof p === 'string' ? p : p.text)).join('');
   assert.ok(words.includes('break\u2011even'), 'a non-breaking hyphen');
   assert.ok(words.includes('never pays back'));
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 9 and 10) ----
+test('the labour line: the room\'s share of the workers and its hours, over them in the warning tone; Your way by the room type', () => {
+  const plain = (s) => s?.replace(/[  ⁠]/g, ' ');
+  const yours = { labourHours: { needed: 52.94, there: 83.2, share: 0.4, workers: 1, each: 1954.15 } };
+  assert.deepEqual(plain(labourLine(yours, 'Container 1').text), 'Labour: Container 1’s share (40 %, by blocks) of 1 worker at RM 1,954.15 a month. Handling its blocks takes 52.9 h a month of the 83.2 h that share gives.');
+  const over = labourLine({ labourHours: { ...yours.labourHours, needed: 120 } }, 'Container 1');
+  assert.deepEqual([plain(over.text).endsWith('takes 120.0 h a month, more than the 83.2 h that share gives.'), over.tone], [true, 'warn']);
+  assert.equal(labourLine({ labourHours: null }, 'Container 1'), null);
+  assert.deepEqual([wayName('yours'), wayName('yours', { type: 'built' }), wayName('yours', { type: 'shed' }), wayName('shed', { type: 'built' })],
+    ['Your container', 'Your room', 'Your shed', 'Lowland shed']);
+  assert.equal(plain(figureText('yours.workers', 1.5)), '1.5 workers');
 });

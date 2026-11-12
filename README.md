@@ -24,6 +24,7 @@ Built for one farm in lowland Malaysia. The owner and the workers each sign in, 
 | Outside air is free cooling, but only some hours | An outdoor probe tells the app when outside air can cool or dry a room, so the aircon runs less |
 | Workers forget a task, or do it on the wrong day | The Today page lists each room's tasks for the stage it is in, plus upkeep that is due. Workers tick them off on a phone |
 | You don't know what a kilogram costs to grow | Energy (kWh and RM) and water (L) per room, harvests per room and crop, costs and sales give a profit per run and per kg |
+| A month of buying looks like a loss, and stock and equipment never show | Costs counts materials when used and blocks when they go into a room; what was bought is a cash line apart, the stock is valued, equipment is written off a month at a time, and sales reach the run that grew them |
 | You are about to buy a container, an aircon or a new crop and can't tell if it pays | Economics compares a month of your room with the other ways to get the crop (a highland grower, a lowland shed, importing), with the break-even price and the payback. A simulator tests a room's walls, weather and machines before you buy them |
 | myGAP paperwork | Printable task, harvest and batch sheets, and CSV exports |
 

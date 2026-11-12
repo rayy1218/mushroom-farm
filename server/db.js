@@ -8,7 +8,7 @@ import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 import { readSources } from './costs-sources.js'; // ---- Costs ----
 
-const VERSION = 27;
+const VERSION = 28;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -490,6 +490,39 @@ const economicsRow = (r) => ({
 });
 // ---- end Economics ----
 
+// ---- Money truth ---- the sale steps read one crop's picks in a span (made with the step; a file at 28 without it gains it)
+const HARVESTS_BY_CROP = 'CREATE INDEX IF NOT EXISTS harvests_by_crop ON harvests (crop, picked_at);';
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 2): Costs' equipment register (a deleted room's items become
+// the farm's: room ids are reused), a partial run's real block-in day (Harvest's runs table, written by Runs) and a room's
+// type (Setup; Economics prices the building by it). Every room of before is a container.
+const MONEY_TRUTH = `
+CREATE TABLE IF NOT EXISTS equipment (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT    NOT NULL,
+  room_id     INTEGER,
+  part        TEXT    NOT NULL DEFAULT 'other' CHECK (part IN ('building', 'cooling', 'humidifier', 'fans', 'racks', 'other')),
+  bought_on   TEXT    NOT NULL,
+  amount      REAL    NOT NULL,
+  life_months INTEGER NOT NULL,
+  resale      REAL    NOT NULL DEFAULT 0,
+  note        TEXT    NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS equipment_by_room ON equipment (room_id);
+${HARVESTS_BY_CROP}
+CREATE TRIGGER IF NOT EXISTS equipment_room_gone AFTER DELETE ON rooms BEGIN
+  UPDATE equipment SET room_id = NULL WHERE room_id = OLD.id;
+END;`;
+const MONEY_TRUTH_COLUMNS = [
+  ['runs', 'blocks_in_at', 'ALTER TABLE runs ADD COLUMN blocks_in_at INTEGER'],
+  ['rooms', 'room_type', "ALTER TABLE rooms ADD COLUMN room_type TEXT NOT NULL DEFAULT 'container' CHECK (room_type IN ('container', 'built', 'shed'))"],
+];
+const equipmentOf = (r) => ({
+  id: r.id, name: r.name, roomId: r.room_id, part: r.part, boughtOn: r.bought_on, amount: r.amount, lifeMonths: r.life_months,
+  resale: r.resale, note: r.note, createdAt: r.created_at,
+});
+// ---- end Money truth ----
+
 const accountRow = (r) => ({
   id: r.id, name: r.name, active: r.active === 1, role: r.role, secretHash: r.secret_hash, failedTries: r.failed_tries,
   lockedUntil: r.locked_until,
@@ -700,8 +733,21 @@ function upgradeHarvests(db, now) {
 }
 
 // Brings a new or older database up to VERSION in one transaction.
+// The alarms' version 27 columns, each added only when missing.
+function addAlarmColumns(db) {
+  const have = new Set(db.prepare('PRAGMA table_info(alarms)').all().map((c) => c.name));
+  if (!have.has('acked_by')) db.exec('ALTER TABLE alarms ADD COLUMN acked_by TEXT');
+  if (!have.has('gateway')) db.exec('ALTER TABLE alarms ADD COLUMN gateway TEXT');
+}
+
 function migrate(db) {
   const { user_version: version } = db.prepare('PRAGMA user_version').get();
+  // a copy brought to 28 by Money truth's branch before the alarms' 27 merged lacks their columns, and one from before the
+  // review its crop index: added, each only when missing
+  if (version === 28) {
+    addAlarmColumns(db);
+    db.exec(HARVESTS_BY_CROP);
+  }
   if (version >= VERSION) return;
   db.exec('BEGIN');
   try {
@@ -857,10 +903,14 @@ function migrate(db) {
     if (version < 26) db.exec(ECONOMICS); // ---- Economics ---- (spec 2026-11-06-economics-design.md 3)
     // Who acknowledged an alarm, and the address a gateway alarm was raised for (spec 2026-11-12-alarms-triage-design.md 4, 7);
     // a table made above by ALARMS has the columns.
-    if (version < 27) {
-      const have = new Set(db.prepare('PRAGMA table_info(alarms)').all().map((c) => c.name));
-      if (!have.has('acked_by')) db.exec('ALTER TABLE alarms ADD COLUMN acked_by TEXT');
-      if (!have.has('gateway')) db.exec('ALTER TABLE alarms ADD COLUMN gateway TEXT');
+    if (version < 27) addAlarmColumns(db);
+    // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 2; version 28, after the alarms' 27); a file the tests only
+    // stamped older has the columns
+    if (version < 28) {
+      for (const [table, column, sql] of MONEY_TRUTH_COLUMNS) {
+        if (!db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column)) db.exec(sql);
+      }
+      db.exec(MONEY_TRUTH);
     }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
@@ -884,7 +934,11 @@ const taskRow = (r) => ({
 });
 
 // A runs row (a run of blocks, not a simulation run) and a harvests row as the harvest module shows them.
-const runOf = (r) => ({ id: r.id, roomId: r.room_id, startedAt: r.started_at, endedAt: r.ended_at, crops: JSON.parse(r.crops), partial: r.partial === 1 });
+// blocksInAt (Money truth): a partial run's real block-in day as the owner gave it (Runs), null when not given.
+const runOf = (r) => ({
+  id: r.id, roomId: r.room_id, startedAt: r.started_at, endedAt: r.ended_at, crops: JSON.parse(r.crops), partial: r.partial === 1,
+  blocksInAt: r.blocks_in_at ?? null,
+});
 const harvestOf = (r) => ({
   id: r.id, roomId: r.room_id, runId: r.run_id, crop: r.crop, stage: r.stage, flush: r.flush, blocks: r.blocks, kg: r.kg,
   pickedAt: r.picked_at, worker: r.worker, taskId: r.task_id, createdAt: r.created_at,
@@ -951,6 +1005,7 @@ function toRoom(row) {
     acAddress: row.ac_address,
     meterAddress: row.meter_address,
     gateway: row.gateway ?? null,
+    roomType: row.room_type ?? 'container', // ---- Money truth ----
     intakeW: row.intake_w,
     exhaustW: row.exhaust_w,
     circulationW: row.circulation_w,
@@ -1013,14 +1068,14 @@ export function openDb(path, { log = console.error } = {}) {
                                            relay_address, ac_address, meter_address, intake_w, exhaust_w, circulation_w,
                                            humidifier_w, humidifier_lh, ac_input_w, dehumidifier_w, dehumidifier_lday, lights_w,
                                            dehumidifier, lights, fan_max_pa, filter_clean_pa, filter_final_pa, filter_change_days,
-                                           filter_changed_at, dp_address, gateway, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                                           filter_changed_at, dp_address, gateway, created_at, updated_at, room_type)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     update: db.prepare(`UPDATE rooms SET name = ?, length_m = ?, width_m = ?, height_m = ?,
                                trh_address = ?, co2_address = ?, relay_address = ?, ac_address = ?, meter_address = ?,
                                intake_w = ?, exhaust_w = ?, circulation_w = ?, humidifier_w = ?, humidifier_lh = ?, ac_input_w = ?,
                                dehumidifier_w = ?, dehumidifier_lday = ?, lights_w = ?, dehumidifier = ?, lights = ?,
                                fan_max_pa = ?, filter_clean_pa = ?, filter_final_pa = ?, filter_change_days = ?, dp_address = ?,
-                               gateway = ?, updated_at = ?
+                               gateway = ?, updated_at = ?, room_type = ?
                         WHERE id = ?`),
     delete: db.prepare('DELETE FROM rooms WHERE id = ?'),
     deleteReadings: db.prepare('DELETE FROM readings WHERE room_id = ?'),
@@ -1257,6 +1312,7 @@ export function openDb(path, { log = console.error } = {}) {
                                        WHERE m.ref_kind = 'purchase' AND m.at BETWEEN ? AND ? ORDER BY m.at, m.id`),
     hasBatches: db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'batches'"),
   };
+  let cropPicks = null; // ---- Money truth ---- cropHarvestsBetween's statement, made on first use
   const batchStore = createBatchStore(db); // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 
   function checkName(name, id) {
@@ -1469,7 +1525,7 @@ export function openDb(path, { log = console.error } = {}) {
     getRoom,
 
     createRoom({ name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
-      meterAddress = null, dpAddress = null, gateway = null, ...ratings }, now = Date.now()) {
+      meterAddress = null, dpAddress = null, gateway = null, roomType = 'container', ...ratings }, now = Date.now()) {
       checkName(name, null);
       checkAddresses({ trhAddress, co2Address, relayAddress, acAddress, meterAddress, dpAddress }, null, gateway);
       db.exec('BEGIN');
@@ -1477,7 +1533,7 @@ export function openDb(path, { log = console.error } = {}) {
         // A new room's filter counts as changed when it was made.
         const { lastInsertRowid } = q.insert.run(name, length, width, height, trhAddress, co2Address,
           relayAddress, acAddress, meterAddress, ...ratingValues(ratings), ratings.dehumidifier ? 1 : 0, ratings.lights ? 1 : 0,
-          ...filterValues(ratings), now, dpAddress, gateway, now, now);
+          ...filterValues(ratings), now, dpAddress, gateway, now, now, roomType);
         q.insertCommands.run(lastInsertRowid);
         q.insertControl.run(lastInsertRowid, now);
         db.exec('COMMIT');
@@ -1488,9 +1544,10 @@ export function openDb(path, { log = console.error } = {}) {
       }
     },
 
-    // Returns the updated room, or null when there is no room with that id. A gateway left out (undefined) keeps the stored one.
+    // Returns the updated room, or null when there is no room with that id. A gateway or a room type left out (undefined) keeps
+    // the stored one.
     updateRoom(id, { name, length, width, height, trhAddress = null, co2Address = null, relayAddress = null, acAddress = null,
-      meterAddress = null, dpAddress = null, gateway, ...ratings }, now = Date.now()) {
+      meterAddress = null, dpAddress = null, gateway, roomType, ...ratings }, now = Date.now()) {
       const old = q.get.get(id);
       if (!old) return null;
       const via = gateway === undefined ? old.gateway : gateway;
@@ -1499,7 +1556,7 @@ export function openDb(path, { log = console.error } = {}) {
       const fitted = ratings.dehumidifier === undefined ? old.dehumidifier === 1 : ratings.dehumidifier;
       const lit = ratings.lights === undefined ? old.lights === 1 : ratings.lights;
       q.update.run(name, length, width, height, trhAddress, co2Address, relayAddress, acAddress, meterAddress,
-        ...ratingValues(ratings), fitted ? 1 : 0, lit ? 1 : 0, ...filterValues(ratings, old), dpAddress, via, now, id);
+        ...ratingValues(ratings), fitted ? 1 : 0, lit ? 1 : 0, ...filterValues(ratings, old), dpAddress, via, now, roomType ?? old.room_type ?? 'container', id);
       // Lights taken out: their log ends now (no usage charged for ever).
       if (old.lights === 1 && !lit) this.logOff(id, 'lights', now);
       // A dehumidifier taken out of the room: its log ends now (no usage charged for ever) and its band state starts again.
@@ -2758,6 +2815,10 @@ export function openDb(path, { log = console.error } = {}) {
       return db.prepare(`SELECT r.*, m.name AS room_name FROM runs r LEFT JOIN rooms m ON m.id = r.room_id
                          ORDER BY r.started_at DESC, r.id DESC`).all().map((r) => ({ ...runOf(r), roomName: r.room_name ?? null }));
     },
+    // ---- Money truth ---- a partial run's real block-in day (ms; null: not counted). → the run, or null when there is none.
+    setRunBlocksIn(id, at) {
+      return db.prepare('UPDATE runs SET blocks_in_at = ? WHERE id = ?').run(at, id).changes > 0 ? this.getRunById(id) : null;
+    },
     // ---- end Runs ----
 
     // ---- Economics ---- (spec 2026-11-06-economics-design.md 3). A figure row is economicsRow's; roomId 0 and crop '' are
@@ -2802,6 +2863,41 @@ export function openDb(path, { log = console.error } = {}) {
       return econQ.working.all().map(economicsRow);
     },
     // ---- end Economics ----
+
+    // ---- Money truth ---- one crop's harvests picked in [from, to] (ms), oldest first: the sales' 14-day windows read them.
+    // → [{ roomId, runId, crop, kg, pickedAt }] only (a few thousand rows a call).
+    cropHarvestsBetween(crop, from, to) {
+      cropPicks ??= db.prepare('SELECT room_id, run_id, kg, picked_at FROM harvests WHERE crop = ? AND picked_at BETWEEN ? AND ? ORDER BY picked_at, id');
+      return cropPicks.all(crop, from, to).map((r) => ({ roomId: r.room_id, runId: r.run_id, crop, kg: r.kg, pickedAt: r.picked_at }));
+    },
+
+    // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 6) Costs' equipment register. An item is equipmentOf's
+    // object; its fields { name, roomId, part, boughtOn, amount, lifeMonths, resale, note } are checked by
+    // server/costs-equipment.js.
+    listEquipment() {
+      return db.prepare('SELECT * FROM equipment ORDER BY bought_on, id').all().map(equipmentOf);
+    },
+    getEquipment(id) {
+      const r = db.prepare('SELECT * FROM equipment WHERE id = ?').get(id);
+      return r ? equipmentOf(r) : null;
+    },
+    // A new item made at `at` (ms). → the item.
+    insertEquipment(f, at) {
+      const { lastInsertRowid } = db.prepare(`INSERT INTO equipment (name, room_id, part, bought_on, amount, life_months, resale, note, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(f.name, f.roomId, f.part, f.boughtOn, f.amount, f.lifeMonths, f.resale, f.note, at);
+      return this.getEquipment(Number(lastInsertRowid));
+    },
+    // → the item with its new fields, or null when there is no such item.
+    updateEquipment(id, f) {
+      const { changes } = db.prepare(`UPDATE equipment SET name = ?, room_id = ?, part = ?, bought_on = ?, amount = ?, life_months = ?,
+        resale = ?, note = ? WHERE id = ?`).run(f.name, f.roomId, f.part, f.boughtOn, f.amount, f.lifeMonths, f.resale, f.note, id);
+      return changes > 0 ? this.getEquipment(id) : null;
+    },
+    // → true when an item went.
+    deleteEquipment(id) {
+      return db.prepare('DELETE FROM equipment WHERE id = ?').run(id).changes > 0;
+    },
+    // ---- end Money truth ----
 
     close() {
       db.close();

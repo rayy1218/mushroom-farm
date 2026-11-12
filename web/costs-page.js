@@ -16,8 +16,10 @@ import { picture } from './pictures.js';
 import {
   monthTitle, addMonths, monthTiles, monthNotes, categoryRows, categoryTotal, entryLine, repeatingLine, RUN_COLUMNS, runRow, runParts,
   profitBars, BARS_M, chartMonths, chartTitle, noFigures, chartWords, SHARED_NOTE,
+  boughtView, BOUGHT_NOTE, equipmentLine, EQUIPMENT_NONE, // ---- Money truth ----
 } from './costs-math.js';
 import { openAddDialog, openEditDialog, openChangeDialog, openStopDialog } from './costs-dialogs.js';
+import { openEquipmentDialog } from './costs-equipment.js'; // ---- Money truth ----
 
 const REFRESH_MS = 60_000;
 const LISTEN = ['costs', 'harvest', 'sales', 'batches', 'inventory'].filter((type) => EVENT_TYPES.includes(type));
@@ -55,6 +57,10 @@ const TEMPLATE = `
     <section class="card co-entries-card" aria-labelledby="co-entries-title"><h2 id="co-entries-title">Entries</h2><div class="co-list-box" data-entries></div></section>
     <section class="card co-cat-card" aria-labelledby="co-cat-title"><h2 id="co-cat-title">By category</h2><div data-categories></div></section>
     <section class="card co-repeat-card" aria-labelledby="co-repeat-title"><h2 id="co-repeat-title">Monthly items</h2><div class="co-list-box" data-repeating></div></section>
+    <section class="card co-equip-card" aria-labelledby="co-equip-title">
+      <div class="card-head"><h2 id="co-equip-title">Equipment</h2><button type="button" class="tk-quiet bz-quiet co-quiet" data-add-equipment data-focus-key="add-equipment">Add equipment</button></div>
+      <div class="co-list-box" data-equipment></div>
+    </section>
     <section class="card co-runs-card" aria-labelledby="co-runs-title"><h2 id="co-runs-title">Runs</h2><div data-runs></div></section>
   </div>`;
 
@@ -107,6 +113,7 @@ export function mount(container, { month = null } = {}) {
     bannerText: q('[data-banner-text]'), retry: q('[data-retry]'), body: q('[data-body]'), title: q('[data-title]'),
     tiles: q('[data-tiles]'), notes: q('[data-notes]'), chartTitle: q('[data-chart-title]'), chart: q('[data-chart]'),
     categories: q('[data-categories]'), entries: q('[data-entries]'), repeating: q('[data-repeating]'), runs: q('[data-runs]'),
+    equipment: q('[data-equipment]'), addEquipment: q('[data-add-equipment]'), // ---- Money truth ----
   };
   document.title = 'Costs · Mushroom farm';
 
@@ -114,6 +121,7 @@ export function mount(container, { month = null } = {}) {
   let view = null; // GET /api/costs/month of the month on show
   let costs = []; // GET /api/costs: the rows the edit dialogs open
   let rooms = [];
+  let equipment = []; // ---- Money truth ---- GET /api/equipment: the register, read with the lists
   let listsStale = true; // costs and rooms to be read with the next month (at first, and on the costs and room events)
   let seq = 0;
   let timer = null;
@@ -144,15 +152,17 @@ export function mount(container, { month = null } = {}) {
     const asked = shown;
     const lists = listsStale;
     try {
-      const [v, list, roomList] = await Promise.all([
+      const [v, list, roomList, register] = await Promise.all([
         request('GET', `/api/costs/month${asked ? `?month=${asked}` : ''}`),
         lists ? request('GET', '/api/costs') : null,
         lists ? request('GET', '/api/rooms') : null,
+        lists ? request('GET', '/api/equipment') : null,
       ]);
       if (!alive() || mine !== seq) return;
       view = v;
       if (lists) {
         costs = list.costs;
+        equipment = register.items;
         rooms = roomList.map((r) => ({ id: r.id, name: r.name })); // GET /api/rooms: the rooms as a list
         listsStale = false;
       }
@@ -351,8 +361,8 @@ export function mount(container, { month = null } = {}) {
   }
 
   function paintCategories() {
-    if (!view.byCategory.length) {
-      els.categories.replaceChildren(el('p', 'none', `No costs in ${monthTitle(view.month)}.`));
+    if (!view.byCategory.length) { // a month that only bought (September's materials): its cash line still shows
+      els.categories.replaceChildren(el('p', 'none', `No costs in ${monthTitle(view.month)}.`), ...boughtNodes());
       return;
     }
     const rows = categoryRows(view.byCategory).map((c) => {
@@ -372,8 +382,53 @@ export function mount(container, { month = null } = {}) {
     const th = el('th', '', 'Total');
     th.scope = 'row';
     foot.append(th, el('td', 'num', categoryTotal(view)), el('td', 'num'));
-    els.categories.replaceChildren(table('Costs by category', ['Category', 'RM', 'Share'], rows, 'co-cat-table', 1, foot));
+    els.categories.replaceChildren(table('Costs by category', ['Category', 'RM', 'Share'], rows, 'co-cat-table', 1, foot), ...boughtNodes());
   }
+
+  // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 5.2) what was bought for stock this month: a cash line, its own
+  // small table under the costs, never in them
+  function boughtNodes() {
+    const b = boughtView(view.bought);
+    if (!b) return [];
+    const rows = b.rows.map((r) => {
+      const tr = el('tr');
+      const th = el('th', '', r.label);
+      th.scope = 'row';
+      tr.append(th, el('td', 'num', r.amount));
+      return tr;
+    });
+    const foot = el('tr', 'total');
+    const th = el('th', '', 'Total');
+    th.scope = 'row';
+    foot.append(th, el('td', 'num', b.total));
+    const box = el('div', 'co-bought');
+    box.append(el('h3', 'co-bought-title', 'Bought for stock'), el('p', 'muted co-bought-note', BOUGHT_NOTE));
+    if (rows.length) box.append(table('Bought for stock', ['Kind', 'RM'], rows, 'co-bought-table', 1, foot));
+    if (b.unpriced) box.append(el('p', 'co-note-warn co-bought-note', b.unpriced));
+    return [box];
+  }
+
+  function paintEquipment() {
+    if (!equipment.length) {
+      els.equipment.replaceChildren(el('p', 'none', EQUIPMENT_NONE));
+      return;
+    }
+    const list = el('ul', 'co-entries co-equipment');
+    for (const item of equipment) {
+      const x = equipmentLine(item);
+      const li = el('li', 'co-entry co-equip');
+      const what = el('span', 'co-what', x.name);
+      what.append(el('span', 'co-sub', x.sub));
+      const off = el('span', 'co-date co-equip-off', x.writeOff);
+      off.append(el('span', 'co-sub', x.left));
+      const acts = el('span', 'co-acts');
+      acts.append(quietButton('Edit', `equipment-${item.id}`, () => openEquipmentDialog({ item, rooms, today: view.today, onDone: () => reloadAll(), onLost: showError }), `Edit ${x.name}`));
+      li.append(what, el('span', 'co-amount', x.amount), off, acts);
+      list.append(li);
+    }
+    els.equipment.replaceChildren(list);
+  }
+  // ---- end Money truth ----
 
   function paintEntries() {
     if (!view.entries.length) {
@@ -501,7 +556,7 @@ export function mount(container, { month = null } = {}) {
   }
 
   function paint() {
-    const key = JSON.stringify([view, costs, rooms]);
+    const key = JSON.stringify([view, costs, rooms, equipment]);
     if (key === painted) {
       els.body.removeAttribute('aria-busy');
       return; // a refresh with nothing new leaves the page (and the focus) alone
@@ -515,11 +570,16 @@ export function mount(container, { month = null } = {}) {
       paintCategories();
       paintEntries();
       paintRepeating();
+      paintEquipment();
       paintRuns();
     });
   }
 
   els.add.addEventListener('click', openAdd);
+  els.addEquipment.addEventListener('click', () => { // ---- Money truth ----
+    if (view) openEquipmentDialog({ rooms, today: view.today, onDone: () => reloadAll(), onLost: showError });
+    else if (els.banner.hidden) showError(LOADING);
+  });
   els.retry.addEventListener('click', () => load());
   let frame = 0;
   let lastWidth = 0;

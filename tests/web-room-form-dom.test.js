@@ -45,7 +45,7 @@ const flush = async () => { for (let i = 0; i < 10; i++) await new Promise((r) =
 
 // The text of the label of each input, by field name.
 function labels(nodes) {
-  const inputs = nodes.filter((n) => n.tag === 'input');
+  const inputs = nodes.filter((n) => n.tag === 'input' || n.tag === 'select'); // the room type: a select (Money truth)
   return Object.fromEntries(inputs.map((input) => {
     const label = nodes.find((n) => n.tag === 'label' && n.htmlFor === input.id);
     return [input.name, String(label.textContent).trim()];
@@ -66,7 +66,7 @@ test('the Add room dialog and the Room profile tab: every input labelled with it
   const nodes = Object.values(form.parts).flat().flatMap(all);
   assert.deepEqual(labels(nodes), Object.fromEntries(ROOM_FIELDS.filter((f) => f.name !== 'gateway').map((f) => [f.name, fieldLabel(f)])));
   const profile = createRoomForm(ROOM_GROUPS.filter((g) => g.key === 'profile'), { idPrefix: 'rp-' });
-  assert.deepEqual(labels(profile.parts.profile.flatMap(all)), { name: 'Name', length: 'Length (m)', width: 'Width (m)', height: 'Height (m)' });
+  assert.deepEqual(labels(profile.parts.profile.flatMap(all)), { name: 'Name', length: 'Length (m)', width: 'Width (m)', height: 'Height (m)', roomType: 'Room type' });
 });
 
 test('an Equipment card: its own short labels', async (t) => {

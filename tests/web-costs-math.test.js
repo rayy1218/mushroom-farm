@@ -7,7 +7,7 @@ import {
   moneyText, perKgText, monthTitle, monthTiles, categoryRows, categoryTotal, entryLine, repeatingLine, runRow, runParts, profitBars,
   monthsBetween, monthNotes, amountOf, bodyOf, clampMonth, runOn, landingText, billPeriod, checkCost, stopCharges, stopWords,
   deleteWords, monthSpan, chartMonths, chartTitle, noFigures, AMOUNT_MESSAGE, WORKER_MESSAGE, amountBox, chargeDayText, toComeNote,
-  chartWords, runProfitLine, SHARED_NOTE,
+  chartWords, runProfitLine, SHARED_NOTE, boughtView, BOUGHT_NOTE, equipmentLine, writeOffWords, equipmentBody,
 } from '../web/costs-math.js';
 import { DOT } from '../web/text-math.js';
 
@@ -207,7 +207,7 @@ test('by category: an entered line says so beside the same name from another sou
     { label: 'Packaging', source: 'inventory', amount: 330, share: 5 }, { label: 'Packaging', source: 'manual', amount: 20, share: 0 },
     { label: 'Rent', source: 'manual', amount: 1500, share: 23 },
   ]);
-  assert.deepEqual(rows.map((r) => r.source), ['from Inventory', 'entered', null]);
+  assert.deepEqual(rows.map((r) => r.source), ['used, from Inventory', 'entered', null]);
   assert.deepEqual(rows.map((r) => r.href), ['#/business/inventory', null, null], 'a source in another module links to it');
   assert.equal(categoryTotal({ pending: false, tiles: { costs: 6560 } }), `RM${NB}6,560.00`);
   assert.equal(categoryTotal({ pending: true, tiles: { costs: null } }), '—');
@@ -385,4 +385,35 @@ test("the Harvest tab's profit line of the run (Costs' summary)", () => {
   assert.equal(runProfitLine({ total: 0, income: 0, profit: 0 }), null, 'Costs has nothing');
   assert.equal(runProfitLine({ total: null, income: 300, profit: null }), null, 'still worked out');
   assert.equal(runProfitLine(null), null);
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 5.2 and 6) ----
+test('Profit says what it is before the write-off; the sources\' words; a run\'s equipment; Bought for stock; the register\'s rows and dialog', () => {
+  const plain = (s) => s?.replace(/[\u00a0\u202f]/g, ' ');
+  const tiles = (t) => monthTiles({ pending: false, tiles: { income: 500, costs: 169.5, profit: 330.5, costPerKg: null, profitPerKg: null, kgHarvested: 0, kgSold: 0, incomplete: false, ...t } });
+  assert.equal(plain(tiles({ writeOff: 169.5, profitBeforeWriteOff: 500 })[0].line), 'RM 500.00 before write-off');
+  assert.equal(plain(tiles({ profit: -20, writeOff: 69.5, profitBeforeWriteOff: 49.5 })[0].line), 'Loss · RM 49.50 before write-off');
+  assert.equal(tiles({ writeOff: 0, profitBeforeWriteOff: 330.5 })[0].line, undefined, 'nothing written off: no line');
+  assert.deepEqual(categoryRows([{ label: 'Spawn', source: 'inventory', amount: 632.5, share: 44 }, { label: 'Equipment written off', source: 'register', amount: 69.5, share: 4 }])
+    .map((r) => r.source), ['used, from Inventory', 'from the register']);
+  const parts = runParts({ id: 1, parts: { blocks: 0, energy: 0, water: 0, own: 0, equipment: 69.5, shared: 0 }, notes: [], income: 0, kgHarvested: 0, kgSold: 0 });
+  assert.deepEqual(parts[0].map(plain), ['Equipment written off', 'RM 69.50']);
+  const b = boughtView({ total: 5988, lines: [{ key: 'inventory-spawn', label: 'Spawn', amount: 3300 }, { key: 'inventory-other', label: 'Other supplies', amount: 2688 }], unpriced: [] });
+  assert.deepEqual([b.rows.map((r) => [r.label, plain(r.amount)]), plain(b.total), b.unpriced], [[['Spawn', 'RM 3,300.00'], ['Other supplies', 'RM 2,688.00']], 'RM 5,988.00', null]);
+  assert.equal(boughtView({ total: 0, lines: [], unpriced: ['Blocks received 14 Nov'] }).unpriced, 'No price: Blocks received 14 Nov');
+  assert.equal(boughtView({ total: 0, lines: [], unpriced: [] }), null);
+  assert.equal(BOUGHT_NOTE, 'Paid this month; a cost once used.');
+  const line = equipmentLine({ name: 'Daikin', roomId: 2, roomName: 'Container 1', part: 'cooling', boughtOn: '2025-01-03', amount: 4170, lifeMonths: 60, monthly: 69.5, left: 2641, done: false });
+  assert.deepEqual(Object.fromEntries(Object.entries(line).map(([k, v]) => [k, plain(v)])), {
+    name: 'Daikin', sub: 'Container 1 · Cooling · bought 3 Jan 2025', amount: 'RM 4,170.00', writeOff: 'RM 69.50 a month, 60 months', left: 'RM 2,641.00 left to write off',
+  });
+  assert.equal(equipmentLine({ name: 'Mixer', roomId: null, part: 'other', boughtOn: '2024-03-15', amount: 1200, lifeMonths: 1, monthly: 1200, left: 0, done: true }).left, 'written off');
+  assert.equal(plain(writeOffWords({ amount: '4,170.00', resale: '0', lifeMonths: '60' })), 'RM 69.50 a month for 60 months.');
+  assert.equal(plain(writeOffWords({ amount: '100', resale: '', lifeMonths: '3' })), 'RM 33.33 a month for 3 months, the last RM 33.34.');
+  assert.equal(writeOffWords({ amount: '100', resale: '200', lifeMonths: '3' }), null);
+  assert.deepEqual(equipmentBody({ name: ' Daikin ', roomId: '2', part: 'cooling', boughtOn: '2025-01-03', amount: '4,170.00', lifeMonths: '60', resale: '', note: '' }, '2026-11-12'),
+    { body: { name: 'Daikin', roomId: 2, part: 'cooling', boughtOn: '2025-01-03', amount: 4170, lifeMonths: 60, resale: 0, note: '' } });
+  assert.equal(equipmentBody({ name: 'X', boughtOn: '2026-11-13', amount: '1', lifeMonths: '1' }, '2026-11-12').field, 'boughtOn');
+  assert.equal(equipmentBody({ name: 'X', boughtOn: '2026-11-01', amount: '1', lifeMonths: '1', resale: '2' }, '2026-11-12').field, 'resale');
+  assert.equal(equipmentBody({ name: 'X', boughtOn: '2026-11-01', amount: '1', lifeMonths: '1.5' }, '2026-11-12').field, 'lifeMonths');
 });

@@ -125,3 +125,19 @@ test('the Business conventions: quiet row actions bz-quiet, the dialogs\' form b
   assert.ok(dialogs.includes("document.querySelector('dialog.tk-dialog[open] > form')?.classList.add('bz-form');"));
   assert.ok(!/openForm\(\{/.test(dialogs.replace('const form = openForm(options);', '')), 'every dialog through the bz-form wrapper');
 });
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 5.2 and 6) ----
+test('Bought for stock under the costs; the Equipment card read with the lists, its dialog sending to the register\'s routes', () => {
+  assert.ok(page.includes("lists ? request('GET', '/api/equipment') : null,"));
+  assert.ok(page.includes("box.append(el('h3', 'co-bought-title', 'Bought for stock')"));
+  assert.ok(page.includes('<h2 id="co-equip-title">Equipment</h2>'));
+  assert.ok(page.includes('Add equipment'));
+  const eq = src('costs-equipment.js');
+  for (const words of ["request('POST', '/api/equipment', body)", "request('PUT', `/api/equipment/${item.id}`, body)", "request('DELETE', `/api/equipment/${item.id}`)",
+    "label: 'Delete this item'", 'Its write-off goes from every month. This cannot be undone.']) assert.ok(eq.includes(words), words);
+  assert.match(costsCss, /grid-template-areas: "month month" "entries cats" "repeat cats" "equip cats" "runs runs"/);
+});
+
+test('a month with no costs still shows what it bought for stock (a September of stock bought, none used)', () => {
+  assert.ok(page.includes("els.categories.replaceChildren(el('p', 'none', `No costs in ${monthTitle(view.month)}.`), ...boughtNodes());"));
+});

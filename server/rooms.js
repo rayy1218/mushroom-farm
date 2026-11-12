@@ -4,6 +4,7 @@ import { parseGateway } from './gateways.js';
 
 export const NAME_MAX = 60;
 export const GATEWAY_MAX = 100;
+export const ROOM_TYPES = ['container', 'built', 'shed']; // ---- Money truth ----
 const GATEWAY_ERROR = "Gateway must look like host:port, such as 192.168.1.50:502, or be empty for the farm's gateway";
 
 const SIZES = [
@@ -89,6 +90,10 @@ export function validateRoom(body) {
     return { error: 'Lights fitted must be true or false', field: 'lights' };
   }
   if (body.lights !== undefined) room.lights = body.lights;
+  // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 10) what the room is, for Economics' building and cooling;
+  // kept the same way when left out or null (a new room: a container).
+  if (body.roomType != null && !ROOM_TYPES.includes(body.roomType)) return { error: 'Pick a room type', field: 'roomType' };
+  if (body.roomType != null) room.roomType = body.roomType;
   // The room's own Modbus gateway (a container behind one), kept the same way when left out; null, empty or blank: the farm's.
   if (body.gateway !== undefined) {
     const text = typeof body.gateway === 'string' ? body.gateway.trim() : body.gateway;

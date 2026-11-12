@@ -1,5 +1,6 @@
 // The costs routes (spec 2026-11-05-costs-design.md 5), called from api.js: GET /api/costs, /api/costs/month?month=,
-// /api/costs/summary?from=&to=&run=, /api/costs.csv?month=; POST /api/costs; PUT and DELETE /api/costs/:id; POST /api/costs/:id/change and /stop.
+// /api/costs/summary?from=&to=&run=, /api/costs.csv?month=; POST /api/costs; PUT and DELETE /api/costs/:id; POST /api/costs/:id/change and /stop;
+// GET and POST /api/equipment, PUT and DELETE /api/equipment/:id (Money truth: the equipment register).
 // server/costs.js checks, writes and works out; this reads the query and the body and turns its errors into the API's.
 
 import { createCosts } from './costs.js';
@@ -7,6 +8,7 @@ import { attachment } from './tasks-api.js';
 
 const ONE = /^\/api\/costs\/([1-9][0-9]{0,14})$/;
 const ACTION = /^\/api\/costs\/([1-9][0-9]{0,14})\/(change|stop)$/;
+const EQUIPMENT = /^\/api\/equipment\/([1-9][0-9]{0,14})$/; // ---- Money truth ----
 const BOM = '\ufeff'; // Excel on Windows reads the CSV as UTF-8
 
 // Makes the service from the database, tells the pages ('costs' on events) after a write or a usage warm done. → async (req,
@@ -42,6 +44,24 @@ export function createCostRoutes({ db, events }) {
       const run = q('run');
       if (run !== null && !/^[1-9][0-9]{0,14}$/.test(run)) throw new HttpError(400, 'run must be a run id', 'run');
       send(res, 200, costs.summary({ from: q('from'), to: q('to'), run: run === null ? null : Number(run) }));
+      return true;
+    }
+    // ---- Money truth ---- the equipment register (spec 2026-11-12-money-truth-design.md 6.2)
+    if (path === '/api/equipment') {
+      if (req.method === 'GET') send(res, 200, costs.equipment());
+      else if (req.method === 'POST') send(res, 201, costs.addEquipment(await readJson(req)));
+      else throw notFound();
+      return true;
+    }
+    const item = EQUIPMENT.exec(path);
+    if (item) {
+      const id = Number(item[1]);
+      if (req.method === 'PUT') send(res, 200, costs.editEquipment(id, await readJson(req)));
+      else if (req.method === 'DELETE') {
+        costs.removeEquipment(id);
+        res.writeHead(204);
+        res.end();
+      } else throw notFound();
       return true;
     }
     const action = ACTION.exec(path);

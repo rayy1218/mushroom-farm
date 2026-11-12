@@ -17,23 +17,24 @@ function researchValues(crop, room = ROOM) {
   return Object.fromEntries(figuresFor(crop).map((f) => [f.key, f.key === 'tariff' ? 0.55 : researchOf(f.key, crop, room, blocks).value]));
 }
 
-// [way, kg sold, income, costs, profit, break-even, equipment, payback, payback with the first fill] (null: never)
+// [way, kg sold, income, costs, profit, break-even, equipment, payback, payback with the first fill] (null: never). Your
+// container's labour is the farm's one worker at RM 1,954.15 a month, all of it in its one room (Money truth 9).
 const TABLE = {
   oyster: [
-    ['yours', 161.29, 1612.85, 3013.23, -1400.38, 18.68, 52977.40, null, null],
+    ['yours', 161.29, 1612.85, 4629.48, -3016.63, 28.70, 52977.40, null, null], // Money truth: labour one worker's RM 1,954.15
     ['shed', 72.76, 727.60, 1541.78, -814.18, 21.19, 6800, null, null],
   ],
   pink: [
-    ['yours', 308.16, 6163.22, 6398.20, -234.97, 20.76, 52977.40, null, null],
+    ['yours', 308.16, 6163.22, 8012.95, -1849.73, 26.00, 52977.40, null, null],
     ['shed', 121.64, 2432.85, 3190.46, -757.61, 26.23, 6800, null, null],
   ],
   woodear: [
-    ['yours', 120.47, 3011.81, 2852.24, 159.56, 23.68, 52977.40, 50.82, 55.27],
+    ['yours', 120.47, 3011.81, 4468.05, -1456.25, 37.09, 52977.40, null, null],
     ['shed', 76.23, 1905.73, 1890.74, 15.00, 24.80, 6800, 52.99, null],
     ['import', 120.47, 3011.81, 2370.48, 641.32, 19.68, 0, 'none', 'none'],
   ],
   lionsmane: [
-    ['yours', 217.22, 10860.94, 8677.25, 2183.70, 39.95, 52977.40, 17.28, 20.66],
+    ['yours', 217.22, 10860.94, 10180.87, 680.07, 46.87, 52977.40, 33.89, 40.54],
     ['highland', 217.22, 10860.94, 8211.37, 2649.57, 37.80, 8300, 2.98, 6.64],
     ['import', 217.22, 10860.94, 11121.39, -260.45, 51.20, 0, 'none', 'none'],
     ['warm', 107.74, 5387.03, 7473.50, -2086.47, 69.37, 9800, null, null],
@@ -163,4 +164,34 @@ test('a refusal in the app\'s money words: RM first, the figures grouped', () =>
   assert.equal(checkFigure('yours.container', -1), `Container, delivered must be a number from RM${NB}0 to RM${NB}10,000,000`);
   assert.equal(checkFigure('yours.blocks', 0), `Blocks in the room must be a whole number from 1 to 100,000${NB}blocks`);
   assert.equal(checkFigure('yours.loss', 91), `Blocks lost must be a number from 0 to 90${NB}%`);
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 9 and 10) ----
+test('the room type: a built room\'s panels and cooling by its size, a shed\'s house and no cooling; the way and the building named by it', async () => {
+  const { yoursName, figureLabel, EQUIPMENT_KEYS } = await import('../web/economics-defaults.js');
+  const room1 = { volume: 113.4, length: 9, width: 4.5, height: 2.8, humidifierLH: 2, type: 'built' };
+  assert.equal(sizeOf(room1), null, 'not a container');
+  const building = researchOf('yours.container', 'lionsmane', room1, 2640);
+  assert.deepEqual([building.value, building.low, building.high], [25056, 15660, 39150], '156.6 m² of panel at RM 160 (100–250)');
+  assert.match(building.note.replace(/\u00a0/g, ' '), /^156.6 m² of insulated panel walls, roof and floor at RM 160 a m²/);
+  const cooling = researchOf('yours.cooling', 'lionsmane', room1, 2640);
+  assert.deepEqual([cooling.value, cooling.low, cooling.high], [13560, 9040, 18080], '3 × 2.5 hp for 113 m³, not the 40 ft reefer\'s 2');
+  assert.equal(researchOf('yours.container', 'lionsmane', { ...room1, type: 'container' }, 2640).value, 38100, 'as a container: the 40 ft reefer');
+  const shed = { volume: 200, length: 10, width: 8, height: 2.5, humidifierLH: 2, type: 'shed' };
+  assert.deepEqual([researchOf('yours.container', 'oyster', shed, 3000).value, researchOf('yours.cooling', 'oyster', shed, 3000).value,
+    researchOf('yours.racks', 'oyster', shed, 3000).value], [10000, 0, 0], 'two houses for 3,000 blocks; not cooled; racks in the house');
+  assert.deepEqual([yoursName('container'), yoursName('built'), yoursName('shed'), yoursName(undefined)], ['Your container', 'Your room', 'Your shed', 'Your container']);
+  assert.deepEqual([figureLabel('yours.container', 'built'), figureLabel('yours.container', 'shed'), figureLabel('yours.cooling', 'built')],
+    ['Building, insulated', 'Shed', 'Cooling, fitted']);
+  assert.deepEqual(EQUIPMENT_KEYS, ['yours.container', 'yours.cooling', 'yours.humidifier', 'yours.fans', 'yours.racks', 'yours.other']);
+});
+
+test('labour as people: the workers and a worker\'s month at RM 1,700 × 1.1495, farm figures of Your container', () => {
+  const w = researchOf('yours.workerMonth', 'lionsmane', ROOM, 1482);
+  assert.deepEqual([w.value, w.low, w.high, w.confidence], [1954.15, 1954.15, 2299, 'medium']);
+  assert.equal(researchOf('yours.workers', 'oyster', ROOM, 1482).value, 1);
+  assert.deepEqual([figureOf('yours.workers').scope, figureOf('yours.workerMonth').scope, figureOf('yours.workers').way], ['farm', 'farm', 'yours']);
+  assert.equal(checkFigure('yours.workers', 0.5), null, 'a part-time worker');
+  assert.equal(figureOf('wage').label, 'Labour cost, other ways');
+  assert.equal(researchOf('yours.other', 'pink', ROOM, 1482).value, 0);
 });

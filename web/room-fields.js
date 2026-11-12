@@ -20,13 +20,15 @@ export const ROOM_GROUPS = [
 ];
 
 // kind: text (the name), size (m), address (1 to 247, blank: none), check (a box), rating (from 0, two decimals at most),
-// whole (a filter setting, a whole number), gateway (host:port, blank: the farm's). word: the field in the server's messages, when not its label. fitted: the box that
+// whole (a filter setting, a whole number), gateway (host:port, blank: the farm's), choice (one of its options: the room type). word: the field in the server's messages, when not its label. fitted: the box that
 // shows the field (and makes it required). def: a new room's value. note: added to the unit in the label.
 export const ROOM_FIELDS = [
   { name: 'name', group: 'profile', kind: 'text', label: 'Name' },
   { name: 'length', group: 'profile', kind: 'size', label: 'Length', unit: 'm', min: 0.5, max: 100, step: '0.1' },
   { name: 'width', group: 'profile', kind: 'size', label: 'Width', unit: 'm', min: 0.5, max: 100, step: '0.1' },
   { name: 'height', group: 'profile', kind: 'size', label: 'Height', unit: 'm', min: 0.5, max: 10, step: '0.1' },
+  // ---- Money truth ---- what the room is (Economics prices its building and cooling by it); a new room: a container
+  { name: 'roomType', group: 'profile', kind: 'choice', label: 'Room type', def: 'container', hint: 'Economics prices the building and its cooling by it.', options: [['container', 'Container'], ['built', 'Built room'], ['shed', 'Shed']] },
   { name: 'trhAddress', group: 'sensors', kind: 'address', label: 'T/RH probe', word: 'T/RH sensor' },
   { name: 'co2Address', group: 'sensors', kind: 'address', label: 'CO₂ sensor' },
   { name: 'meterAddress', group: 'sensors', kind: 'address', label: 'Energy meter' },
@@ -78,6 +80,7 @@ export function fieldTexts(room) {
     const v = room?.[f.name];
     if (f.kind === 'check') return [f.name, v === true];
     if (f.kind === 'text' || f.kind === 'gateway') return [f.name, typeof v === 'string' ? v : ''];
+    if (f.kind === 'choice') return [f.name, f.options.some(([key]) => key === v) ? v : f.def];
     return [f.name, finite(v) ? String(v) : f.def !== undefined ? String(f.def) : ''];
   }));
 }
@@ -86,6 +89,10 @@ export function fieldTexts(room) {
 function check(f, text, texts) {
   const s = String(text ?? '').trim();
   if (f.kind === 'check') return { value: text === true };
+  if (f.kind === 'choice') { // left out (a form without it): kept as the room has it
+    if (s === '') return {};
+    return f.options.some(([key]) => key === s) ? { value: s } : { error: 'Pick a room type' };
+  }
   if (f.kind === 'text') {
     if (s === '') return { error: 'Name is required' };
     if (s.length > NAME_MAX) return { error: `Name must be ${NAME_MAX} characters or fewer` };

@@ -17,11 +17,12 @@ import {
 import { SHARED_NOTE } from './costs-math.js';
 import {
   LIST_COLUMNS, cropChoices, listRow, emptyText, runTitle, runSub, pageTiles, costsMix, batchRows, SALE_COLUMNS, saleRows,
-  salesTotal, costRows, costsTotal, costNotes,
+  salesTotal, costRows, costsTotal, costNotes, tieText, untiedText, countLine, COUNT_TITLE, countLead, countBody, countRange,
 } from './runs-math.js';
+import { openForm, errorText, closeTaskDialog } from './task-dialogs.js'; // ---- Money truth ---- the block-in day's dialog
 
 const REFRESH_MS = 60_000;
-const LISTEN = ['harvest', 'batches', 'sales', 'costs'].filter((type) => EVENT_TYPES.includes(type));
+const LISTEN = ['harvest', 'batches', 'sales', 'costs', 'inventory'].filter((type) => EVENT_TYPES.includes(type)); // inventory: a purchase prices made blocks (Money truth)
 const PHONE = '(max-width: 600px)';
 const BANNER = '<div class="banner" role="alert" hidden><span data-banner-text></span><button type="button" data-retry>Retry</button></div>';
 
@@ -236,7 +237,15 @@ export function mount(container, { crop = null } = {}) {
       return tr;
     });
     const caption = shown ? `Runs of ${els.crop.selectedOptions[0]?.textContent}` : 'Runs';
-    els.list.replaceChildren(keepTable(table(caption, LIST_COLUMNS, rows, 'rn-table', 2), caption), el('p', 'muted co-runs-note', SHARED_NOTE));
+    // ---- Money truth ---- the sales that reach no run, with where they are kept
+    const untied = untiedText(reply.untied);
+    const lead = [];
+    if (untied) {
+      const p = el('p', 'rn-untied', `${untied} `);
+      p.append(link('Sales', SALES_HASH));
+      lead.push(p);
+    }
+    els.list.replaceChildren(...lead, keepTable(table(caption, LIST_COLUMNS, rows, 'rn-table', 2), caption), el('p', 'muted co-runs-note', SHARED_NOTE));
   }
   function fail(err) {
     els.body.removeAttribute('aria-busy');
@@ -269,6 +278,7 @@ const ONE = `
       <h2 id="rn-money-title">Money and yield</h2>
       <div class="us-tiles hv-tiles co-tiles" data-tiles></div>
       <div data-notes></div>
+      <div class="rn-count" data-count hidden></div>
     </section>
     <section class="card rn-costs" aria-labelledby="rn-costs-title">
       <div class="card-head"><h2 id="rn-costs-title">Costs</h2><span data-costs-link></span></div>
@@ -298,7 +308,7 @@ export function mountRun(container, { id }) {
     back: q('[data-back]'), title: q('[data-title]'), sub: q('[data-sub]'), banner: q('.banner'), bannerText: q('[data-banner-text]'), body: q('[data-body]'),
     gone: q('[data-gone]'), tiles: q('[data-tiles]'), notes: q('[data-notes]'), blocks: q('[data-blocks]'), blocksLink: q('[data-blocks-link]'),
     harvests: q('[data-harvests]'), harvestsLink: q('[data-harvests-link]'), sales: q('[data-sales]'), salesLink: q('[data-sales-link]'),
-    costs: q('[data-costs]'), costsLink: q('[data-costs-link]'),
+    costs: q('[data-costs]'), costsLink: q('[data-costs-link]'), count: q('[data-count]'),
   };
   document.title = 'Run · Mushroom farm';
   let painted = '';
@@ -393,7 +403,7 @@ export function mountRun(container, { id }) {
   function paintSales(v) {
     els.salesLink.replaceChildren(link('Sales', SALES_HASH));
     if (!v.sales.lines.length) {
-      els.sales.replaceChildren(el('p', 'none', 'No sales of this run. A sale line that names the container counts in the run open on its day.'));
+      els.sales.replaceChildren(el('p', 'none', 'No sales of this run. A sale line that names the container counts in the run open on its day; one that names none, in the only run growing its crop, else shared by the kg picked.'));
       return;
     }
     const cell = (text, className, column) => {
@@ -401,7 +411,7 @@ export function mountRun(container, { id }) {
       td.dataset.label = SALE_COLUMNS[column];
       return td;
     };
-    const rows = saleRows(v.sales.lines).map((s) => {
+    const rows = saleRows(v.sales.lines).map((s, i) => {
       const tr = el('tr', 'rn-sale');
       const day = el('th', '', s.day);
       day.scope = 'row';
@@ -409,7 +419,10 @@ export function mountRun(container, { id }) {
       if (s.reference) buyer.append(el('span', 'co-sub', s.reference));
       const paid = cell(null, 'num rn-paid', 5); // a phone: a line of its own under the figures, its mark its own words
       paid.append(el('span', `sl-mark${s.paid.unpaid ? ' sl-unpaid' : ''}`, s.paid.text)); // Sales' paid mark, its look too
-      tr.append(day, buyer, cell(s.sold, '', 2), cell(s.price, 'num', 3), cell(s.total, 'num rn-total-cell', 4), paid);
+      const sold = cell(s.sold, '', 2);
+      const tie = tieText(v.sales.lines[i]); // ---- Money truth ---- how it reached this run
+      if (tie) sold.append(el('span', 'co-sub', tie));
+      tr.append(day, buyer, sold, cell(s.price, 'num', 3), cell(s.total, 'num rn-total-cell', 4), paid);
       return tr;
     });
     const caption = 'Sales of this run';
@@ -438,6 +451,46 @@ export function mountRun(container, { id }) {
     els.costs.replaceChildren(...notes, dl, el('p', 'muted co-runs-note', SHARED_NOTE));
   }
 
+  // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 8.2) a partial run counts in Economics once its block-in day
+  // is given; the page reads again on the 'harvest' event the save publishes
+  function paintCount(v, today) {
+    const c = countLine(v, today);
+    els.count.hidden = !c;
+    if (!c) return els.count.replaceChildren();
+    const send = (body) => request('PUT', `/api/runs/${v.id}/blocks-in`, body).then(() => read.load());
+    const go = el('button', 'tk-quiet bz-quiet', c.action);
+    go.type = 'button';
+    go.dataset.focusKey = 'count';
+    go.addEventListener('click', () => openForm({
+      title: COUNT_TITLE,
+      lead: [countLead(v, today)],
+      fields: [{ name: 'day', label: 'Blocks went in on', kind: 'date', value: v.blocksInAt ? farmDate(v.blocksInAt) : '', ...countRange(v) }],
+      buttons: [{ value: 'count', label: 'Count it', primary: true }],
+      submit: async (values) => {
+        const r = countBody(values.day, v);
+        if (!r.body) return r;
+        try {
+          await send(r.body);
+          return true;
+        } catch (err) {
+          return err.field ? { field: 'day', message: err.message } : { message: errorText(err) };
+        }
+      },
+    }));
+    const tools = [go];
+    if (c.stop) {
+      const stop = el('button', 'tk-quiet bz-quiet', c.stop);
+      stop.type = 'button';
+      stop.dataset.focusKey = 'count-stop';
+      stop.addEventListener('click', () => send({ blocksInAt: null }).catch((err) => { els.bannerText.textContent = failText(err); els.banner.hidden = false; }));
+      tools.push(stop);
+    }
+    const acts = el('span', 'rn-count-acts');
+    acts.append(...tools);
+    els.count.replaceChildren(el('p', 'muted rn-count-text', c.text), acts);
+  }
+  // ---- end Money truth ----
+
   function paint(v) {
     els.banner.hidden = true;
     els.gone.hidden = true;
@@ -449,6 +502,7 @@ export function mountRun(container, { id }) {
     els.back.hidden = false;
     paintHead(v, today);
     paintMoney(v);
+    paintCount(v, today);
     paintCosts(v);
     paintBlocks(v, today);
     paintHarvests(v);
@@ -474,6 +528,7 @@ export function mountRun(container, { id }) {
 
   return function unmount() {
     mountSeq++;
+    closeTaskDialog(); // ---- Money truth ---- its dialog has nothing to go back to
     read.stop();
   };
 }

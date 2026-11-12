@@ -15,7 +15,7 @@ import {
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
 import { createDoneLine, keepFlash } from './inventory-done.js';
-import { qtyText, countedText, lotLabel, lotHref, lotPill, moveLine, dayNear, useByLine, KIND_ONE } from './inventory-math.js';
+import { qtyText, countedText, lotLabel, lotHref, lotPill, moveLine, dayNear, useByLine, KIND_ONE, lotWorth, rmText } from './inventory-math.js';
 
 const REFRESH_MS = 60_000;
 const HISTORY_SHOWN = 20;
@@ -165,8 +165,12 @@ export function mount(container, { id }) {
       line.dataset.tone = near.tone;
       stockTile.append(line);
     }
+    // ---- Money truth ---- what it is worth at what each lot cost (the owner's: a worker's reply has no value)
+    const worth = it.value === undefined ? null : tile('Worth', it.unpriced && !(it.value > 0) ? 'No price' : rmText(it.value),
+      it.unpriced ? (it.value > 0 ? 'Part has no price' : 'Some has no price') : 'At what each lot cost');
     els.tiles.replaceChildren(
       stockTile,
+      ...(worth ? [worth] : []),
       tile('Reorder at', it.reorderAt === null ? '—' : qtyText(it.reorderAt, it.unit), it.reorderAt === null ? 'No level set' : null),
       tile('Last counted', counted.text),
     );
@@ -189,7 +193,10 @@ export function mount(container, { id }) {
         b.addEventListener('click', () => openThrowOutDialog({ lot, item: it, onDone: done, onLost: showError, alive }));
         action.append(b);
       }
-      tr.append(head, el('td', 'num iv-lot-qty', qtyText(lot.qty, it.unit)), el('td', 'num iv-lot-left', qtyText(lot.left, it.unit)), useBy, action);
+      const left = el('td', 'num iv-lot-left', qtyText(lot.left, it.unit));
+      const worth = lotWorth(lot, it.unit); // ---- Money truth ----
+      if (worth) left.append(el('span', 'iv-worth', worth));
+      tr.append(head, el('td', 'num iv-lot-qty', qtyText(lot.qty, it.unit)), left, useBy, action);
       return tr;
     }));
 

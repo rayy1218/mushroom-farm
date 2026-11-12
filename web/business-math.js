@@ -35,14 +35,27 @@ export const moneyTiles = (month) => monthTiles(month).slice(0, 3);
 // null when none is left or without Costs.
 export const toComeLine = (month) => (month ? toComeNote(month)?.text ?? null : null);
 
-// The kg picked and not sold: "140.6 kg not sold yet, about RM 4,921.35 at your expected prices" (Costs' unsold; without the
+// ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 3 and 5.2) What the stock is worth: "Stock on hand: RM
+// 4,647.10 at what each lot cost · Plastic bags: no price" (Inventory's); what was bought for it this month: "Bought for stock
+// this month: RM 5,988.00 (a cost once used)" (Costs'). null when there is nothing to say or without the module.
+export function stockLine(stock) {
+  if (!stock || typeof stock.total !== 'number') return null;
+  const n = stock.unpriced?.length ?? 0;
+  if (stock.total === 0 && n === 0) return null;
+  const missing = n === 0 ? '' : n === 1 ? `${DOT}${stock.unpriced[0]}: no price` : `${DOT}${n} items have no price`;
+  return `Stock on hand: ${moneyText(stock.total)} at what each lot cost${missing}`;
+}
+export const boughtLine = (month) => (month?.bought?.total > 0 ? `Bought for stock this month: ${moneyText(month.bought.total)} (a cost once used)` : null);
+// ---- end Money truth ----
+
+// The kg picked and not sold: "124.4 kg not sold yet, about RM 4,354.00 at your expected prices" (Costs' unsold; without the
 // RM when a picked crop has no expected price); null when everything picked is sold.
 export function unsoldLine(month) {
   const u = month?.tiles?.unsold;
   if (!u) return null;
   return `${kgText(u.kg)} not sold yet${u.value === null || u.value === undefined ? '' : `, about ${moneyText(u.value)} at your expected prices`}`;
 }
-// The same as a tile (a desk's fourth): "Not sold" "140.6 kg" "about RM 4,921.35 at your expected prices".
+// The same as a tile (a desk's fourth): "Not sold" "124.4 kg" "about RM 4,354.00 at your expected prices".
 export function unsoldTile(month) {
   const u = month?.tiles?.unsold;
   if (!u) return null;
@@ -116,11 +129,11 @@ const KINDS = {
     words: (n) => `${n.name}${DOT}${useByLine(n).text}`,
   },
   blocks: { place: 4, tone: () => null, words: (n) => `${blocksText(n)} ready for a room` },
-  // amber as Costs' own note of a delivery with no price (its costs are short)
+  // amber: a delivery with no whole price leaves its run's costs short (Money truth)
   unpriced: {
     place: 5,
     tone: () => 'warning',
-    words: (n) => `${n.notes.length === 1 ? n.notes[0].text : `Blocks of ${n.notes.length} deliveries have no price`}${DOT}this month's costs leave them out`,
+    words: (n) => `${n.notes.length === 1 ? n.notes[0].text : `Blocks of ${n.notes.length} deliveries have no price`}${DOT}costs leave out what has no price`,
   },
 };
 const PART_PLACE = { sales: 0, inventory: 1, batches: 4, costs: 5 };

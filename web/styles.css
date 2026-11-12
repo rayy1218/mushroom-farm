@@ -396,6 +396,8 @@ html { scroll-padding-top: var(--topbar-h); }
 @media (max-width: 600px) { .sizes.two { grid-template-columns: 1fr 1fr; gap: 12px; } }
 /* two grids one under the other: the same space as between their rows */
 .sizes + .sizes { margin-top: 12px; }
+.room-choice select { max-width: 20rem; } /* Money truth: the room type, three short words */
+.room-choice .c-hint { margin: 4px 0 0; }
 /* a box under a grid of fields (Dehumidifier fitted, Lights fitted), its error line under it */
 .room-check { margin-top: 4px; }
 .room-check .field-error:empty { display: none; }
@@ -2472,6 +2474,17 @@ p.bt-making-note.bt-over { margin-top: 12px; }
   body.printing-sheet .iv-sheet-foot { margin-top: 4mm; font-size: 9pt; break-inside: avoid; }
 }
 .iv-settings .s-hint { max-width: 60ch; } /* hints capped near 60 ch, as DESIGN.md has it (audit #25) */
+/* Money truth: what the stock is worth (the owner's) */
+.iv-worth-line { margin: 0 0 12px; }
+.iv-worth-total { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+.iv-worth { display: block; color: var(--muted); font-size: var(--fs-sm); font-weight: 400; font-variant-numeric: tabular-nums; }
+@media (min-width: 601px) {
+  .iv-lot-table :is(th, td):nth-child(3) { width: 13rem; } /* Left with its cost and worth */
+}
+@media (max-width: 600px) {
+  .iv-table .iv-qty { flex-direction: column; align-items: flex-end; justify-content: center; }
+  .iv-worth-total { display: block; }
+}
 /* ---- end Inventory ---- */
 
 /* ---- Sales ---- */
@@ -2655,7 +2668,8 @@ button.co-step:disabled { opacity: .4; }
 .co-page { display: grid; gap: 16px; align-items: start; transition: opacity .15s; }
 .co-page[aria-busy="true"] { opacity: .55; } /* another month asked for: these figures are the last one's */
 @media (min-width: 900px) {
-  .co-page { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-areas: "month month" "entries cats" "repeat cats" "runs runs"; }
+  .co-page { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-areas: "month month" "entries cats" "repeat cats" "equip cats" "runs runs"; }
+  .co-equip-card { grid-area: equip; } /* Money truth */
   .co-month-card { grid-area: month; }
   .co-entries-card { grid-area: entries; }
   .co-cat-card { grid-area: cats; }
@@ -2771,6 +2785,23 @@ button.co-step:disabled { opacity: .4; }
   .co-run > td::before { content: attr(data-label); display: block; color: var(--muted); font-size: var(--fs-xs); }
   .co-parts-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; } /* the breakdown two a row */
 }
+/* Money truth (spec 2026-11-12-money-truth-design.md 5.2 and 6): Bought for stock under the costs, the Equipment card */
+.co-bought { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.co-bought-title { margin: 0 0 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.co-bought-note { margin: 0 0 6px; font-size: var(--fs-sm); }
+.co-bought-table tbody th { font-weight: 500; }
+.co-equip-card .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.co-equip-card .card-head h2 { margin: 0; }
+.co-equip { grid-template-columns: minmax(0, 1fr) 9em 16em auto; } /* one column each, the rows lined up */
+.co-equip-off { color: var(--ink-2); } /* the month's write-off is the row's point, what is left under it */
+.co-writeoff { margin: -4px 0 8px; }
+@container (max-width: 560px) {
+  .co-entry.co-equip { grid-template-columns: minmax(0, 1fr) auto; }
+  .co-equip .co-what { grid-column: 1; grid-row: 1; }
+  .co-equip .co-amount { grid-column: 2; grid-row: 1; }
+  .co-equip .co-equip-off { grid-column: 1; grid-row: 2; white-space: normal; }
+  .co-equip .co-acts { grid-column: 2; grid-row: 2; }
+}
 /* ---- end Costs ---- */
 
 /* ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ---- */
@@ -2873,6 +2904,12 @@ button.bz-quiet:is(:disabled, [aria-disabled="true"]):hover { background: transp
   :is(.rn-page, .rn-sub, .rn-gone) .co-link { padding-block: 14px; }
   .rn-run > th .co-link { display: inline-flex; align-items: center; min-height: 44px; padding-block: 0; }
 }
+/* Money truth: the sales that reach no run; a partial run's block-in day for Economics */
+.rn-count { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.rn-count-text { margin: 0; flex: 1 1 24em; font-size: var(--fs-sm); }
+.rn-count-acts { display: flex; gap: 4px; }
+.rn-untied { margin: 0 0 12px; color: var(--warning-text); font-weight: 600; }
+.rn-untied .co-link { font-weight: 400; }
 /* ---- end Runs ---- */
 /* ---- Summary (spec 2026-11-06-business-summary-design.md 6) ---- */
 /* the Business summary, #/business: the money across the top; from 900 px Needs you beside Runs in progress, each card its own

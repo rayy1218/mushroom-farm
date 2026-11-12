@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { DOT } from '../web/text-math.js';
 import {
   moneyTitle, moneyTiles, toComeLine, unsoldLine, unsoldTile, lastMonthLine, lastMonthTile, NEEDS_NONE, NEED_PARTS, needLines, needsTitle,
-  needsEmpty, readFailText, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows,
+  needsEmpty, readFailText, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows, stockLine, boughtLine,
 } from '../web/business-math.js';
 import { toComeNote } from '../web/costs-math.js';
 
@@ -15,26 +15,26 @@ const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) 
 const NOW = at('2026-11-15');
 const TODAY = '2026-11-15';
 const TILES = {
-  income: 550, costs: 192.82, profit: 357.18, costPerKg: 1.28, profitPerKg: 35.72, kgHarvested: 150.61, kgSold: 10,
-  unsold: { kg: 140.61, value: 4921.35 }, incomplete: true,
+  income: 384, costs: 192.82, profit: 191.18, costPerKg: 1.46, profitPerKg: 23.9, kgHarvested: 132.4, kgSold: 8,
+  unsold: { kg: 124.4, value: 4354 }, incomplete: true,
 };
 const RENT = { id: 1, category: 'rent', note: null, amount: 1500, date: '2026-10-20', repeat: 'monthly', repeatUntil: null, roomId: null, roomName: null };
 const MONTH = { month: '2026-11', today: TODAY, pending: false, tiles: TILES, repeating: [RENT] };
 const RUN = {
   id: 7, roomId: 1, roomName: 'Container 1', crops: [{ crop: 'oyster', blocks: 600 }], partial: false,
-  startedAt: at('2026-11-04', 9), endedAt: null, kg: 150.61, perBlock: 0.25, income: 550, costs: 192.82, profit: 357.18,
-  profitPerKg: 35.72, pending: false, incomplete: false,
+  startedAt: at('2026-11-04', 9), endedAt: null, kg: 132.4, perBlock: 0.22, income: 384, costs: 192.82, profit: 191.18,
+  profitPerKg: 23.9, pending: false, incomplete: false,
 };
 
 test('the money card: "November so far", Costs\' Profit, Income and Costs tiles, the kg not sold', () => {
   assert.equal(moneyTitle(MONTH), 'November so far');
   assert.equal(moneyTitle(null), 'This month so far', 'Costs not read');
   assert.deepEqual(moneyTiles(MONTH), [
-    { label: 'Profit', value: `RM${NB}357.18` },
-    { label: 'Income', value: `RM${NB}550.00`, line: `10.0${NB}kg sold` },
+    { label: 'Profit', value: `RM${NB}191.18` },
+    { label: 'Income', value: `RM${NB}384.00`, line: `8.0${NB}kg sold` },
     { label: 'Costs', value: `RM${NB}192.82`, line: 'Some costs have no price' },
   ]);
-  assert.equal(unsoldLine(MONTH), `140.6${NB}kg not sold yet, about RM${NB}4,921.35 at your expected prices`);
+  assert.equal(unsoldLine(MONTH), `124.4${NB}kg not sold yet, about RM${NB}4,354.00 at your expected prices`);
   assert.equal(unsoldLine({ ...MONTH, tiles: { ...TILES, unsold: { kg: 12, value: null } } }), `12.0${NB}kg not sold yet`, 'a crop with no expected price');
   assert.equal(unsoldLine({ ...MONTH, tiles: { ...TILES, unsold: null } }), null, 'everything picked is sold');
   assert.equal(unsoldLine(null), null);
@@ -49,7 +49,7 @@ test('the money card: Costs\' still-to-come line, in its words; none once every 
 });
 
 test('the money card on a desk: the kg not sold and last month as tiles 4 and 5', () => {
-  assert.deepEqual(unsoldTile(MONTH), { label: 'Not sold', value: `140.6${NB}kg`, line: `about RM${NB}4,921.35 at your expected prices` });
+  assert.deepEqual(unsoldTile(MONTH), { label: 'Not sold', value: `124.4${NB}kg`, line: `about RM${NB}4,354.00 at your expected prices` });
   assert.deepEqual(unsoldTile({ ...MONTH, tiles: { ...TILES, unsold: { kg: 12, value: null } } }), { label: 'Not sold', value: `12.0${NB}kg` });
   assert.equal(unsoldTile({ ...MONTH, tiles: { ...TILES, unsold: null } }), null);
   const tile = (o) => lastMonthTile({ month: '2026-10', income: 1500, costs: 300, profit: 1200, pending: false, ...o }, MONTH);
@@ -84,7 +84,7 @@ test('last month\'s result: the figure (a loss with its minus, in the loss tone)
 test('a line per need with its address and state tone; the worst first (below zero and expired, then low, use-by soon, owed over 30 days and no price), the reply\'s order within', () => {
   const needs = [
     { kind: 'owed', total: 1240, count: 3, oldestAt: at('2026-11-03'), oldestBuyer: 'Pasar Tani', buyers: ['Kedai Ah Seng', 'Pasar Tani'], href: '#/business/sales' },
-    { kind: 'below-zero', items: [{ id: 5, name: 'Sawdust', qty: -430.6, unit: 'kg' }], href: '#/business/inventory/5' },
+    { kind: 'below-zero', items: [{ id: 5, name: 'Sawdust', qty: -360.5, unit: 'kg' }], href: '#/business/inventory/5' },
     { kind: 'low', items: [{ id: 6, name: 'Grow bags', qty: 120, unit: 'pcs', reorderAt: 200 }], href: '#/business/inventory/6' },
     { kind: 'use-by', id: 8, name: 'Lime', unit: 'kg', useBy: { date: '2026-11-13', state: 'expired', qty: 4.5 }, href: '#/business/inventory/8' },
     { kind: 'use-by', id: 9, name: 'Bleach', unit: 'L', useBy: { date: '2026-11-18', state: 'soon', qty: 3 }, href: '#/business/inventory/9' },
@@ -92,11 +92,11 @@ test('a line per need with its address and state tone; the worst first (below ze
     { kind: 'unpriced', notes: [{ text: 'Room 1’s blocks of 4 Nov have no price', runId: 1 }], batchId: 4, href: '#/business/batches/4' },
   ];
   assert.deepEqual(needLines({ needs, errors: {} }, NOW), [
-    { kind: 'below-zero', key: 'below-zero', tone: 'critical', text: `Below zero: Sawdust −430.60${NB}kg${DOT}a purchase is missing`, href: '#/business/inventory/5' },
+    { kind: 'below-zero', key: 'below-zero', tone: 'critical', text: `Below zero: Sawdust −360.50${NB}kg${DOT}a purchase is missing`, href: '#/business/inventory/5' },
     { kind: 'use-by', key: 'use-by:8', tone: 'critical', text: `Lime${DOT}4.50${NB}kg expired 13 Nov`, href: '#/business/inventory/8' },
     { kind: 'low', key: 'low', tone: 'warning', text: `Low stock: Grow bags 120${NB}pcs, reorder at 200${NB}pcs`, href: '#/business/inventory/6' },
     { kind: 'use-by', key: 'use-by:9', tone: 'warning', text: `Bleach${DOT}3.00${NB}L use by 18 Nov`, href: '#/business/inventory/9' },
-    { kind: 'unpriced', key: 'unpriced', tone: 'warning', text: `Room 1’s blocks of 4 Nov have no price${DOT}this month's costs leave them out`, href: '#/business/batches/4' },
+    { kind: 'unpriced', key: 'unpriced', tone: 'warning', text: `Room 1’s blocks of 4 Nov have no price${DOT}costs leave out what has no price`, href: '#/business/batches/4' },
     { kind: 'owed', key: 'owed', tone: null, text: `RM${NB}1,240.00 owed by Kedai Ah Seng and Pasar Tani${DOT}oldest 12 days (Pasar Tani)`, href: '#/business/sales' },
     { kind: 'blocks', key: 'blocks', tone: null, text: `400 Pink oyster blocks ready for a room`, href: '#/business/batches' },
   ]);
@@ -122,7 +122,7 @@ test('the needs of several: the names cut short, the blocks of several crops, th
   assert.deepEqual(lines, [
     `Below zero: Grain spawn, Plastic bags, Gypsum and 2 more${DOT}purchases are missing`,
     'Low stock: Bags and Gloves',
-    `Blocks of 3 deliveries have no price${DOT}this month's costs leave them out`,
+    `Blocks of 3 deliveries have no price${DOT}costs leave out what has no price`,
     `RM${NB}96.00 owed by A, B and 2 more${DOT}oldest today (C)`,
     `1,200${NB}blocks ready for a room`,
   ], 'a kind the page does not know is left out, an inherited name too');
@@ -157,7 +157,7 @@ test('the open runs: container (the run page\'s link, named for its run), crops,
   const [row] = runRows([RUN], TODAY);
   assert.deepEqual(row, {
     id: 7, href: '#/business/runs/7', label: 'Run page, Container 1, since 4 Nov', room: 'Container 1', crop: 'oyster',
-    line: `600 Grey oyster${DOT}since 4 Nov${DOT}day 12${DOT}150.6${NB}kg picked`, money: { label: 'Profit so far', value: `RM${NB}357.18` },
+    line: `600 Grey oyster${DOT}since 4 Nov${DOT}day 12${DOT}132.4${NB}kg picked`, money: { label: 'Profit so far', value: `RM${NB}191.18` },
   });
   assert.equal(runRows([{ ...RUN, kg: 0 }], TODAY)[0].line, `600 Grey oyster${DOT}since 4 Nov${DOT}day 12${DOT}nothing picked yet`);
   assert.equal(RUNS_NONE, 'No runs in progress. A run starts when a container gets its blocks on its Crop tab.');
@@ -171,8 +171,21 @@ test('the open runs: a loss as the run page has it, working out, no Costs view, 
   assert.deepEqual(money({ profit: -1140, incomplete: true }), { label: 'Profit so far', value: `−RM${NB}1,140.00`, line: `Loss${DOT}Some costs have no price`, tone: 'loss' });
   assert.deepEqual(money({ pending: true, costs: null, profit: null }), { label: 'Profit so far', value: '—', line: 'working out' });
   assert.deepEqual(money({ costs: null, profit: null }), { label: 'Profit so far', value: '—' });
-  assert.deepEqual(money({ incomplete: true }), { label: 'Profit so far', value: `RM${NB}357.18`, line: 'Some costs have no price' });
+  assert.deepEqual(money({ incomplete: true }), { label: 'Profit so far', value: `RM${NB}191.18`, line: 'Some costs have no price' });
   const partial = runRows([{ ...RUN, partial: true, roomName: null }], TODAY)[0];
   assert.deepEqual([partial.line.split(DOT)[1], partial.room], ['recorded since 4 Nov', 'A deleted room']);
   assert.equal(runRows([{ ...RUN, startedAt: at('2026-11-15', 9) }], TODAY)[0].line.split(DOT).slice(1, 3).join(DOT), `since 15 Nov${DOT}day 1`);
+});
+
+// ---- Money truth (spec 2026-11-12-money-truth-design.md 3 and 5.2) ----
+test('the Summary\'s stock on hand and what was bought for it this month', () => {
+  const plain = (s) => s?.replace(/[  ]/g, ' ');
+  assert.equal(plain(stockLine({ total: 4647.1, unpriced: ['Plastic bags'] })), 'Stock on hand: RM 4,647.10 at what each lot cost · Plastic bags: no price');
+  assert.equal(plain(stockLine({ total: 12, unpriced: ['A', 'B'] })), 'Stock on hand: RM 12.00 at what each lot cost · 2 items have no price');
+  assert.equal(plain(stockLine({ total: 12, unpriced: [] })), 'Stock on hand: RM 12.00 at what each lot cost');
+  assert.equal(stockLine({ total: 0, unpriced: [] }), null, 'nothing in stock');
+  assert.equal(stockLine(null), null, 'Inventory not read');
+  assert.equal(plain(boughtLine({ bought: { total: 5988, lines: [], unpriced: [] } })), 'Bought for stock this month: RM 5,988.00 (a cost once used)');
+  assert.equal(boughtLine({ bought: { total: 0, lines: [], unpriced: [] } }), null);
+  assert.equal(boughtLine(null), null);
 });

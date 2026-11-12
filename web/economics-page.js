@@ -11,9 +11,9 @@ import { economicsHash, ECONOMICS_HASH } from './route.js';
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { keepFocus, createReader } from './business-page.js';
-import { ECONOMICS_CROPS, figureOf, unitParts } from './economics-defaults.js';
+import { ECONOMICS_CROPS, figureOf, unitParts, figureLabel } from './economics-defaults.js';
 import { blockLife, inputsOf } from './economics-model.js';
-import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText } from './economics-math.js';
+import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText, labourLine } from './economics-math.js';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
   fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems,
@@ -21,7 +21,7 @@ import {
 import { DOT } from './text-math.js';
 
 const REFRESH_MS = 60_000;
-const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs'].filter((type) => EVENT_TYPES.includes(type));
+const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs', 'inventory'].filter((type) => EVENT_TYPES.includes(type)); // inventory: Money truth
 const ROOMS_HASH = '#/overview'; // the Overview holds the rooms
 const CROP_SELECT = { oyster: 'Grey oyster', pink: 'Pink oyster', woodear: 'Black jelly', lionsmane: "Lion's mane" };
 
@@ -123,13 +123,17 @@ export function mount(container, { room = null, crop = null } = {}) {
     els.sources.textContent = sourcesLine(reply.figures);
     paintParts(els.headParts, 'retry-parts-head'); // a part not read, where the headline uses its fallback (the audit, #8)
     paintTable(results);
+    const labour = labourLine(results[0], reply.room.name); // ---- Money truth ---- the workers' share and its hours
     const lines = [
       fillLine(results[0], { room: reply.room.name, blocks: values['yours.blocks'], first: values['yours.first'] }),
       neverLine(results, life),
       results.length > 1 ? sizedLine(reply.room.name, values['yours.blocks']) : null,
       leftLine(reply.crop),
     ].filter(Boolean);
-    els.lines.replaceChildren(...lines.map((t) => el('p', 'muted ec-line', t)));
+    els.lines.replaceChildren(
+      ...(labour ? [el('p', `ec-line ${labour.tone === 'warn' ? 'ec-warn' : 'muted'}`, labour.text)] : []),
+      ...lines.map((t) => el('p', 'muted ec-line', t)),
+    );
   }
 
   // A desk table (a column a way) and, on a phone, one small table a way, Your container first (CSS shows one of them).
@@ -150,7 +154,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     for (const r of results) {
       const th = el('th', 'num');
       th.scope = 'col';
-      th.append(el('span', 'ec-way', wayName(r.way)));
+      th.append(el('span', 'ec-way', wayName(r.way, { type: reply.room.type })));
       if (r.way === 'yours') th.append(el('span', 'ec-way-room', reply.room.name));
       head.append(th);
     }
@@ -174,13 +178,13 @@ export function mount(container, { room = null, crop = null } = {}) {
     results.forEach((r, i) => {
       const block = el('section', 'ec-block');
       const blockHead = el('div', 'ec-block-head');
-      const name = el('h3', 'ec-block-name', wayName(r.way));
+      const name = el('h3', 'ec-block-name', wayName(r.way, { type: reply.room.type }));
       if (r.way === 'yours') name.append(el('span', 'ec-way-room', reply.room.name));
       const profitNode = cellNode('p', profitRow.cells[i], 'ec-block-profit');
       profitNode.prepend(el('span', 'ec-block-label', profitRow.label));
       blockHead.append(name, profitNode);
       const bt = el('table', 'us-table ec-block-table');
-      bt.append(el('caption', 'sr-only', `${wayName(r.way)}: a month`));
+      bt.append(el('caption', 'sr-only', `${wayName(r.way, { type: reply.room.type })}: a month`));
       const bb = el('tbody');
       for (const row of table.filter((x) => x.key !== 'profit')) {
         const tr = el('tr');
@@ -244,7 +248,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     const def = figureOf(f.key);
     const row = el('div', 'ec-fig');
     row.dataset.key = f.key;
-    const label = el(def.settings ? 'span' : 'label', 'ec-fig-label', def.label); // Settings' figure has no box to name
+    const label = el(def.settings ? 'span' : 'label', 'ec-fig-label', figureLabel(f.key, reply.room.type)); // Settings' figure has no box to name
     const field = el('div', 'ec-fig-field');
     if (def.settings) {
       field.append(el('span', 'ec-fig-value', ''), link('Change in Settings', '#/settings'));
@@ -321,7 +325,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     const b = el('button', 'bz-quiet ec-back', 'Back to default');
     b.type = 'button';
     b.dataset.focusKey = `back:${key}`;
-    b.setAttribute('aria-label', `Back to default: ${figureOf(key).label}`);
+    b.setAttribute('aria-label', `Back to default: ${figureLabel(key, reply.room.type)}`);
     b.addEventListener('click', () => onBack(key));
     return b;
   }
@@ -450,14 +454,14 @@ export function mount(container, { room = null, crop = null } = {}) {
       if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…
       // said with the result (out of view at the box) and, once, a check of an unusual figure
       const warn = likely(reply.figures.find((x) => x.key === key), t.value);
-      said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0]) + (warn ? ` ${warn}` : ''));
+      said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0], next.room.type) + (warn ? ` ${warn}` : ''));
     } catch (err) {
       if (!alive()) return;
       if (tag) delete tag.dataset.saving;
       if (!fitsWant(at, want)) return;
       if (err.status === 0 || err.status >= 500) {
         notSaved.add(key); // the typed figure stays in the sums, marked not saved
-        said(`${figureOf(key).label}: couldn't save. Retry is under it.`);
+        said(`${figureLabel(key, reply.room.type)}: couldn't save. Retry is under it.`);
       } else { // a refusal (its words under the box, the box keeping the text): the refused figure leaves the sums
         refusals.set(key, err.message);
         draft.drop(key, t.value);
@@ -483,7 +487,7 @@ export function mount(container, { room = null, crop = null } = {}) {
         box.value = boxText(key, reply.figures.find((f) => f.key === key)?.value);
         box.focus({ preventScroll: true });
       }
-      said(`${figureOf(key).label}: back to default.`);
+      said(`${figureLabel(key, reply.room.type)}: back to default.`);
     } catch (err) {
       if (alive() && fitsWant(at, want)) fail(err);
     }

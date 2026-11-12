@@ -27,7 +27,7 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
   let volume = null;
 
   function field(f, text = fieldLabel(f)) {
-    const input = el('input');
+    const input = el(f.kind === 'choice' ? 'select' : 'input');
     input.id = `${idPrefix}${f.name}`;
     input.name = f.name;
     const err = el('p', 'field-error');
@@ -43,15 +43,23 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
       label.append(input, ` ${text}`);
       wrap.append(label, err);
     } else {
-      if (f.kind === 'text') Object.assign(input, { type: 'text', maxLength: NAME_MAX, autocomplete: 'off', required: true });
+      if (f.kind === 'choice') for (const [value, words] of f.options) input.append(Object.assign(el('option', '', words), { value }));
+      else if (f.kind === 'text') Object.assign(input, { type: 'text', maxLength: NAME_MAX, autocomplete: 'off', required: true });
       else if (f.kind === 'gateway') Object.assign(input, { type: 'text', maxLength: GATEWAY_MAX, autocomplete: 'off', spellcheck: false, placeholder: "Empty: the farm's gateway" });
       else Object.assign(input, { type: 'number' }, NUMBER[f.kind](f));
-      wrap = el('div', 'field');
+      wrap = el('div', f.kind === 'choice' ? 'field room-choice' : 'field');
       const label = el('label', '', text);
       label.htmlFor = input.id;
-      wrap.append(label, input, err);
+      wrap.append(label, input);
+      if (f.hint) { // the choice's why (Money truth: the room type), read with the box
+        const hint = el('p', 'c-hint', f.hint);
+        hint.id = `${input.id}-hint`;
+        input.setAttribute('aria-describedby', `${hint.id} ${err.id}`);
+        wrap.append(hint);
+      }
+      wrap.append(err);
     }
-    input.addEventListener(f.kind === 'check' ? 'change' : 'input', () => {
+    input.addEventListener(f.kind === 'check' || f.kind === 'choice' ? 'change' : 'input', () => {
       clearError(f.name);
       paint();
       onInput?.(f.name);
@@ -67,13 +75,13 @@ export function createRoomForm(groups, { idPrefix, onInput }) {
       nodes.push(...list.map((f) => field(f, fieldLabel({ ...f, label: group.labels?.[f.name] ?? f.label }))));
       if (group.hint) nodes.push(el('p', 'c-hint', group.hint));
       if (group.note) nodes.push(el('p', 'c-hint', group.note));
-    } else if (group.key === 'profile') { // the name on its own line, the three sizes in a row, the volume under them
+    } else if (group.key === 'profile') { // the name on its own line, the three sizes in a row, the volume under them, the type
       nodes.push(field(list[0]));
       const sizes = el('div', 'sizes');
-      sizes.append(...list.slice(1).map((f) => field(f)));
+      sizes.append(...list.filter((f) => f.kind === 'size').map((f) => field(f)));
       volume = el('p', 'volume', volumeText({}));
       volume.setAttribute('aria-live', 'polite');
-      nodes.push(sizes, volume);
+      nodes.push(sizes, volume, ...list.filter((f) => f.kind === 'choice').map((f) => field(f)));
     } else {
       const grid = el('div', 'sizes two');
       grid.append(...list.filter((f) => f.kind !== 'check').map((f) => field(f)));

@@ -189,7 +189,9 @@ test('a load\'s line, the amber note of bags not yet sterilised, the price note'
   assert.equal(sterilisedNote(b({ loads: [{ bags: 300 }] })), `300 of 400${nb}bags sterilised`);
   assert.equal(sterilisedNote(b({ loads: [{ bags: 300 }, { bags: 100 }] })), null);
   assert.equal(sterilisedNote(b({ loads: [] })), null);
-  assert.match(madePriceNote(b({ pricePerBlock: 0.71 })), /^The price per block is the materials/);
+  assert.equal(madePriceNote(b({ pricePerBlock: 0.71 })), 'The price per block is the materials at what their lots cost in Inventory, oldest first; a purchase entered later counts at once.');
+  assert.equal(madePriceNote(b({ pricePerBlock: 2.7935, priceMissing: ['Plastic bags'] })), 'The price per block counts the materials with a price; no price yet for Plastic bags: enter its purchase in Inventory.');
+  assert.equal(madePriceNote(b({ pricePerBlock: 2.7935, priceMissing: ['Lime', 'Gypsum', 'Plastic bags'] })), 'The price per block counts the materials with a price; no price yet for Lime, Gypsum and Plastic bags: enter their purchases in Inventory.');
   assert.match(madePriceNote(b({})), /^No price per block yet/);
   assert.match(madePriceNote(b({ inventory: true })), /^No price per block yet/);
   assert.equal(madePriceNote(b({ inventory: false })), 'The price per block is worked out once Inventory has the materials and their purchase prices.');

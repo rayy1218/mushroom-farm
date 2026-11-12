@@ -22,7 +22,7 @@ CREATE TABLE stock_moves (
 
 // A farm database that already has Inventory's tables (made first, as a merged farm's would be), removed after the test, and
 // Inventory's side of them as its own pages would write it: item(name, kind, unit) → the item's id; buy(itemId, unitCost, at)
-// a purchase of 100 at that price (the made price per block reads the latest); move(itemId, { at, unitCost, refKind }) any other
+// a purchase of qty (100) at that price (a made batch's draws take the lots oldest first); reprice(itemId, unitCost); move(itemId, { at, unitCost, refKind }) any other
 // move; archive(itemId); drop(itemId).
 export function openWithInventory(t) {
   const dir = mkdtempSync(join(tmpdir(), 'farm-batches-'));
@@ -40,8 +40,12 @@ export function openWithInventory(t) {
     archive: (itemId) => { raw.prepare('UPDATE stock_items SET archived = 1 WHERE id = ?').run(itemId); },
     // the item removed with its moves (Inventory's own delete is up to its page; a batch's line may still name it)
     drop: (itemId) => { raw.prepare('DELETE FROM stock_moves WHERE item_id = ?').run(itemId); raw.prepare('DELETE FROM stock_items WHERE id = ?').run(itemId); },
-    buy(itemId, unitCost, at = 1000) {
-      raw.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, 100, ?, 'purchase', NULL, NULL)").run(itemId, at, unitCost);
+    buy(itemId, unitCost, at = 1000, qty = 100) {
+      raw.prepare("INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note) VALUES (?, ?, ?, ?, 'purchase', NULL, NULL)").run(itemId, at, qty, unitCost);
+    },
+    // ---- Money truth ---- every purchase of the item at a new price (Inventory's purchase edit)
+    reprice(itemId, unitCost) {
+      raw.prepare("UPDATE stock_moves SET unit_cost = ? WHERE item_id = ? AND ref_kind = 'purchase'").run(unitCost, itemId);
     },
   };
 }

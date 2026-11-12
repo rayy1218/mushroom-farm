@@ -149,7 +149,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     const usage = daysBetween(from, today) + 1 > USAGE_DAYS_KEPT ? null : costOf(usageDays.filter((d) => d.date >= from && d.date <= to), prices);
     const harvests = db.runHarvests(run.id);
     return {
-      id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, partial: run.partial, crops: run.crops,
+      id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, partial: run.partial, blocksInAt: run.blocksInAt ?? null, crops: run.crops,
       ...runFigures(run, harvests, yieldOf(cropYield, run.id), usage),
       harvests: harvests.toReversed(),
     };
@@ -213,7 +213,8 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     },
 
     // The Harvest tab: { current: the open run's view or null, past: the ended runs newest first, stamp }; null for no such room.
-    // A run's view: { id, startedAt, endedAt, partial, crops, ...runFigures, harvests (newest pick first) }.
+    // A run's view: { id, startedAt, endedAt, partial, blocksInAt (Money truth: a partial run's real block-in day), crops,
+    // ...runFigures, harvests (newest pick first) }.
     roomView(roomId) {
       const room = db.getRoom(roomId);
       if (!room) return null;

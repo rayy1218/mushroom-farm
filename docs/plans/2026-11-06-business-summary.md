@@ -979,25 +979,25 @@ const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) 
 const NOW = at('2026-11-15');
 const TODAY = '2026-11-15';
 const TILES = {
-  income: 550, costs: 192.82, profit: 357.18, costPerKg: 1.28, profitPerKg: 35.72, kgHarvested: 150.61, kgSold: 10,
-  unsold: { kg: 140.61, value: 4921.35 }, incomplete: true,
+  income: 384, costs: 192.82, profit: 191.18, costPerKg: 1.46, profitPerKg: 23.9, kgHarvested: 132.4, kgSold: 8,
+  unsold: { kg: 124.4, value: 4354 }, incomplete: true,
 };
 const MONTH = { month: '2026-11', pending: false, tiles: TILES };
 const RUN = {
   id: 7, roomId: 1, roomName: 'Container 1', crops: [{ crop: 'oyster', blocks: 600 }], partial: false,
-  startedAt: at('2026-11-04', 9), endedAt: null, kg: 150.61, perBlock: 0.25, income: 550, costs: 192.82, profit: 357.18,
-  profitPerKg: 35.72, pending: false, incomplete: false,
+  startedAt: at('2026-11-04', 9), endedAt: null, kg: 132.4, perBlock: 0.22, income: 384, costs: 192.82, profit: 191.18,
+  profitPerKg: 23.9, pending: false, incomplete: false,
 };
 
 test('the money card: "November so far", Costs\' Profit, Income and Costs tiles, the kg not sold', () => {
   assert.equal(moneyTitle(MONTH), 'November so far');
   assert.equal(moneyTitle(null), 'This month so far', 'Costs not read');
   assert.deepEqual(moneyTiles(MONTH), [
-    { label: 'Profit', value: `RM${NB}357.18` },
-    { label: 'Income', value: `RM${NB}550.00`, line: `10.0${NB}kg sold` },
+    { label: 'Profit', value: `RM${NB}191.18` },
+    { label: 'Income', value: `RM${NB}384.00`, line: `8.0${NB}kg sold` },
     { label: 'Costs', value: `RM${NB}192.82`, line: 'Some costs have no price' },
   ]);
-  assert.equal(unsoldLine(MONTH), `140.6${NB}kg not sold yet, about RM${NB}4,921.35 at your expected prices`);
+  assert.equal(unsoldLine(MONTH), `124.4${NB}kg not sold yet, about RM${NB}4,354.00 at your expected prices`);
   assert.equal(unsoldLine({ ...MONTH, tiles: { ...TILES, unsold: { kg: 12, value: null } } }), `12.0${NB}kg not sold yet`, 'a crop with no expected price');
   assert.equal(unsoldLine({ ...MONTH, tiles: { ...TILES, unsold: null } }), null, 'everything picked is sold');
   assert.equal(unsoldLine(null), null);
@@ -1023,7 +1023,7 @@ test('last month\'s result: profit or loss in words, nothing recorded, working o
 test('a line per need, in the reply\'s order, each with its address', () => {
   const needs = [
     { kind: 'owed', total: 1240, count: 3, oldestAt: at('2026-11-03'), buyers: ['Kedai Ah Seng', 'Pasar Tani'], href: '#/business/sales' },
-    { kind: 'below-zero', items: [{ id: 5, name: 'Sawdust', qty: -430.6, unit: 'kg' }], href: '#/business/inventory' },
+    { kind: 'below-zero', items: [{ id: 5, name: 'Sawdust', qty: -360.5, unit: 'kg' }], href: '#/business/inventory' },
     { kind: 'low', items: [{ id: 6, name: 'Grow bags', qty: 120, unit: 'pcs', reorderAt: 200 }], href: '#/business/inventory' },
     { kind: 'use-by', id: 8, name: 'Lime', unit: 'kg', useBy: { date: '2026-11-13', state: 'expired', qty: 4.5 }, href: '#/business/inventory/8' },
     { kind: 'use-by', id: 9, name: 'Bleach', unit: 'L', useBy: { date: '2026-11-18', state: 'soon', qty: 3 }, href: '#/business/inventory/9' },
@@ -1032,7 +1032,7 @@ test('a line per need, in the reply\'s order, each with its address', () => {
   ];
   assert.deepEqual(needLines(needs, NOW), [
     { kind: 'owed', text: `RM${NB}1,240.00 owed by Kedai Ah Seng and Pasar Tani${DOT}oldest 12 days`, href: '#/business/sales' },
-    { kind: 'below-zero', text: `Below zero: Sawdust −430.60${NB}kg${DOT}a purchase is missing`, href: '#/business/inventory' },
+    { kind: 'below-zero', text: `Below zero: Sawdust −360.50${NB}kg${DOT}a purchase is missing`, href: '#/business/inventory' },
     { kind: 'low', text: `Low stock: Grow bags 120${NB}pcs, reorder at 200${NB}pcs`, href: '#/business/inventory' },
     { kind: 'use-by', text: `Lime${DOT}4.50${NB}kg expired 13 Nov`, href: '#/business/inventory/8' },
     { kind: 'use-by', text: `Bleach${DOT}3.00${NB}L use by 18 Nov`, href: '#/business/inventory/9' },
@@ -1077,7 +1077,7 @@ test('the open runs: container, crops, days with its day, kg picked, the money s
   const [row] = runRows([RUN], TODAY);
   assert.deepEqual(row, {
     id: 7, href: '#/business/runs/7', label: 'Run page, Container 1, since 4 Nov', room: 'Container 1', crop: 'oyster',
-    crops: '600 Grey oyster', days: `since 4 Nov${DOT}day 12`, kg: `150.6${NB}kg picked`, money: { label: 'Profit so far', value: `RM${NB}357.18` },
+    crops: '600 Grey oyster', days: `since 4 Nov${DOT}day 12`, kg: `132.4${NB}kg picked`, money: { label: 'Profit so far', value: `RM${NB}191.18` },
   });
   assert.equal(RUNS_NONE, 'No runs in progress. A run starts when a container gets its blocks on its Crop tab.');
   assert.deepEqual(runRows(null, TODAY), []);
@@ -1088,7 +1088,7 @@ test('the open runs: a loss in words, working out, no Costs view, some costs wit
   assert.deepEqual(money({ profit: -1140 }), { label: 'Loss so far', value: `RM${NB}1,140.00`, tone: 'loss' });
   assert.deepEqual(money({ pending: true, costs: null, profit: null }), { label: 'Profit so far', value: '—', line: 'working out' });
   assert.deepEqual(money({ costs: null, profit: null }), { label: 'Profit so far', value: '—' });
-  assert.deepEqual(money({ incomplete: true }), { label: 'Profit so far', value: `RM${NB}357.18`, line: 'Some costs have no price' });
+  assert.deepEqual(money({ incomplete: true }), { label: 'Profit so far', value: `RM${NB}191.18`, line: 'Some costs have no price' });
   const partial = runRows([{ ...RUN, partial: true, roomName: null }], TODAY)[0];
   assert.deepEqual([partial.days, partial.room], ['recorded since 4 Nov', 'A deleted room']);
   assert.equal(runRows([{ ...RUN, startedAt: at('2026-11-15', 9) }], TODAY)[0].days, `since 15 Nov${DOT}day 1`);
@@ -1139,7 +1139,7 @@ export const moneyTitle = (month) => (month ? `${monthName(month.month)} so far`
 // out" while the energy is worked out, "Some costs have no price").
 export const moneyTiles = (month) => monthTiles(month).slice(0, 3);
 
-// The kg picked and not sold: "140.6 kg not sold yet, about RM 4,921.35 at your expected prices" (Costs' unsold; without the
+// The kg picked and not sold: "124.4 kg not sold yet, about RM 4,354.00 at your expected prices" (Costs' unsold; without the
 // RM when a picked crop has no expected price); null when everything picked is sold.
 export function unsoldLine(month) {
   const u = month?.tiles?.unsold;
@@ -1674,7 +1674,7 @@ Insert right before the line `## Do's and Don'ts` (after the Runs section), foll
 | Part | Design |
 |---|---|
 | Head | "Summary", "This month's money, what needs you and the runs under way." The page's title "Business summary" |
-| Money | A card across the top titled "November so far" (head link **Costs**): Costs' month tiles Profit (display size, its own row on a phone), Income, Costs, as Costs words them (a loss, "working out", "Some costs have no price"); under them, muted, "140.6 kg not sold yet, about RM 4,921.35 at your expected prices" and last month's result "October: loss RM 1,508.00" ("profit RM …", "nothing recorded", "working out"). The figures are Costs' own (`monthView`), so they always match it |
+| Money | A card across the top titled "November so far" (head link **Costs**): Costs' month tiles Profit (display size, its own row on a phone), Income, Costs, as Costs words them (a loss, "working out", "Some costs have no price"); under them, muted, "124.4 kg not sold yet, about RM 4,354.00 at your expected prices" and last month's result "October: loss RM 1,508.00" ("profit RM …", "nothing recorded", "working out"). The figures are Costs' own (`monthView`), so they always match it |
 | Needs you | A line per thing to do, each line its own link (`.co-link`) to where it is fixed, in this order: money owed (Sales), stock below zero, stock low (Inventory), a use-by within 7 days or past (one line per item, to its page), blocks ready for a room or being made (Batches), blocks with no price this month (Batches). "Nothing needs you right now." only when every module was read; a module not read adds "Couldn't check Sales just now." |
 | Runs in progress | Each open run: the main crop's 24 px picture and the container, the money so far beside it ("Profit so far RM 357.18"; "Loss so far RM 1,005.97" with only the figure in the critical text token), then "600 Grey oyster · since 4 Nov · day 3 · 20.0 kg picked · Run page" (the link named for its run, as Runs'). Head link **Runs**. None: "No runs in progress. A run starts when a container gets its blocks on its Crop tab." and a link "Rooms" |
 | Layout | Money across the top; from 900 px Needs you beside Runs in progress, each card its own height (`align-items: start`); one column below in that order. Up to 600 px every link reaches 44 px (a need's line a block with 12 px over and under; the others block padding over their line) |
@@ -1782,7 +1782,7 @@ program(two, [{ crop: 'pink', blocks: 200 }], NOW - 2 * DAY, 'start');
 costs.add({ date: new Date(NOW - 20 * DAY).toISOString().slice(0, 10), category: 'rent', amount: 1500, repeat: 'monthly' });
 const day = (n) => new Date(NOW + n * DAY + 8 * 3_600_000).toISOString().slice(0, 10);
 const sawdust = inventory.addItem({ name: 'Sawdust', kind: 'other', unit: 'kg' });
-inventory.use({ itemId: sawdust.id, qty: 430.6, worker: 'Ali' });
+inventory.use({ itemId: sawdust.id, qty: 360.5, worker: 'Ali' });
 const bags = inventory.addItem({ name: 'Grow bags', kind: 'bags', unit: 'pcs', reorderAt: 200 });
 inventory.purchase({ itemId: bags.id, qty: 120, total: 60, day: day(-3) });
 const lime = inventory.addItem({ name: 'Lime', kind: 'other', unit: 'kg' });
@@ -1810,7 +1810,7 @@ Expected: `Farm app on http://localhost:19160 (database /tmp/summary/look.db, ga
 | Address | See |
 |---|---|
 | `#/business` | Six tabs, Summary first and current; the top bar's Business current. "November so far" (this month): Profit, Income "10.0 kg sold", Costs "Some costs have no price"; "5.0 kg not sold yet"; last month "…: loss RM …" |
-| Needs you | Seven lines in order: owed by Kedai Ah Seng and Pasar Tani Kajang; Below zero: Sawdust −430.60 kg; Low stock: Grow bags; Lime expired; Bleach use by; 400 Pink oyster blocks ready for a room · 100 Grey oyster blocks being made; Blocks received … have no price. Each opens its page |
+| Needs you | Seven lines in order: owed by Kedai Ah Seng and Pasar Tani Kajang; Below zero: Sawdust −360.50 kg; Low stock: Grow bags; Lime expired; Bleach use by; 400 Pink oyster blocks ready for a room · 100 Grey oyster blocks being made; Blocks received … have no price. Each opens its page |
 | Runs in progress | Container 2 and Container 1 (mixed), each "Loss so far RM …" with the figure in the loss tone and "· Run page" opening its run |
 | The briefcase from `#/business/costs` | Opens the Summary (not Costs); Back returns to Costs |
 | `#/business/batches`, `/inventory`, `/sales`, `/costs`, `/runs` | Each as before, its tab current |

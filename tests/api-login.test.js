@@ -83,6 +83,7 @@ const ROUTES = [
   ['PUT', '/api/sales/deliveries/1', false], ['PUT', '/api/sales/deliveries/1/paid', false], ['PUT', '/api/buyers/1', false],
   ['GET', '/api/economics', false], ['PUT', '/api/economics/figures', false], ['DELETE', '/api/economics/figures', false], // ---- Economics ----
   ['POST', '/api/economics/work-out', false], // ---- Economics ----
+  ['GET', '/api/equipment', false], ['POST', '/api/equipment', false], ['PUT', '/api/equipment/1', false], ['DELETE', '/api/equipment/1', false], ['PUT', '/api/runs/1/blocks-in', false], // ---- Money truth ----
 ];
 
 // Every route the API answers, from the server sources (spec 7: a new route missing from ROUTES fails here): each
