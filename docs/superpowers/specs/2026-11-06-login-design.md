@@ -145,7 +145,7 @@ Done: the code and database 25 went to the VM on 2026-11-06 and the post-Funnel 
 | 1 | Copy `data/v2.db` (to `data/v2-before-login.db`), deploy with `deploy/oracle/push-code.sh oracle-farm`, then `sudo systemctl restart mushroom-farm`; the app moves the database to 25. From now on nobody is signed in | Done 2026-11-06 |
 | 2 | `ssh oracle-farm`, `cd /opt/mushroom-farm && sudo -u farm FARM_DB=/opt/mushroom-farm/data/v2.db node --disable-warning=ExperimentalWarning server/owner.js "<name>"` (or `npm run owner -- "<name>"`); never as root | Done |
 | 3 | Sign in as the owner over the tailnet, set each worker's PIN in Settings → Workers | Done |
-| 4 | Check a worker sign-in on a phone, then `sudo tailscale funnel --bg 8080` (the farm app only; 8090, 8092 to 8094 stay on `tailscale serve`) | Done; Funnel on at https://mushroom-farm.tail04f685.ts.net |
+| 4 | Check a worker sign-in on a phone, then `sudo tailscale funnel --bg 8080` (the farm app only; 8090, 8092 to 8094 stay on `tailscale serve`) | Done; Funnel on at the farm app's `https://<vm>.<tailnet>.ts.net` name |
 | 5 | README: the "no login" line in Run on a cloud VM replaced; a Login paragraph with the routes and the known limits; PRODUCT.md and DESIGN.md for the sign-in view | Done 2026-11-10 |
 | Off | Funnel off (the tailnet only): `sudo tailscale funnel --bg 8080 off && sudo tailscale serve --bg 8080` | If ever needed |
 

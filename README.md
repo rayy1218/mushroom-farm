@@ -53,7 +53,7 @@ Environment variables. All are optional.
 | `DEVICE_HTTP_PORT` | device app | `8090` | The device control page |
 | `DEVICE_STATE` | device app | `device/state.json` | Where sensors and their values are kept |
 | `DEVICE_HOST` | device app | `127.0.0.1` | Address both device ports listen on (`0.0.0.0` in Docker) |
-| `TZ` | both | the machine's | Set `Asia/Kuala_Lumpur`: the lights and the task days follow the clock. Docker and the systemd units already set it |
+| `TZ` | both | the machine's | The time zone: set `Asia/Kuala_Lumpur`; the lights and the task days follow the clock. Docker and the systemd units already set it |
 
 Everything else (bands, prices, poll interval, Telegram, outdoor probe address, workers, task rules) is set on the Settings page and stored in the database.
 
