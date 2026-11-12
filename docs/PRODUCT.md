@@ -1,0 +1,92 @@
+# Product
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+## Users
+
+| Who | Situation | Job |
+|---|---|---|
+| Owner (role `owner`, signs in with a password) | Runs the farm; at a desk for setup and analysis, on a phone at the rooms | Sets up rooms, machines, crops and bands; reads history, energy and simulation results; decides what equipment to buy |
+| Farm workers (role `worker`, sign in with a name and a 6-digit PIN) | On the farm floor, at or inside the grow rooms, usually on a phone | Check a room's readings, act on stage changes (Done, Skip), record harvests, uses and counts; they see no money and cannot change settings, control machines or reach Business |
+
+Desk and phone use are equally important. The app is in English only.
+
+## Product Purpose
+
+The farm app runs the climate of mushroom grow rooms on one farm in lowland Malaysia. It reads each room's sensors over Modbus, runs its machines (intake, exhaust and circulation fans, humidifier, dehumidifier, aircon, lights) automatically against bands that follow the crop and stage, raises alarms (on screen and by Telegram), and keeps history, energy and water use. A simulator tests settings and suggests machine sizes before anything is bought.
+
+Climate control is the first and most important module. The aim is to cover every part of running the farm; planned modules include batches, substrate and spawn, harvest and yield, contamination, inventory, sales, costs, workers and MyGAP compliance.
+
+Success: the rooms stay in band (temperature, humidity and CO₂) with the least energy, problems reach a person fast, and the owner can trust the numbers when deciding what to grow and what to buy.
+
+## Positioning
+
+Built for this farm only, not for sale. It is shaped by the farm's strategy: few climate-controlled mushroom farms exist in Malaysia, so the farm aims to grow cool-climate crops (lion's mane as the main target) in the hot, wet lowlands, against Cameron Highlands growers (no cooling cost) and imports. The app's simulation of lowland weather, aircon behaviour and energy cost exists to decide whether that pays.
+
+## Operating Context
+
+| Fact | Detail |
+|---|---|
+| Hosting | A Node 22 server on an Oracle Cloud VM (since 2026-11-06; or a farm computer, or Docker), reached over Tailscale: the farm app on the internet through Tailscale Funnel, the device apps on the tailnet only |
+| Access | Everyone signs in (a personal name with a PIN or a password); the owner signs in from anywhere, so the sign-in view is public and the limits in README's Run on a cloud VM apply |
+| Wiring | Sensors and machines on RS-485 behind an Ethernet-to-RS-485 gateway (Modbus TCP); a device app stands in for the hardware during development |
+| Climate | Outdoor air about 25–33 °C with a dew point near 24 °C; split aircons; room volumes around 60–120 m³ |
+| Time | The farm computer runs on Asia/Kuala_Lumpur time; lights follow its clock |
+| Alarms | Shown on the Overview, the room page and the top bar badge; critical and serious ones sent to a Telegram chat |
+| Updates | Pages refresh live over one server-sent-events connection; readings every 5 s by default (1–300 s) |
+| Money | Ringgit (RM); electricity RM 0.55/kWh by default |
+
+## Capabilities and Constraints
+
+| Area | Confirmed |
+|---|---|
+| Rooms | Add, edit, delete; dimensions, crops, farm type (ready-to-fruit blocks or full cycle) |
+| Live | Readings with sensor checks (no answer, out of range, jump, frozen), machine command vs reported vs running |
+| Control | Manual or Auto per room; bands follow crop and stage; outdoor-air free cooling and drying; machine protection from rapid switching |
+| Crops | Grey, black, pink, abalone and golden oyster, wood ear, reishi, milky; lion's mane as a draft |
+| History | Live, 1 h, 6 h, 24 h, 7 d, 30 d; machine timeline; outdoor values on the charts |
+| Energy and water | Metered or estimated per machine; kWh, RM and litres |
+| Harvest | Runs of blocks; harvests from the checks or by hand; kg, kg per block, BE, expected value and cost per kg; Settings → Yield; CSV and the myGAP 4-6 sheet |
+| Batches | Bought blocks: supplier, spawn batch, strain, delivery note, blocks, price, weight. Blocks made on the farm: saved recipes, the mix and its materials, sterilising loads, the inoculation, the incubation; the price per block from the materials. Put into a room's run, split across rooms; contamination checks; Inventory stock moves; the myGAP 4-2 sheet and a CSV |
+| Inventory | Stock items by kind with a unit each; purchases (RM, supplier, use-by), uses (room, reason, who), counts; lots used oldest first; Low and use-by on the page and once to Telegram; blocks from Batches; the purchases for Costs; the myGAP 4-5 sheet |
+| Sales | Deliveries to buyers with a line per crop (kg, RM per kg, optional room); the buyer's reference; buyers with usual prices; paid or unpaid and what is owed; sold against harvested kg and the price got against expected; CSV; the myGAP 4-6 sheet's sales columns |
+| Costs | Costs by hand (one-offs; rent and base wages as monthly items; a sales bonus as labour; electricity and water bills); Batches' bought block costs and Inventory's purchases read live; the measured energy and water, a bill adding only the part not measured; shared costs over runs by block-days; income from Sales; profit per month, per run and per kg on `#/business/costs` |
+| Runs | Every run of blocks with its yield and money on `#/business/runs`; a run's page with its profit so far, blocks, flushes and picks, sales and costs by kind, composed from the modules on each read (nothing stored) |
+| Summary | `#/business`: this month's money as Costs gives it and last month's result; what needs the owner (money owed, stock below zero or low, a use-by near, blocks ready for a room, blocks with no price), the most urgent first, each linking to where it is fixed; the runs in progress with their profit so far |
+| Economics | `#/business/economics`: one room and crop's month against a lowland shed, a highland grower, importing and reselling and a warm strain; profit, break-even and payback; every figure tagged You set, Your runs, Simulator, Settings or Research (with its sources), edited in place; Work it out on the room's simulation |
+| Login | Personal sign-in: a worker's name and 6-digit PIN, an owner's password; sessions in the database; owner and worker roles, the server refusing what a worker may not do and leaving money out of a worker's replies; the person signed in recorded on Done, Skip, harvests, uses and counts; locks after wrong tries (a Telegram note to the owner); Settings → Workers sets PINs and roles, unlocks and signs out; `npm run owner` makes the first owner |
+| Simulation | Background runs of a room's program; Suggest machines lists the best five setups |
+| Stack | Node 22.13+, `node:http`, built-in `node:sqlite`, plain HTML, CSS and JS modules, no build step, no npm dependencies, `node --test` |
+| Units | Metric only: °C, %, ppm, m, m³, L, kWh, Pa, W |
+| Open | More roles (a manager) and per-room access are not planned; Malay is not planned |
+
+## Brand Commitments
+
+| Commitment | Detail |
+|---|---|
+| Name | "Mushroom farm", with the line "Climate and harvest" |
+| Voice | Plain English in short, concrete sentences; name the machine, the number and the unit; say what happens and why (for example "the exchange runs · free cooling") |
+| Units | Metric everywhere; US units never appear in the interface |
+
+## Evidence on Hand
+
+| Evidence | Path |
+|---|---|
+| Feature specs, one per iteration | `docs/specs/` |
+| Room overview mockups (the owner chose `room-overview-minimal-colour.html`) | `docs/mockups/` |
+| Room drawing screenshots | `docs/screenshots/2026-10-20-room-drawing/` |
+| Crop, equipment and economics research pages (not committed) | `research/` |
+
+There are no customers, testimonials or sales figures, and no yield figures beyond what the farm records in the app itself (sales are recorded in the app from November 2026; none before). Do not invent any. The lion's mane block price is still unknown (it needs a supplier quote).
+
+## Product Principles
+
+1. **The rooms come first.** A reading, an alarm or a machine fault must be the easiest thing to see; everything else waits.
+2. **Show what is real.** Show what was commanded, what the device reports and whether it is running; when a number is estimated, simulated or stale, say so.
+3. **Say why.** Every automatic action and every alarm names its cause in plain words, so a worker can act and the owner can tune.
+4. **One app for desk and floor.** Every task works on a phone at the room and on a desktop; setup may be denser on a desk but never desk-only.
+5. **Numbers decide the business.** Energy, cost and simulation results must be trustworthy enough to decide crops and equipment.

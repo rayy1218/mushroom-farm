@@ -1,5 +1,5 @@
 // Pure helpers for the Tasks tab, the Today page, Plan this on Suggest machines and the Settings task rules (spec
-// docs/superpowers/specs/2026-10-30-tasks-design.md section 7; no DOM, so they can be tested in Node). Days are the farm's
+// docs/specs/2026-10-30-tasks-design.md section 7; no DOM, so they can be tested in Node). Days are the farm's
 // local days ('YYYY-MM-DD', Asia/Kuala_Lumpur) as the server sends them; times show on the farm's clock whatever the
 // browser's time zone.
 

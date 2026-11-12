@@ -7,3 +7,6 @@ device/state.json
 device/state.json.tmp
 device/state.json.sim
 device/state.json.sim.tmp
+
+# Design-tool working files (kept locally)
+.impeccable/

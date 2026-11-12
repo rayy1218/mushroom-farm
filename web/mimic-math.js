@@ -1,6 +1,6 @@
 // Pure mapping for the room drawing (web/mimic.js): the DrawState, how the farm room page and the device's simulated
 // room fill it, and the plain data the painter writes (texts, levels, flags). No DOM, so Node tests cover it.
-// DrawState: see docs/superpowers/specs/2026-10-20-room-drawing-design.md, plus filterPa (2026-10-26-room-picture-design.md) and
+// DrawState: see docs/specs/2026-10-20-room-drawing-design.md, plus filterPa (2026-10-26-room-picture-design.md) and
 // units.lights (2026-10-26-lighting-design.md 8: null when the room has none, like units.dh).
 
 import { MACHINE_NAMES, MODES, FANS, statusWord } from './machines-math.js';

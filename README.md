@@ -153,7 +153,7 @@ Funnel off again: `sudo tailscale funnel --bg 8080 off && sudo tailscale serve -
 | `device/` | Device simulator: `main.js` (start), `modbus-server.js`, `simulation.js` and `sim-model.js` (the room physics), `web/` (its control page) |
 | `tests/` | `node:test` files, `*.test.js` |
 | `deploy/oracle/` | systemd units, `push-code.sh`, `push-data.sh`, `setup-vm.sh` |
-| `docs/superpowers/` | `specs/` (design per feature) and `plans/` (implementation plans) |
+| `docs/` | `specs/` (design per feature) and `plans/` (implementation plans) |
 | `docs/research/`, `docs/mockups/`, `docs/screenshots/` | Research notes, design mockups, captures |
 | `Dockerfile`, `compose.yaml` | One image for both apps |
 | `data/` | Created at run time: the database. Not in git |
@@ -170,7 +170,7 @@ Runs `tests/*.test.js` with the built-in `node:test` runner (60 s per file). The
 
 | Doc | What |
 |---|---|
-| `PRODUCT.md` | Who the app is for and what it is for |
-| `DESIGN.md` | The design system |
-| `docs/superpowers/specs/` | One design spec per feature, named `YYYY-MM-DD-<feature>-design.md` |
-| `docs/superpowers/plans/` | The implementation plan for each spec |
+| `docs/PRODUCT.md` | Who the app is for and what it is for |
+| `docs/DESIGN.md` | The design system |
+| `docs/specs/` | One design spec per feature, named `YYYY-MM-DD-<feature>-design.md` |
+| `docs/plans/` | The implementation plan for each spec |

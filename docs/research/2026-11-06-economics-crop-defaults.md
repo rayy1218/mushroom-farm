@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-11-06 |
 | What | The three research reports behind the Economics stage 1 defaults, kept word for word as the research agents delivered them, so nothing lives only in messages |
-| Used by | `docs/superpowers/specs/2026-11-06-economics-defaults.md` (the chosen defaults, with these ids) and `docs/superpowers/specs/2026-11-06-economics-design.md` |
+| Used by | `docs/specs/2026-11-06-economics-defaults.md` (the chosen defaults, with these ids) and `docs/specs/2026-11-06-economics-design.md` |
 | Marks | "search summary": the page was seen only in a search engine's summary, not fetched |
 
 ## 1. Grey oyster and lion's mane: re-check of the October and model-page defaults (ids G01–G33)

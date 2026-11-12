@@ -1,5 +1,5 @@
 // The pure helpers of the Tasks tab, the Today page, Plan this and the Settings task rules (spec
-// docs/superpowers/specs/2026-10-30-tasks-design.md section 7).
+// docs/specs/2026-10-30-tasks-design.md section 7).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
