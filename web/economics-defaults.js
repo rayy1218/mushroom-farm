@@ -342,8 +342,11 @@ function typeResearch(key, room, blocks) {
     }
   }
   if (type === 'shed') {
-    const houses = Math.max(1, Math.ceil((Number.isFinite(blocks) ? blocks : roomResearch('yours.blocks', room).value) / 2000));
-    if (key === 'yours.container') return r(SHED_HOUSE * houses, 1300 * houses, 10_000 * houses, 'low', ['L01', 'G20', 'G21'], `The lowland shed's house and racks, ${houses === 1 ? 'one' : houses} for up to 2,000 blocks${houses === 1 ? '' : ' each'}`);
+    if (key === 'yours.container') {
+      // a shed's own block count comes from its size (roomResearch), so only the house asks for it: asking it first looped
+      const houses = Math.max(1, Math.ceil((Number.isFinite(blocks) ? blocks : roomResearch('yours.blocks', room).value) / 2000));
+      return r(SHED_HOUSE * houses, 1300 * houses, 10_000 * houses, 'low', ['L01', 'G20', 'G21'], `The lowland shed's house and racks, ${houses === 1 ? 'one' : houses} for up to 2,000 blocks${houses === 1 ? '' : ' each'}`);
+    }
     if (key === 'yours.cooling') return r(0, 0, 9040, 'low', [], 'A lowland shed isn’t cooled; set yours if it is');
     if (key === 'yours.racks') return r(0, 0, 0, 'low', [], 'In the shed\'s house');
   }

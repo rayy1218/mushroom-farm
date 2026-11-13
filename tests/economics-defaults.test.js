@@ -180,6 +180,9 @@ test('the room type: a built room\'s panels and cooling by its size, a shed\'s h
   const shed = { volume: 200, length: 10, width: 8, height: 2.5, humidifierLH: 2, type: 'shed' };
   assert.deepEqual([researchOf('yours.container', 'oyster', shed, 3000).value, researchOf('yours.cooling', 'oyster', shed, 3000).value,
     researchOf('yours.racks', 'oyster', shed, 3000).value], [10000, 0, 0], 'two houses for 3,000 blocks; not cooled; racks in the house');
+  // With no blocks known yet, a shed's own block count and its house come from the room's size (this once looped forever)
+  assert.equal(researchOf('yours.blocks', 'oyster', shed).value, 4400, 'a 200 m³ shed at the research blocks a m³');
+  assert.equal(researchOf('yours.container', 'oyster', shed).value, 15000, 'three houses for its 4,400 blocks');
   assert.deepEqual([yoursName('container'), yoursName('built'), yoursName('shed'), yoursName(undefined)], ['Your container', 'Your room', 'Your shed', 'Your container']);
   assert.deepEqual([figureLabel('yours.container', 'built'), figureLabel('yours.container', 'shed'), figureLabel('yours.cooling', 'built')],
     ['Building, insulated', 'Shed', 'Cooling, fitted']);

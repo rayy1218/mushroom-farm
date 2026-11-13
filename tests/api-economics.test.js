@@ -219,3 +219,14 @@ test('the live stream: a worker\'s never carries economics (the owner\'s events)
   assert.doesNotMatch(w.text(), /economics/);
   assert.match(o.text(), /event: economics\ndata: \{"roomId":1,"crop":"oyster"\}/);
 });
+
+test('GET /api/economics for a shed: answered, with the shed\'s house and blocks from its size (a shed once looped forever: 500)', async (t) => {
+  const { db, call } = await app(t);
+  const shed = db.createRoom({ ...ROOM, name: 'Shed Beta', roomType: 'shed', gateway: '127.0.0.1:2599' }, Date.now()).id; // its own bus
+  for (const crop of ['oyster', 'lionsmane']) {
+    const r = await call('GET', `/api/economics?room=${shed}&crop=${crop}`);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(fig(r.body, 'yours.cooling').value, 0, 'a shed is not cooled');
+    assert.ok(fig(r.body, 'yours.container').value > 0, 'its house');
+  }
+});
