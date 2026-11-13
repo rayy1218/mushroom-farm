@@ -528,9 +528,15 @@ test('the Deploy workflow: after main\'s Tests pass, the tested commit, one at a
   for (const u of uses) assert.match(u, /@[0-9a-f]{40}$/, u);
   assert.match(yml, /actions\/checkout@[0-9a-f]{40} # v4\n\s+with:\n\s+ref: \$\{\{ env\.DEPLOY_SHA \}\}\n\s+persist-credentials: false/);
   assert.match(yml, /tailscale\/github-action@[0-9a-f]{40} # v4\n\s+with:\n\s+oauth-client-id: \$\{\{ secrets\.TS_OAUTH_CLIENT_ID \}\}\n\s+audience: \$\{\{ secrets\.TS_AUDIENCE \}\}\n\s+tags: tag:ci\n\s+ping: \$\{\{ secrets\.DEPLOY_HOST \}\}/);
-  assert.match(yml, /run: deploy\/oracle\/ci-deploy\.sh "\$DEPLOY_SHA"/);
+  assert.match(yml, /run: bash deploy\/oracle\/ci-deploy\.sh "\$DEPLOY_SHA"/);
   // expressions never reach a run: line directly
   for (const line of yml.split('\n').filter((l) => /^\s+run: /.test(l))) assert.doesNotMatch(line, /\$\{\{/);
   const runs = yml.split(/\n\s+- name: /).map((step) => step.split(/\n\s+run: \|?/)[1] ?? '');
   for (const body of runs) assert.doesNotMatch(body, /\$\{\{/);
+});
+
+test('the scripts run by path keep their executable bit in git (a 644 ci-deploy.sh failed the first deploy with "Permission denied")', { skip: !has('git') && 'skipped: no git' }, () => {
+  const out = spawnSync('git', ['ls-files', '-s', 'deploy/oracle'], { cwd: REPO, encoding: 'utf8' }).stdout;
+  const mode = (name) => out.split('\n').find((l) => l.endsWith(`deploy/oracle/${name}`))?.split(' ')[0];
+  for (const name of ['ci-deploy.sh', 'farm-deploy', 'push-code.sh', 'push-data.sh', 'setup-vm.sh']) assert.equal(mode(name), '100755', name);
 });

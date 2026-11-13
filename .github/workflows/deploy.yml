@@ -98,4 +98,4 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-        run: deploy/oracle/ci-deploy.sh "$DEPLOY_SHA"
+        run: bash deploy/oracle/ci-deploy.sh "$DEPLOY_SHA"
