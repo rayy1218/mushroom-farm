@@ -60,7 +60,7 @@ test('sheet rows: the myGAP columns, the sales cells blank', () => {
 // ---- Task 9: the Harvest room tab ----
 
 import { flushSplits, flushPerCrop } from '../web/harvest-math.js';
-import { hasMoney, recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, pastColumns, byCropColumns, roomColumns, cropColumns, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, deleteTitle, deleteLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
+import { hasMoney, recordLead, recordTitle, dateHint, runHead, harvestLine, pastRow, pastColumns, byCropColumns, roomColumns, cropColumns, PAST_COLUMNS, missingNote, flushRows, byCropRows, runTiles, voidTitle, voidedTitle, pickedLead, pricesNote, whenBoxes, whenMs, recordBody, editBody } from '../web/harvest-math.js';
 
 const at = (y, mo, d, h = 0, mi = 0) => Date.UTC(y, mo - 1, d, h - 8, mi); // a farm time (UTC+8) in ms
 
@@ -171,7 +171,8 @@ test('no energy recorded: the cost per kg is a dash that says so, never RM 0.00'
   assert.deepEqual(t, { label: 'Energy per kg', value: '—', line: 'No energy recorded yet' });
   assert.deepEqual(pageTiles({ ...farm, totals: { ...farm.totals, cost: { costPerKg: null, cost: 0, days: 30, water: false, none: 'no-energy' } } })[2],
     { label: 'Energy per kg', value: '—', line: 'No energy recorded yet' });
-  assert.equal(pricesNote(oneCrop.cost), 'Energy per kg is at today’s prices.');
+  assert.equal(pricesNote(oneCrop.cost), 'Energy per kg: each day’s electricity at its own rate, the water at today’s price.');
+  assert.equal(pricesNote({ ...oneCrop.cost, water: false }), 'Energy per kg: each day’s electricity at its own rate.');
   assert.equal(pricesNote({ costPerKg: null, none: 'no-energy' }), null);
   assert.equal(pricesNote(null), null);
 });
@@ -197,9 +198,10 @@ test('the expected value of the priced crops, the crops left out named with thei
 
 test('the delete question: the harvest in the title, when and who in the lead (the day and month kept together)', () => {
   const h = { crop: 'lionsmane', kg: 6.35, pickedAt: at(2026, 11, 4, 14, 36), worker: 'Kumar' };
-  assert.equal(deleteTitle(h), `Delete 6.35${nb}kg of Lion's mane?`);
-  assert.equal(deleteLead(h), `Picked 4${nb}Nov 14:36 by Kumar.`);
-  assert.equal(deleteLead({ ...h, worker: null }), `Picked 4${nb}Nov 14:36.`);
+  assert.equal(voidTitle(h), `Void 6.35${nb}kg of Lion's mane?`);
+  assert.equal(voidedTitle(h), `6.35${nb}kg of Lion's mane`);
+  assert.equal(pickedLead(h), `Picked 4${nb}Nov 14:36 by Kumar.`);
+  assert.equal(pickedLead({ ...h, worker: null }), `Picked 4${nb}Nov 14:36.`);
 });
 
 test('Record a harvest: the stamp it will take, the date in the farm\'s words under the box', () => {
@@ -410,49 +412,11 @@ test("the Overview card's rooms: those that picked in 30 days, their kg, a link 
   ]);
 });
 
-import { PICK_MAX_PER_BLOCK, pickCheck, pickWarnings, donePicks, recordPicks, editPicks } from '../web/harvest-math.js';
-
-test('an implausible pick: over 0.3 kg a block in one pick, its kg per block and kg named', () => {
+// Data integrity (spec 2026-11-12-data-integrity-design.md 5.1, decision 10): the pick check moved to the server, which asks
+// with the room's quick picks summed; the dialogs keep only the 400 checks. PICK_MAX_PER_BLOCK stays the one figure.
+import { PICK_MAX_PER_BLOCK } from '../web/harvest-math.js';
+test('the pick check\'s figure: 0.3 kg a block, read by the server\'s ask', () => {
   assert.equal(PICK_MAX_PER_BLOCK, 0.3);
-  const c = pickCheck(526.32, 950);
-  assert.ok(Math.abs(c.perBlock - 526.32 / 950) < 1e-12);
-  assert.equal(c.message, `That's 0.55${nb}kg per block in one pick. Is 526.32${nb}kg right?`);
-  assert.equal(pickCheck(285, 950), null, '0.30 kg a block, a whole good flush at most: not asked');
-  assert.ok(pickCheck(286, 950), '0.301 kg a block');
-  assert.equal(pickCheck(1240.5, 1000).message, `That's 1.24${nb}kg per block in one pick. Is 1,240.50${nb}kg right?`);
-  for (const [kg, blocks] of [[5, 0], [5, null], [5, undefined], [null, 950], [NaN, 950], [0, 950]]) assert.equal(pickCheck(kg, blocks), null, `${kg} from ${blocks}`);
-});
-
-test('a dialog\'s picks: each implausible one, on its own box', () => {
-  assert.deepEqual(pickWarnings([]), []);
-  assert.deepEqual(pickWarnings([{ field: 'kg', kg: 20, blocks: 950 }]), []);
-  assert.deepEqual(pickWarnings([{ field: 'kg:oyster', kg: 200, blocks: 500 }, { field: 'kg:pink', kg: 2, blocks: 500 }, { field: 'kg:lionsmane', kg: 40, blocks: 100 }]), [
-    { field: 'kg:oyster', message: `That's 0.40${nb}kg per block in one pick. Is 200.00${nb}kg right?` },
-    { field: 'kg:lionsmane', message: `That's 0.40${nb}kg per block in one pick. Is 40.00${nb}kg right?` },
-  ]);
-});
-
-test('the picks of Record (the chosen crop\'s run blocks) and of Edit (a changed kg only, the harvest\'s blocks)', () => {
-  const run = { crops: [{ crop: 'oyster', blocks: 500 }, { crop: 'lionsmane', blocks: 100 }] };
-  assert.deepEqual(recordPicks({ crop: 'lionsmane', kg: 40, worker: 'Ali' }, run), [{ field: 'kg', kg: 40, blocks: 100 }]);
-  assert.deepEqual(recordPicks({ crop: 'oyster', kg: 40, worker: 'Ali' }, run), [{ field: 'kg', kg: 40, blocks: 500 }]);
-  const h = { kg: 2.35, blocks: 950 };
-  assert.deepEqual(editPicks({ kg: 600 }, h), [{ field: 'kg', kg: 600, blocks: 950 }]);
-  assert.deepEqual(editPicks({ pickedAt: 5 }, h), [], 'the kg as it was: not asked about');
-  assert.deepEqual(editPicks({}, h), []);
-});
-
-test('the picks of a Done body: a harvest check\'s kg with the run\'s blocks of each crop', () => {
-  const one = { harvestCrops: [{ crop: 'lionsmane', name: "Lion's mane", blocks: 950 }] };
-  assert.deepEqual(donePicks(one, { worker: 'Ali', amount: 526.32 }), [{ field: 'amount', kg: 526.32, blocks: 950 }]);
-  assert.deepEqual(donePicks(one, { worker: 'Ali', amounts: { lionsmane: 2 } }), [{ field: 'kg:lionsmane', kg: 2, blocks: 950 }]);
-  const mixed = { harvestCrops: [{ crop: 'oyster', name: 'Grey oyster', blocks: 500 }, { crop: 'lionsmane', name: "Lion's mane", blocks: 100 }] };
-  assert.deepEqual(donePicks(mixed, { worker: 'Ali', amounts: { oyster: 20, lionsmane: 40 } }),
-    [{ field: 'kg:oyster', kg: 20, blocks: 500 }, { field: 'kg:lionsmane', kg: 40, blocks: 100 }]);
-  assert.deepEqual(donePicks(one, { worker: 'Ali' }), [], 'nothing weighed');
-  assert.deepEqual(donePicks({ harvestCrops: null, unit: 'bags' }, { worker: 'Ali', amount: 40 }), [], 'not a harvest check');
-  assert.deepEqual(donePicks({ harvestCrops: [{ crop: 'oyster', name: 'Grey oyster' }] }, { worker: 'Ali', amount: 4 }), [{ field: 'amount', kg: 4, blocks: undefined }],
-    'a server without the blocks: no check (pickCheck takes no blocks as unknown)');
 });
 
 test("a worker's run and farm (no money in the reply): no value or energy tiles, no money columns", () => {

@@ -15,6 +15,7 @@ export class ApiError extends Error {
     this.field = data?.field;
     this.retryAt = data?.retryAt; // a lock's end (ms), on a sign-in's 429
     this.retryInMs = data?.retryInMs; // and how long from now by the server's clock
+    this.asks = data?.asks; // ---- Data integrity ---- a 409's questions (web/asks.js)
   }
 }
 

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SHEET_WIDTHS_MM, SHEET_BLANK_ROWS, countDiff, UNIT_BY_KIND, dayNear, metaLine, needsLook, keptCounts, leaveText, doneText, undoLeft, UNDO_MS, itemGroups, stockHint, useByLine, qtyText, rmText, perUnitText, dayText, longDayText, daysBefore, pillOf, lotPill, countedText, attentionParts, groupItems, lotLabel,
-  moveLine, decimalComma, deleteTitle, deleteLead, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
+  moveLine, decimalComma, voidTitle, voidLead, voidLabel, throwOutTitle, throwOutLead, numberIn, itemBody, purchaseBody, useBody, purchaseEditBody,
   useEditBody, overStock, countBody, batchTitle, lotHref, useItems, sheetPeriod, sheetCells, sheetRange, sheetEmpty, SHEET_COLUMNS, SHEET_WRITE, KIND_OPTIONS, UNIT_OPTIONS,
   worthLine, itemWorth, lotWorth,
 } from '../web/inventory-math.js';
@@ -125,7 +125,7 @@ test("a lot's name and a move's line", () => {
     return { ...rest, what: l.what.replace(/\u00a0/g, ' '), qty: l.qty.replace(/\u00a0/g, ' ') };
   };
   assert.deepEqual(line({ refKind: 'purchase', at: at('2026-11-03'), qty: 5, total: 25, supplier: 'Kedai Ali', useBy: '2026-12-01' }), {
-    when: '3 Nov', what: 'Bought from Kedai Ali · RM 25.00 · use by 1 Dec', qty: '+5.00 L', edit: 'edit',
+    when: '3 Nov', what: 'Bought from Kedai Ali · RM 25.00 · use by 1 Dec', qty: '+5.00 L', edit: 'edit', voided: '', edited: false,
   });
   assert.equal(line({ refKind: 'use', at: at('2026-11-03', '08:12'), qty: -1, roomId: 2, roomName: 'Container 2', reason: 'Footbath', worker: 'Ali' }).what, 'Used in Container 2 · Footbath · Ali');
   assert.equal(line({ refKind: 'use', at: 0, qty: -1, roomId: 9, roomName: null }).what, 'Used in a deleted room');
@@ -134,7 +134,7 @@ test("a lot's name and a move's line", () => {
   assert.equal(line({ refKind: 'use', at: 0, qty: -3, lotId: 4, reason: 'Expired', worker: 'Ali' }).what, 'Thrown out · expired · Ali');
   const count = line({ refKind: 'adjust', at: 0, qty: -1.5, counted: 3.5, worker: 'Ali' });
   assert.equal(count.what, 'Counted 3.50 L · Ali');
-  assert.equal(count.edit, 'delete');
+  assert.equal(count.edit, 'void', 'Data integrity: a count is not edited; it is voided (Undo inside its minute)');
   const batch = line({ refKind: 'batch', refId: 14, at: 0, qty: 500 });
   assert.equal(batch.what, 'Batch 14 · received');
   assert.equal(batch.edit, null);
@@ -166,16 +166,19 @@ test('Total paid takes one decimal comma, as the qty boxes do; the body and the 
   assert.equal(decimalComma('1,234'), '1,234');
 });
 
-test('the confirms: delete and throw out', () => {
+test('the confirms: void and throw out', () => {
   const bleach = item();
   const plain = (s) => s.replace(/\u00a0/g, ' ');
-  assert.equal(plain(deleteTitle({ refKind: 'purchase', qty: 5, at: at('2026-11-03') }, bleach)), 'Delete the purchase of 5.00 L of Bleach on 3 Nov?');
-  assert.equal(plain(deleteTitle({ refKind: 'use', qty: -1, at: at('2026-11-03'), lotId: null }, bleach)), 'Delete the use of 1.00 L of Bleach on 3 Nov?');
-  assert.equal(plain(deleteTitle({ refKind: 'use', qty: -1, at: at('2026-11-03'), lotId: 4 }, bleach)), 'Delete the throw-out of 1.00 L of Bleach on 3 Nov?');
-  assert.equal(plain(deleteTitle({ refKind: 'adjust', qty: 0, at: at('2026-11-03') }, bleach)), 'Delete the count of Bleach on 3 Nov?');
-  assert.equal(deleteLead({ refKind: 'purchase' }, { throwOuts: true }), 'The throw-outs taken from it go with it.');
-  assert.equal(deleteLead({ refKind: 'purchase' }, { throwOuts: false }), null);
-  assert.equal(deleteLead({ refKind: 'adjust' }, {}), 'In stock goes back to what the records said without it.');
+  // Data integrity (4.1): a move is voided, never deleted
+  assert.equal(plain(voidTitle({ refKind: 'purchase', qty: 5, at: at('2026-11-03') }, bleach)), 'Void the purchase of 5.00 L of Bleach on 3 Nov?');
+  assert.equal(plain(voidTitle({ refKind: 'use', qty: -1, at: at('2026-11-03'), lotId: null }, bleach)), 'Void the use of 1.00 L of Bleach on 3 Nov?');
+  assert.equal(plain(voidTitle({ refKind: 'use', qty: -1, at: at('2026-11-03'), lotId: 4 }, bleach)), 'Void the throw-out of 1.00 L of Bleach on 3 Nov?');
+  assert.equal(plain(voidTitle({ refKind: 'adjust', qty: 0, at: at('2026-11-03') }, bleach)), 'Void the count of Bleach on 3 Nov?');
+  assert.equal(voidLead({ refKind: 'purchase' }, { throwOuts: true }), 'The throw-outs taken from it are voided with it.');
+  assert.equal(voidLead({ refKind: 'purchase' }, { throwOuts: false }), null);
+  assert.equal(voidLead({ refKind: 'adjust' }, {}), 'In stock goes back to what the records said without it.');
+  assert.deepEqual(['purchase', 'use', 'throw-out', 'count'].map((w) => voidLabel({ refKind: w === 'count' ? 'adjust' : w === 'purchase' ? 'purchase' : 'use', lotId: w === 'throw-out' ? 4 : null })),
+    ['purchase', 'use', 'throw-out', 'count']);
   const lot = { left: 3, at: at('2026-11-01'), useBy: '2026-11-04', state: 'expired' };
   assert.equal(plain(throwOutTitle(lot, item({ name: 'Spawn', unit: 'kg' }))), 'Throw out 3.00 kg of Spawn bought 1 Nov?');
   assert.equal(throwOutLead(lot), 'Its use-by was 4 Nov.');
@@ -328,9 +331,11 @@ test('the line after a record (audit #2): what was saved, in the farm words', ()
   assert.equal(doneText({ kind: 'deleted' }), 'Deleted');
   assert.equal(doneText({ kind: 'deleted', name: 'Bleach' }), 'Deleted Bleach');
   assert.equal(doneText({ kind: 'saved' }), 'Saved');
-  assert.equal(UNDO_MS, 60_000);
-  assert.equal(undoLeft(1000, 21_000), 40_000);
-  assert.equal(undoLeft(1000, 61_000), 0);
+  // Data integrity (4.3): the server allows its 60 s from the add entry; the page stops offering Undo 2 s before, so a press
+  // at the edge (and a count's several moves) never meets a 409 halfway
+  assert.equal(UNDO_MS, 58_000);
+  assert.equal(undoLeft(1000, 21_000), 38_000);
+  assert.equal(undoLeft(1000, 59_000), 0);
   assert.equal(undoLeft(1000, 500), UNDO_MS, 'a clock behind: never more than the minute');
   assert.equal(undoLeft(undefined, 500), 0);
 });
@@ -466,4 +471,17 @@ test('the stock\'s worth: the page\'s line, an item\'s beside its stock, a lot\'
   assert.equal(plain(lotWorth({ left: 1, unitCost: null, value: null }, 'pcs')), 'no price');
   assert.equal(lotWorth({ left: 1 }, 'pcs'), null);
   assert.equal(plain(lotWorth({ left: 600, unitCost: 1, value: 600, partial: true }, 'blocks')), 'RM 1.00 per block · RM 600.00 · part with no price');
+});
+
+// ---- Data integrity (spec 2026-11-12-data-integrity-design.md 11): a voided move stays in the history, struck ----
+test('a voided move: its line says who voided it and why, and opens as itself; an edited one is marked', () => {
+  const bleach = item();
+  const v = { at: Date.UTC(2026, 10, 10, 2), by: 'Lim', reason: 'Entered twice' }; // 10 Nov, 10:00 at the farm
+  const base = { roomId: null, roomName: null, reason: null, worker: null, lotId: null, supplier: null, useBy: null, at: at('2026-11-03'), qty: 5, total: 25 };
+  const gone = moveLine({ ...base, refKind: 'purchase', voided: v, edits: 0 }, bleach);
+  assert.deepEqual([gone.voided, gone.edit, gone.edited], ['Voided 10 Nov by Lim: Entered twice', 'open', false]);
+  const count = moveLine({ ...base, refKind: 'adjust', counted: 3, voided: v }, bleach);
+  assert.equal(count.edit, 'open');
+  assert.equal(moveLine({ ...base, refKind: 'use', qty: -1, edits: 2, voided: null }, bleach).edited, true);
+  assert.equal(moveLine({ ...base, refKind: 'batch', refId: 3, voided: null }, bleach).voided, '');
 });

@@ -1,5 +1,7 @@
 // Inventory's dialogs (spec 2026-11-05-inventory-design.md 4 and 5): Add and Edit item, Purchase, Record use, Edit a purchase
-// or a use, Delete a record, Throw out, Archive. On the tasks' openForm, laid out as the Harvest dialogs: the unit inside the
+// or a use, Throw out, Archive; Data integrity (spec 2026-11-12-data-integrity-design.md 4 and 11): Void a purchase, a use, a
+// throw-out or a count (its reason asked), a voided one's own dialog (Restore, History), the History fold in an Edit, and
+// every write through the server's asks (a closed month: "Record anyway"). On the tasks' openForm, laid out as the Harvest dialogs: the unit inside the
 // qty box, the day in the farm's words under a date box, the worker picker, a quiet red Delete at an Edit's footer start.
 // Each takes onDone(result) (the page reads again and, with a result, says what was saved: inventory-done.js; result null
 // when the record was gone or changed) and onLost(text) (a failure that came back after the dialog closed).
@@ -8,10 +10,14 @@ import { request, routeMissing, OUTDATED } from './api.js';
 import { openForm as openTaskForm, loadWorkers, workerField, errorText } from './task-dialogs.js';
 import { whenBoxes, dateHint } from './harvest-math.js';
 import { farmDate } from './tasks-math.js';
+import { DOT } from './text-math.js';
 import {
   doneText, KIND_OPTIONS, UNIT_OPTIONS, UNIT_BY_KIND, UNIT_WORDS, WHOLE_UNITS, itemGroups, decimalComma, stockHint, qtyText, perUnitText, daysBefore, itemBody, purchaseBody, useBody, purchaseEditBody, useEditBody,
-  overStock, deleteTitle, deleteLead, throwOutTitle, throwOutLead, useItems,
+  overStock, voidTitle, voidLead, voidLabel, throwOutTitle, throwOutLead, useItems, moveLine,
 } from './inventory-math.js';
+import { isAsk, asksProblems, anyway, createConfirm } from './asks.js'; // ---- Data integrity ----
+import { openVoid, openVoided } from './void-dialog.js';
+import { addHistory } from './changes-fold.js';
 
 // The tasks' openForm with the Business dialogs' form class (bz-form: the footer sticks at the dialog's foot on a phone, a
 // Delete on its own row; DESIGN.md "Business").
@@ -25,12 +31,15 @@ const COMMAND_TIMEOUT = 15000;
 const BACK_DAYS = 400;
 
 // → { ok: true, reply }, or the problem for the dialog: { field, message } (the server's field; 'at' is the time box's) or
-// { message } ({ message, stale } on a 404 or 409: the record is gone or changed, so the page reads again).
-async function send(method, path, body) {
+// { message } ({ message, stale } on a 404 or 409: the record is gone or changed, so the page reads again); with asks (Data
+// integrity 5.1, asker below) the body goes with the kinds confirmed when asked about already, and the server's asks come
+// back as { problems }.
+async function send(method, path, body, asks = null) {
   try {
-    const reply = await request(method, path, body, COMMAND_TIMEOUT);
+    const reply = await request(method, path, asks ? asks.body(body) : body, COMMAND_TIMEOUT);
     return { ok: true, reply };
   } catch (err) {
+    if (isAsk(err) && asks) return asks.asked(body, err.asks);
     if (err.status === 404 || err.status === 409) return { message: errorText(err), stale: true }; // gone or changed: the page reads again
     if (err.status === 400 && err.field === 'worker') window.dispatchEvent(new CustomEvent('farm:worker')); // renamed or removed
     if (err.status === 400 && err.field) return { field: err.field === 'at' ? 'time' : err.field, message: err.message };
@@ -40,6 +49,7 @@ async function send(method, path, body) {
 // A send's end for openForm: true (closes) after onDone(what was saved: done(reply) → { text, moves?, at }), or the problem
 // (a stale one tells the page to read again).
 function finish(sent, onDone, done = () => ({ text: doneText({ kind: 'saved' }) })) {
+  if (sent.problems) return sent.problems; // the server's asks, under their boxes
   if (sent.ok) {
     onDone?.({ at: Date.now(), ...done(sent.reply) });
     return true;
@@ -47,6 +57,24 @@ function finish(sent, onDone, done = () => ({ text: doneText({ kind: 'saved' }) 
   if (sent.stale) onDone?.(null);
   return sent;
 }
+// ---- Data integrity ---- (5.1) A dialog's asks for send(): the same body again goes with them confirmed; the primary reads
+// "<label> anyway" meanwhile; the asks shown under their boxes (the server's 'at' is the date box's, a purchase's 'day').
+// formOf() → the dialog's form handle.
+function asker(formOf, value = 'save', label = 'Record') {
+  const confirm = createConfirm();
+  return {
+    body: (b) => confirm.body(b),
+    asked(b, asks) {
+      const form = formOf();
+      confirm.asked(b, asks);
+      const button = form?.button(value);
+      if (button) button.textContent = anyway(label);
+      const fieldOf = (f) => (f === 'at' ? (form?.input('date') ? 'date' : 'day') : f);
+      return { problems: asksProblems(asks, fieldOf, (f) => Boolean(form?.input(f))) };
+    },
+  };
+}
+
 // A new move's result: its words and its id for Undo.
 const made = (text) => (reply) => ({ text, moves: Number.isInteger(reply?.id) ? [reply.id] : [] });
 
@@ -283,6 +311,7 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
   const today = farmDate(Date.now());
   let item = startItem(list, itemId, 'purchase');
   let form = null;
+  const ask = asker(() => form);
   const priceHint = () => (form && item ? perUnitText(Number(decimalComma(form.input('total').value)), Number(decimalComma(form.input('qty').value)), item.unit) : '');
   form = openForm({
     title: 'Purchase',
@@ -304,7 +333,7 @@ export function openPurchaseDialog({ items, itemId = null, suppliers = [], onDon
     submit: async (v) => {
       const body = purchaseBody(v, item, farmDate(Date.now()));
       if (body.error) return { field: body.field, message: body.error };
-      const sent = await send('POST', '/api/inventory/purchases', body);
+      const sent = await send('POST', '/api/inventory/purchases', body, ask);
       if (sent.ok) keepItem('purchase', body.itemId);
       return finish(sent, onDone, made(doneText({ kind: 'purchase', qty: body.qty, unit: item.unit, name: item.name })));
     },
@@ -344,6 +373,7 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
   const shown = whenBoxes(Date.now());
   const guard = createOverGuard();
   let form = null;
+  const ask = asker(() => form);
   form = openForm({
     title: 'Record use',
     lead: namesLead(names),
@@ -362,7 +392,7 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
       if (body.error) return { field: body.field, message: body.error };
       const asked = guard(form, item, body.qty);
       if (asked) return asked;
-      const sent = await send('POST', '/api/inventory/uses', body);
+      const sent = await send('POST', '/api/inventory/uses', body, ask);
       if (sent.ok) keepItem('use', body.itemId);
       const room = body.roomId === null ? null : rooms.find((r) => r.id === body.roomId)?.name ?? null;
       return finish(sent, onDone, made(doneText({ kind: 'use', qty: body.qty, unit: item.unit, name: item.name, room, worker: body.worker })));
@@ -378,14 +408,17 @@ export async function openUseDialog({ items, itemId = null, reasons = [], onDone
   return form;
 }
 
-// ---- a record: Edit, Delete, Throw out ----
+// ---- a record: Edit, Void, Throw out ----
 
-// Edit a purchase or a use (a count is deleted, not edited; a batch move is Batches'). throwOuts: the purchase has some.
+// Edit a purchase or a use (a count is voided, not edited; a batch move is Batches'), with Void and its History. throwOuts:
+// the purchase has some.
 export async function openMoveDialog({ move, item, suppliers = [], reasons = [], throwOuts = false, onDone, onLost, alive = () => true }) {
-  const remove = { label: 'Delete this record', action: () => openDeleteDialog({ move, item, throwOuts, onDone, onLost }) };
+  const remove = { label: `Void this ${voidLabel(move)}`, action: () => openVoidMove({ move, item, throwOuts, onDone, onLost }) };
+  let form = null;
+  const ask = asker(() => form, 'save', 'Save');
   if (move.refKind === 'purchase') {
     const oldest = daysBefore(farmDate(Date.now()), BACK_DAYS); // a day stored older than this stays valid in the box
-    const form = openForm({
+    form = openForm({
       title: 'Edit a purchase',
       fields: [
         { name: 'qty', label: 'Qty bought', kind: 'number', value: String(move.qty), suffix: item.unit },
@@ -405,12 +438,13 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
         const body = purchaseEditBody(v, move, item, farmDate(Date.now()));
         if (body.error) return { field: body.field, message: body.error };
         if (Object.keys(body).length === 0) return true;
-        return finish(await send('PUT', `/api/inventory/moves/${move.id}`, body), onDone);
+        return finish(await send('PUT', `/api/inventory/moves/${move.id}`, body, ask), onDone);
       },
     });
     setUnit(form, 'qty', item.unit);
     rmPrefix(form, 'total');
     suggest(form, 'supplier', suppliers);
+    addHistory({ kind: 'move', id: move.id });
     return form;
   }
   let names;
@@ -426,7 +460,7 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
   const shown = whenBoxes(move.at);
   const roomOptions = [['', 'Not in a room'], ...rooms.map((r) => [String(r.id), r.name])];
   if (move.roomId !== null && !rooms.some((r) => r.id === move.roomId)) roomOptions.push([String(move.roomId), 'A deleted room']);
-  const form = openForm({
+  form = openForm({
     title: throwOut ? 'Edit a throw-out' : 'Edit a use',
     fields: [
       { name: 'qty', label: throwOut ? 'Qty thrown out' : 'Qty used', kind: 'number', value: String(-move.qty), suffix: item.unit },
@@ -441,22 +475,31 @@ export async function openMoveDialog({ move, item, suppliers = [], reasons = [],
       const body = useEditBody(v, move, item, { now: Date.now(), shown });
       if (body.error) return { field: body.field, message: body.error };
       if (Object.keys(body).length === 0) return true;
-      return finish(await send('PUT', `/api/inventory/moves/${move.id}`, body), onDone);
+      return finish(await send('PUT', `/api/inventory/moves/${move.id}`, body, ask), onDone);
     },
   });
   setUnit(form, 'qty', item.unit);
   suggest(form, 'reason', reasons);
+  addHistory({ kind: 'move', id: move.id });
   return form;
 }
 
-export function openDeleteDialog({ move, item, throwOuts = false, onDone, onLost }) {
-  return openForm({
-    title: deleteTitle(move, item),
-    lead: [deleteLead(move, { throwOuts })].filter(Boolean),
-    buttons: [{ value: 'delete', label: 'Delete', primary: true, danger: true }],
-    closeLabel: 'Keep it',
-    onLost,
-    submit: async () => finish(await send('DELETE', `/api/inventory/moves/${move.id}`), onDone, () => ({ text: doneText({ kind: 'deleted' }) })),
+// The Void confirm (its reason required): the move stays in the history, struck, and leaves the stock, the lots, the costs
+// and the sheet; a purchase's throw-outs go with it. Undo inside its minute is the done line's (inventory-done.js).
+export function openVoidMove({ move, item, throwOuts = false, onDone, onLost }) {
+  return openVoid({
+    title: voidTitle(move, item), lead: [voidLead(move, { throwOuts })].filter(Boolean), label: `Void ${voidLabel(move)}`,
+    path: `/api/inventory/moves/${move.id}/void`, onChanged: () => onDone?.({ text: 'Voided' }), onError: onLost,
+  });
+}
+
+// A voided move's own dialog: what it was, the void said, Restore (with the throw-outs its void took) and its History.
+export function openVoidedMove({ move, item, onDone, onLost }) {
+  const line = moveLine(move, item);
+  const what = voidLabel(move);
+  return openVoided({
+    title: `${what[0].toUpperCase()}${what.slice(1)} of ${item.name}`, lead: [`${line.when}${DOT}${line.what}${DOT}${line.qty}`], voided: move.voided,
+    path: `/api/inventory/moves/${move.id}/restore`, onChanged: () => onDone?.({ text: 'Restored' }), onError: onLost, kind: 'move', id: move.id,
   });
 }
 
@@ -469,7 +512,9 @@ export async function openThrowOutDialog({ lot, item, onDone, onLost, alive = ()
     return null;
   }
   if (!alive()) return null;
-  return openForm({
+  let form = null;
+  const ask = asker(() => form, 'throw', 'Throw out');
+  form = openForm({
     title: throwOutTitle(lot, item),
     lead: [throwOutLead(lot), ...namesLead(names)],
     fields: [workerField(names, 'Who threw it out')],
@@ -478,8 +523,9 @@ export async function openThrowOutDialog({ lot, item, onDone, onLost, alive = ()
     onLost,
     submit: async (v) => {
       if (!v.worker) return { field: 'worker', message: 'Pick who threw it out' };
-      return finish(await send('POST', `/api/inventory/lots/${lot.moveId}/throw-out`, { worker: v.worker }), onDone,
+      return finish(await send('POST', `/api/inventory/lots/${lot.moveId}/throw-out`, { worker: v.worker }, ask), onDone,
         made(doneText({ kind: 'throwOut', qty: lot.left, unit: item.unit, name: item.name, worker: v.worker })));
     },
   });
+  return form;
 }

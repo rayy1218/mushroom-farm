@@ -69,9 +69,15 @@ test('a sale: record, edit, paid, the view, delete; checks with their fields', a
   assert.equal((await call('GET', '/api/sales?days=31')).status, 400);
   assert.equal((await call('GET', '/api/sales?days=abc')).status, 400);
   assert.equal((await call('DELETE', '/api/buyers/' + buyer.id)).status, 409);
-  assert.equal((await call('DELETE', `/api/sales/deliveries/${id}`)).status, 204);
-  assert.equal((await call('DELETE', `/api/sales/deliveries/${id}`)).status, 404);
-  assert.equal(salesEvents().length, 5, 'buyer, record, edit, paid, delete');
+  const gone = await call('DELETE', `/api/sales/deliveries/${id}`);
+  assert.deepEqual([gone.status, gone.body.error], [409, 'Void it instead: a money record is kept.']);
+  assert.equal((await call('DELETE', '/api/sales/deliveries/999')).status, 404);
+  const locked = await call('POST', `/api/sales/deliveries/${id}/void`, { reason: 'Entered twice' });
+  assert.deepEqual([locked.status, locked.body.field], [409, 'paidAt']);
+  assert.equal((await call('PUT', `/api/sales/deliveries/${id}/paid`, { paidAt: null, reason: 'Paid the wrong one' })).status, 200);
+  const voided = await call('POST', `/api/sales/deliveries/${id}/void`, { reason: 'Entered twice' });
+  assert.deepEqual([voided.status, voided.body.voided.reason], [200, 'Entered twice']);
+  assert.equal(salesEvents().length, 6, 'buyer, record, edit, paid, unpaid, void');
 });
 
 test('the summary for Costs: the contract\'s exact shape; the range and the CSV', async (t) => {

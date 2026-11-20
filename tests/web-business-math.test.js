@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { DOT } from '../web/text-math.js';
 import {
   moneyTitle, moneyTiles, toComeLine, unsoldLine, unsoldTile, lastMonthLine, lastMonthTile, NEEDS_NONE, NEED_PARTS, needLines, needsTitle,
-  needsEmpty, readFailText, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows, stockLine, boughtLine,
+  needsEmpty, readFailText, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows, stockLine, boughtLine, pastLine, CHANGES_LINK,
 } from '../web/business-math.js';
 import { toComeNote } from '../web/costs-math.js';
 
@@ -34,10 +34,20 @@ test('the money card: "November so far", Costs\' Profit, Income and Costs tiles,
     { label: 'Income', value: `RM${NB}384.00`, line: `8.0${NB}kg sold` },
     { label: 'Costs', value: `RM${NB}192.82`, line: 'Some costs have no price' },
   ]);
-  assert.equal(unsoldLine(MONTH), `124.4${NB}kg not sold yet, about RM${NB}4,354.00 at your expected prices`);
-  assert.equal(unsoldLine({ ...MONTH, tiles: { ...TILES, unsold: { kg: 12, value: null } } }), `12.0${NB}kg not sold yet`, 'a crop with no expected price');
-  assert.equal(unsoldLine({ ...MONTH, tiles: { ...TILES, unsold: null } }), null, 'everything picked is sold');
-  assert.equal(unsoldLine(null), null);
+});
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.2 and 11): the farm's unsold balance (Sales'), not the
+// month's: what is still to sell, valued, and what is past its keeping days, to record as Not sold. Made-up figures (G10).
+const UNSOLD = { crops: [], total: { fresh: 9, past: 166, value: 162 } };
+test('the money card: still to sell, about its value; past its keeping days, to record as Not sold', () => {
+  assert.equal(unsoldLine(UNSOLD), `9.0${NB}kg still to sell, about RM${NB}162.00 at your expected prices`);
+  assert.equal(unsoldLine({ crops: [], total: { fresh: 12, past: 0, value: null } }), `12.0${NB}kg still to sell`, 'a crop with no expected price');
+  assert.equal(unsoldLine({ crops: [], total: { fresh: 0, past: 166, value: 0 } }), null, 'nothing fresh left');
+  assert.equal(unsoldLine(null), null, 'Sales not read');
+  assert.equal(pastLine(UNSOLD), `166.0${NB}kg past its keeping days: record it as Not sold`);
+  assert.equal(pastLine({ crops: [], total: { fresh: 9, past: 0, value: 162 } }), null);
+  assert.equal(pastLine(null), null);
+  assert.equal(CHANGES_LINK, 'Change history');
 });
 
 test('the money card: Costs\' still-to-come line, in its words; none once every monthly item is charged or without Costs', () => {
@@ -49,9 +59,10 @@ test('the money card: Costs\' still-to-come line, in its words; none once every 
 });
 
 test('the money card on a desk: the kg not sold and last month as tiles 4 and 5', () => {
-  assert.deepEqual(unsoldTile(MONTH), { label: 'Not sold', value: `124.4${NB}kg`, line: `about RM${NB}4,354.00 at your expected prices` });
-  assert.deepEqual(unsoldTile({ ...MONTH, tiles: { ...TILES, unsold: { kg: 12, value: null } } }), { label: 'Not sold', value: `12.0${NB}kg` });
-  assert.equal(unsoldTile({ ...MONTH, tiles: { ...TILES, unsold: null } }), null);
+  assert.deepEqual(unsoldTile(UNSOLD), { label: 'Still to sell', value: `9.0${NB}kg`, line: `about RM${NB}162.00 at your expected prices` });
+  assert.deepEqual(unsoldTile({ crops: [], total: { fresh: 12, past: 0, value: null } }), { label: 'Still to sell', value: `12.0${NB}kg` });
+  assert.equal(unsoldTile({ crops: [], total: { fresh: 0, past: 166, value: 0 } }), null, 'only past its days: the past line says it');
+  assert.equal(unsoldTile(null), null);
   const tile = (o) => lastMonthTile({ month: '2026-10', income: 1500, costs: 300, profit: 1200, pending: false, ...o }, MONTH);
   assert.deepEqual(tile({}), { label: 'October', value: `RM${NB}1,200.00`, line: 'Profit' });
   assert.deepEqual(tile({ income: 0, costs: 340, profit: -340 }), { label: 'October', value: `−RM${NB}340.00`, line: 'Loss', tone: 'loss' }, 'Costs\' Profit tile\'s loss');
@@ -188,4 +199,12 @@ test('the Summary\'s stock on hand and what was bought for it this month', () =>
   assert.equal(plain(boughtLine({ bought: { total: 5988, lines: [], unpriced: [] } })), 'Bought for stock this month: RM 5,988.00 (a cost once used)');
   assert.equal(boughtLine({ bought: { total: 0, lines: [], unpriced: [] } }), null);
   assert.equal(boughtLine(null), null);
+});
+
+test('Needs you: sales above the harvest, in the warning tone, to Sales (G7)', () => {
+  const need = { kind: 'oversold', crops: ['abalone'], texts: ['…'], href: '#/business/sales' };
+  assert.deepEqual(needLines({ needs: [need], errors: {} }, NOW), [
+    { kind: 'oversold', key: 'oversold', tone: 'warning', text: 'Abalone oyster: sales above the harvest', href: '#/business/sales' },
+  ]);
+  assert.equal(needLines({ needs: [{ ...need, crops: ['abalone', 'golden'] }] }, NOW)[0].text, 'Abalone oyster and Golden oyster: sales above the harvest');
 });

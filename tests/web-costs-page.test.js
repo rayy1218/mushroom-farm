@@ -133,11 +133,18 @@ test('Bought for stock under the costs; the Equipment card read with the lists, 
   assert.ok(page.includes('<h2 id="co-equip-title">Equipment</h2>'));
   assert.ok(page.includes('Add equipment'));
   const eq = src('costs-equipment.js');
-  for (const words of ["request('POST', '/api/equipment', body)", "request('PUT', `/api/equipment/${item.id}`, body)", "request('DELETE', `/api/equipment/${item.id}`)",
-    "label: 'Delete this item'", 'Its write-off goes from every month. This cannot be undone.']) assert.ok(eq.includes(words), words);
+  // Data integrity: the item is voided (its reason asked), never deleted; the sends go through the server's asks
+  for (const words of ["request('POST', '/api/equipment', b)", "request('PUT', `/api/equipment/${item.id}`, b)", 'path: `/api/equipment/${item.id}/void`',
+    "label: 'Void this item'", 'Its write-off leaves every month.', 'path: `/api/equipment/${item.id}/restore`']) assert.ok(eq.includes(words), words);
+  assert.ok(!eq.includes("'DELETE'"), 'no Delete left');
   assert.match(costsCss, /grid-template-areas: "month month" "entries cats" "repeat cats" "equip cats" "runs runs"/);
 });
 
 test('a month with no costs still shows what it bought for stock (a September of stock bought, none used)', () => {
   assert.ok(page.includes("els.categories.replaceChildren(el('p', 'none', `No costs in ${monthTitle(view.month)}.`), ...boughtNodes());"));
+});
+
+// ---- Data integrity ---- a voided item's write-off is a figure struck too; its "not written off: voided" is not
+test('a voided equipment item: its write-off struck, its words under it not', () => {
+  assert.ok(page.includes("off.append(el('span', x.voided ? 'dx-figure' : '', x.writeOff), el('span', 'co-sub', x.left));"));
 });

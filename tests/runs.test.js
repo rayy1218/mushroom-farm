@@ -82,7 +82,8 @@ test('list: the open runs first, then the ended, each newest started first; a ro
   const { runs } = s.runs.list();
   assert.deepEqual(runs.map((r) => r.id), [s.c.id, s.b.id, s.a.id]);
   assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'blocksInAt', 'startedAt', 'endedAt', 'kg', 'perBlock',
-    'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete']);
+    'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete', 'repriced']);
+  assert.deepEqual(runs[0].repriced, [], 'Data integrity: no closed month of it moved');
   const a = runs[2];
   assert.deepEqual([a.roomName, a.startedAt, a.endedAt, a.kg, a.perBlock], ['Container 1', at('2026-10-01', 9), at('2026-11-01', 9), 80, 0.13]);
   const [money] = s.costs.runViews({ run: s.a.id });

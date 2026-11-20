@@ -7,6 +7,11 @@ import { readSettings, readCropYield } from './settings.js';
 import { roomDays, warmRoom, totals, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { runFigures, buckets, recordRows, csvRows, valueOf, unpricedOf, round, costPerKgOf } from './harvest-math.js';
 import { checkWorker, TaskError } from './tasks.js';
+import { askOrThrow, confirmedOf } from './asks.js'; // ---- Data integrity ----
+import { record as logChange, reasonOf, voidedOf, APP } from './changes.js';
+import { roomPickAsks, harvestSnapshot } from './harvest-asks.js';
+import { tariffOf } from './tariffs.js';
+import { closedAsks, askClosed } from './closes.js';
 
 export const MAX_KG = 10_000;
 export const RANGES = [7, 30, 90, 365];
@@ -46,7 +51,10 @@ const costOf = (days, prices) => {
   if (days.some((d) => d.pending)) return { cost: null, days: days.length, water: prices.water !== null, none: 'pending' };
   const t = totals(days, prices);
   const none = t.kWh === 0 && t.waterL === 0 ? { none: 'no-energy' } : {};
-  return { cost: round(t.cost + (t.waterCost ?? 0), 2), days: days.length, water: prices.water !== null, ...none };
+  // Data integrity (7.2): what of it is estimated (RM), and the time the room was not seen, when any
+  const unseenMs = days.reduce((sum, d) => sum + (d.unseenMs ?? 0), 0);
+  const parts = { ...(t.estimated > 0 ? { estimated: t.estimated } : {}), ...(unseenMs > 0 ? { unseenMs } : {}) };
+  return { cost: round(t.cost + (t.waterCost ?? 0), 2), days: days.length, water: prices.water !== null, ...none, ...parts };
 };
 
 const ordered = (crops) => CROP_KEYS.filter((k) => crops.has(k));
@@ -105,7 +113,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
 
   const prices = () => {
     const { electricityPrice, waterPrice } = readSettings(db);
-    return { electricity: electricityPrice, water: waterPrice };
+    return { electricity: electricityPrice, water: waterPrice, tariff: tariffOf(db) }; // Data integrity: each day at its own price
   };
 
   // A run's yield figures: a crop whose batches in the run all have a weight takes their dry kg per block (spec
@@ -143,7 +151,8 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
   }
 
   // A run as the room view shows it, its cost from the room's usage days (null: the run started before the days kept).
-  function runView(run, cropYield, usageDays, prices) {
+  // Its figures count the harvests not voided; its list holds the voided ones too (struck: voided, edits; Data integrity).
+  function runView(run, cropYield, usageDays, prices, edits = db.editCounts('harvest'), notSoldEdits = db.editCounts('not-sold')) {
     const today = zone.label(now());
     const [from, to] = [zone.label(run.startedAt), run.endedAt === null ? today : zone.label(run.endedAt)];
     const usage = daysBetween(from, today) + 1 > USAGE_DAYS_KEPT ? null : costOf(usageDays.filter((d) => d.date >= from && d.date <= to), prices);
@@ -151,9 +160,17 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     return {
       id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, partial: run.partial, blocksInAt: run.blocksInAt ?? null, crops: run.crops,
       ...runFigures(run, harvests, yieldOf(cropYield, run.id), usage),
-      harvests: harvests.toReversed(),
+      harvests: db.runHarvestsAll(run.id).toReversed().map((h) => ({ ...plainOf(h), voided: voidedOf(h), edits: edits.get(h.id) ?? 0 })),
+      // Data integrity (10): the Not sold records tied to the run, voided ones too, newest first
+      notSold: db.runNotSold(run.id).toReversed().map(({ createdAt, ...r }) => ({ ...r, edits: notSoldEdits.get(r.id) ?? 0 })),
     };
   }
+
+  // ---- Data integrity (spec 2026-11-12-data-integrity-design.md 3 to 5) ----
+  // A harvest as the API shows it (without the void's columns) and as its change entries keep it.
+  const plainOf = ({ voidedAt, voidedBy, voidReason, ...h }) => h;
+  const snapshotOf = (h) => harvestSnapshot(db, h);
+  const picksAsks = (roomId, pick, opts) => roomPickAsks(db, roomId, pick, opts);
 
   // The farm's range of `days` (buckets()'s from and to, farm dates) and its harvests, with the last 30 days' for the
   // Overview card: { range, harvests (in the range), recent (the last 30 days), rooms, runs } (rooms and runs: Maps by id).
@@ -164,15 +181,21 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     const since = addDays(today, -29) < range.from ? addDays(today, -29) : range.from;
     const all = db.harvestsBetween(dayStart(since), dayStart(addDays(today, 1)) - 1);
     const harvests = all.filter((h) => h.pickedAt >= dayStart(range.from));
+    // Data integrity: the range's voided harvests, for the records table only (struck)
+    const voided = db.harvestsBetweenAll(dayStart(range.from), dayStart(addDays(today, 1)) - 1).filter((h) => h.voidedAt !== null)
+      .map((h) => ({ ...plainOf(h), voided: voidedOf(h) }));
     const runs = new Map();
-    for (const h of harvests) if (!runs.has(h.runId)) runs.set(h.runId, db.getRunById(h.runId));
+    for (const h of [...harvests, ...voided]) if (!runs.has(h.runId)) runs.set(h.runId, db.getRunById(h.runId));
     const rooms = new Map(db.listRooms().map((r) => [r.id, r]));
-    return { range: buckets(harvests, { days, to: t }), today, harvests, recent: all.filter((h) => h.pickedAt >= dayStart(addDays(today, -29))), rooms, runs };
+    return {
+      range: buckets(harvests, { days, to: t }), today, harvests, voided, recent: all.filter((h) => h.pickedAt >= dayStart(addDays(today, -29))), rooms, runs,
+    };
   }
 
   return {
-    // Record a harvest: { crop (one of the open run's), kg, worker, pickedAt? (default now) }. → the harvest.
-    record(roomId, body) {
+    // Record a harvest: { crop (one of the open run's), kg, worker, pickedAt? (default now), confirmed? }, by who (a worker:
+    // themselves). A likely duplicate or a heavy pick asks first (Data integrity 5.2). → the harvest.
+    record(roomId, body, who = APP) {
       if (!db.getRoom(roomId)) throw new HarvestError(404, 'Room not found');
       const run = db.openRun(roomId);
       const program = db.getProgram(roomId);
@@ -181,35 +204,78 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       const own = run.crops.find((c) => c.crop === crop);
       if (!own) throw new HarvestError(400, "Pick one of the room's crops", 'crop');
       const fields = { kg: kgOf(kg), worker: workerOf(worker), pickedAt: pickedAt === undefined || pickedAt === null ? now() : timeOf(pickedAt, run) };
+      askOrThrow([...picksAsks(roomId, { crop, kg: fields.kg, pickedAt: fields.pickedAt }, { blocks: own.blocks }),
+        ...closedAsks(db, [localDate(fields.pickedAt)], 'pickedAt')], confirmedOf(body));
       // A back-dated pick takes the stage and flush as they are now: no stage history is kept.
-      const h = db.insertHarvest({
-        roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: own.blocks, ...fields, taskId: null, at: now(),
+      const h = db.transaction(() => {
+        const made = db.insertHarvest({
+          roomId, runId: run.id, crop, stage: program.stage, flush: program.flush, blocks: own.blocks, ...fields, taskId: null, at: now(),
+        });
+        logChange(db, who, now(), { kind: 'harvest', rowId: made.id, action: 'add', after: snapshotOf(made) });
+        return made;
       });
       tell(roomId);
-      return h;
+      return plainOf(h);
     },
 
-    // A new kg or pick time: { kg?, pickedAt? }; a harvest from a check sets its task's amount to the new total. → the harvest.
-    edit(id, body) {
+    // A new kg or pick time: { kg?, pickedAt?, confirmed? }; a harvest from a check sets its task's amount to the new total.
+    // A voided one is restored first; a new kg is asked about as a pick is. → the harvest.
+    edit(id, body, who = APP) {
       const h = harvestOf(id);
+      if (h.voidedAt !== null) throw new HarvestError(409, 'Restore it first');
       const { kg, pickedAt } = bodyOf(body);
       if (kg === undefined && pickedAt === undefined) throw new HarvestError(400, 'Give the kg or the time');
       const run = db.getRunById(h.runId);
-      const changed = db.updateHarvest(id, {
-        kg: kg === undefined ? h.kg : kgOf(kg),
-        pickedAt: pickedAt === undefined ? h.pickedAt : timeOf(pickedAt, run),
+      const fields = { kg: kg === undefined ? h.kg : kgOf(kg), pickedAt: pickedAt === undefined ? h.pickedAt : timeOf(pickedAt, run) };
+      askOrThrow([
+        ...(kg !== undefined && fields.kg !== h.kg ? picksAsks(h.roomId, { crop: h.crop, ...fields }, { blocks: h.blocks, self: id, dup: false }) : []),
+        ...closedAsks(db, [localDate(fields.pickedAt), localDate(h.pickedAt)], 'pickedAt'),
+      ], confirmedOf(body));
+      const changed = db.transaction(() => {
+        const out = db.updateHarvest(id, fields);
+        if (out) logChange(db, who, now(), { kind: 'harvest', rowId: id, action: 'edit', before: snapshotOf(h), after: snapshotOf(out) });
+        return out;
       });
       if (!changed) throw new HarvestError(404, 'Harvest not found');
       tell(h.roomId);
-      return changed;
+      return plainOf(changed);
     },
 
-    // Deletes a harvest; one from a check sets its task's amount to the total left (null when none is). → the harvest deleted.
+    // A harvest is never deleted: voided (Data integrity 4.3).
     remove(id) {
+      harvestOf(id);
+      throw new HarvestError(409, 'Void it instead: a money record is kept.');
+    },
+
+    // Void a harvest { reason } (the owner's): it stays in its run's list, struck, and leaves every figure; one from a check
+    // sets its task's amount to the total left. → the harvest.
+    voidHarvest(id, body, who = APP) {
       const h = harvestOf(id);
-      if (!db.deleteHarvest(id)) throw new HarvestError(404, 'Harvest not found');
+      if (h.voidedAt !== null) throw new HarvestError(409, 'This harvest is voided already');
+      const reason = reasonOf(body, { words: 'Say why you void it', Err: HarvestError });
+      askClosed(db, [localDate(h.pickedAt)], body, 'pickedAt');
+      const out = db.transaction(() => {
+        db.voidHarvest(id, { at: now(), by: who.name, reason });
+        logChange(db, who, now(), { kind: 'harvest', rowId: id, action: 'void', before: snapshotOf(h), reason });
+        return db.getHarvest(id);
+      });
       tell(h.roomId);
-      return h;
+      return { ...plainOf(out), voided: voidedOf(out) };
+    },
+
+    restoreHarvest(id, body, who = APP) {
+      const h = harvestOf(id);
+      if (h.voidedAt === null) throw new HarvestError(409, 'This harvest is not voided');
+      const reason = reasonOf(body ?? {}, { required: false, Err: HarvestError });
+      askClosed(db, [localDate(h.pickedAt)], body, 'pickedAt');
+      const out = db.transaction(() => {
+        db.restoreHarvest(id);
+        const back = db.getHarvest(id);
+        logChange(db, who, now(), { kind: 'harvest', rowId: id, action: 'restore', before: snapshotOf(back), reason });
+        return back;
+      });
+      tell(h.roomId);
+      return { ...plainOf(out), voided: null };
     },
 
     // The Harvest tab: { current: the open run's view or null, past: the ended runs newest first, stamp }; null for no such room.
@@ -225,7 +291,8 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
       // The days back to the oldest run within the kept days (an older run has no cost: its days are not all kept).
       const count = Math.max(0, ...runs.map((r) => daysBetween(zone.label(r.startedAt), today) + 1).filter((n) => n <= USAGE_DAYS_KEPT));
       const usageDays = count > 0 ? usageDaysOf(room, count) : [];
-      const views = runs.map((run) => runView(run, cropYield, usageDays, p));
+      const [edits, notSoldEdits] = [db.editCounts('harvest'), db.editCounts('not-sold')];
+      const views = runs.map((run) => runView(run, cropYield, usageDays, p, edits, notSoldEdits));
       const current = views.find((v) => v.endedAt === null) ?? null;
       // stamp: the stage and flush a harvest recorded now takes (Record a harvest says it), null without a run
       const program = current ? db.getProgram(roomId) : null;
@@ -235,7 +302,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
     // The Harvest page (spec 6): { from, to, days, bucket, buckets, totals: { kg, value, cost }, rooms, crops, today, last7,
     // last30, missing, records }. days: 7, 30, 90 or 365.
     farmView({ days = 30 } = {}) {
-      const { range, today, harvests, recent, rooms, runs } = period(daysOf(days));
+      const { range, today, harvests, voided, recent, rooms, runs } = period(daysOf(days));
       const cropYield = readCropYield(db);
       const kgSum = (list) => round(list.reduce((s, h) => s + h.kg, 0), 2);
       const sum = (list) => ({ kg: kgSum(list), value: valueOf(list, cropYield), unpriced: unpricedOf(list, cropYield) });
@@ -279,7 +346,7 @@ export function createHarvests({ db, now = Date.now, zone = localZone, log = con
         last7: sum(since(addDays(today, -6))),
         last30: sum(recent),
         missing: { dryKg: ordered(dryMissing), price: ordered(priceMissing) },
-        records: recordRows(harvests, rooms, runs),
+        records: recordRows(harvests, rooms, runs, voided),
       };
     },
 

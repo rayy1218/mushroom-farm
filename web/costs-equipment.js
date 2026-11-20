@@ -1,12 +1,17 @@
 // The Costs page's equipment dialogs (spec 2026-11-12-money-truth-design.md 6.2), through the tasks' openForm as the cost
-// dialogs: Add equipment, Edit an item (with a quiet red Delete) and the Delete confirm. Each sends one request and calls
-// onDone() when it went through; the page reloads on the costs event too. The pure parts are in web/costs-math.js.
-//   openEquipmentDialog({ item?, rooms, today, onDone, onLost }) · openEquipmentDelete({ item, onDone, onLost })
+// dialogs: Add equipment, Edit an item (with a quiet red Void and its History), the Void confirm and a voided item's own
+// dialog (Data integrity 4 and 11). Each sends one request through the server's asks (a closed month) and calls onDone()
+// when it went through; the page reloads on the costs event too. The pure parts are in web/costs-math.js.
+//   openEquipmentDialog({ item?, rooms, today, onDone, onLost }) · openEquipmentVoid({ item, onDone, onLost })
+//   openEquipmentVoided({ item, onDone, onLost })
 
 import { request } from './api.js';
 import { openForm, errorText } from './task-dialogs.js';
 import { PART_OPTIONS, writeOffWords, equipmentBody, equipmentLine, amountBox } from './costs-math.js';
 import { DOT } from './text-math.js';
+import { askingSend } from './asks.js';
+import { openVoid, openVoided } from './void-dialog.js';
+import { addHistory } from './changes-fold.js';
 
 const MAX_NAME = 60; // server/costs-equipment.js
 const MAX_NOTE = 200;
@@ -17,20 +22,11 @@ function ask(options) {
   return form;
 }
 const problem = (err) => (err.field ? { field: err.field, message: err.message } : { message: errorText(err) });
-const sender = (send, onDone, check = () => null) => async (v) => {
-  const p = check(v);
-  if (p) return p;
-  try {
-    await send(v);
-    onDone();
-    return true;
-  } catch (err) {
-    return problem(err);
-  }
-};
+const BOXES = ['roomId', 'boughtOn', 'amount', 'lifeMonths', 'resale'];
 
 // Add equipment, or edit an item (item given).
 export function openEquipmentDialog({ item = null, rooms, today, onDone, onLost }) {
+  const send = askingSend({ value: 'save', label: item ? 'Save' : 'Add', fields: BOXES }); // the server's asks: a closed month
   const form = ask({
     title: item ? `Edit ${item.name}` : 'Add equipment',
     lead: item ? [] : ['What you bought for a room or the farm. It is written off a month at a time from the month bought, as Economics counts it.'],
@@ -45,18 +41,24 @@ export function openEquipmentDialog({ item = null, rooms, today, onDone, onLost 
       { name: 'note', label: 'Note', kind: 'text', value: item?.note ?? '', maxLength: MAX_NOTE, placeholder: 'Where it is, its serial number' },
     ],
     buttons: [
-      ...(item ? [{ label: 'Delete this item', action: () => openEquipmentDelete({ item, onDone, onLost }) }] : []),
+      ...(item ? [{ label: 'Void this item', action: () => openEquipmentVoid({ item, onDone, onLost }) }] : []),
       { value: 'save', label: item ? 'Save' : 'Add', primary: true },
     ],
     onLost,
-    submit: sender((v) => {
-      const { body } = equipmentBody(v, today);
-      return item ? request('PUT', `/api/equipment/${item.id}`, body) : request('POST', '/api/equipment', body);
-    }, onDone, (v) => {
+    submit: async (v, _which, f) => {
       const r = equipmentBody(v, today);
-      return r.body ? null : r;
-    }),
+      if (!r.body) return r;
+      try {
+        const out = await send(f, r.body, (b) => (item ? request('PUT', `/api/equipment/${item.id}`, b) : request('POST', '/api/equipment', b)));
+        if (out !== true) return out;
+      } catch (err) {
+        return problem(err);
+      }
+      onDone();
+      return true;
+    },
   });
+  if (item) addHistory({ kind: 'equipment', id: item.id });
   // what it writes off a month, said as the figures are typed
   const p = document.createElement('p');
   p.className = 'c-hint co-writeoff';
@@ -73,14 +75,20 @@ export function openEquipmentDialog({ item = null, rooms, today, onDone, onLost 
   sync();
 }
 
-// The Delete confirm: its write-off goes from every month.
-export function openEquipmentDelete({ item, onDone, onLost }) {
+// The Void confirm (its reason required): its write-off leaves every month; it stays listed, struck through.
+export function openEquipmentVoid({ item, onDone, onLost }) {
   const x = equipmentLine(item);
-  ask({
-    title: `Delete ${item.name}?`,
-    lead: [`${x.sub}${DOT}${x.amount}`, 'Its write-off goes from every month. This cannot be undone.'],
-    buttons: [{ value: 'delete', label: 'Delete', danger: true, primary: true }],
-    onLost,
-    submit: sender(() => request('DELETE', `/api/equipment/${item.id}`), onDone),
+  return openVoid({
+    title: `Void ${item.name}?`, lead: [`${x.sub}${DOT}${x.amount}`, 'Its write-off leaves every month.'], label: 'Void item',
+    path: `/api/equipment/${item.id}/void`, onChanged: onDone, onError: onLost, hint: 'Never bought',
+  });
+}
+
+// A voided item's own dialog: what it was, the void said, Restore and its History.
+export function openEquipmentVoided({ item, onDone, onLost }) {
+  const x = equipmentLine(item);
+  return openVoided({
+    title: item.name, lead: [`${x.sub}${DOT}${x.amount}`], voided: item.voided, path: `/api/equipment/${item.id}/restore`,
+    onChanged: onDone, onError: onLost, kind: 'equipment', id: item.id,
   });
 }

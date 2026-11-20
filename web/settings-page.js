@@ -5,6 +5,7 @@ import { request, OFFLINE } from './api.js';
 import { mountTelegram } from './telegram-card.js';
 import { mountTaskSettings } from './task-settings.js';
 import { mountYield } from './yield-card.js';
+import { mountTariff } from './tariff-card.js'; // ---- Data integrity ---- the dated tariff in place of the price box
 import { mountInventorySettings } from './inventory-settings.js';
 import { me } from './session.js';
 import { parsePoll, POLL_MESSAGE, POLL_MIN, POLL_MAX, EXTRA_FIELDS, parseExtraSettings, liveHint } from './settings-math.js';
@@ -43,11 +44,7 @@ const TEMPLATE = `
     </div>
     <p class="muted s-hint" id="s-outdoor">A T/RH probe outside, 1 to 247, or empty for none. It cannot share an address with the sensor of a room on the farm's gateway.</p>
     <h2>Prices</h2>
-    <div class="field">
-      <label for="f-electricityPrice">Electricity price (RM per kWh)</label>
-      <input id="f-electricityPrice" name="electricityPrice" type="number" min="0" max="10" step="0.01" inputmode="decimal" aria-describedby="e-electricityPrice">
-      <p class="field-error" id="e-electricityPrice" role="status"></p>
-    </div>
+    <p class="muted s-hint">Electricity is priced day by day from its tariff, in the card below.</p>
     <div class="field">
       <label for="f-waterPrice">Water price (RM per m³)</label>
       <input id="f-waterPrice" name="waterPrice" type="number" min="0" max="100" step="0.01" inputmode="decimal" placeholder="not set" aria-describedby="e-waterPrice s-water">
@@ -61,6 +58,7 @@ const TEMPLATE = `
     </div>
     <p class="s-saved" data-saved role="status" hidden></p>
   </form>
+  <div data-tariff></div>
   <div data-telegram></div>
   <div data-yield></div>
   <div data-inventory-settings></div>
@@ -222,6 +220,7 @@ export function mount(container) {
   mountPassword(q('[data-password]'), alive);
   const unmountTelegram = mountTelegram(q('[data-telegram]'));
   const unmountYield = mountYield(q('[data-yield]'));
+  const unmountTariff = mountTariff(q('[data-tariff]'));
   const unmountTaskSettings = mountTaskSettings(q('[data-task-settings]'));
   const unmountInventorySettings = mountInventorySettings(q('[data-inventory-settings]'));
 
@@ -229,6 +228,7 @@ export function mount(container) {
     mountSeq++;
     unmountTelegram();
     unmountYield();
+    unmountTariff();
     unmountTaskSettings();
     unmountInventorySettings();
     document.title = 'Rooms · Mushroom farm';

@@ -118,8 +118,11 @@ test('a bill tops up what was not measured, never counts twice', () => {
   assert.equal(over.costs, 100, 'measured 75 + top-up 25');
   const under = figuresOf(...NOV, data({ runs, usage, costs: [bill(60)] }));
   assert.equal(line(under, 'unmeasured-electricity').length, 0);
-  assert.equal(under.costs, 75);
-  assert.equal(under.notes.find((n) => n.kind === 'bill-below').text, 'Measured RM 75.00 is above the electricity bill of RM 60.00: the estimate runs high');
+  // Data integrity (8.2): the bill lowers the counted: RM 15 off the measured line, on its room and run
+  assert.deepEqual(line(under, 'over-bill-electricity').map((l) => [l.amount, l.roomId, l.runId, l.shared]), [[-15, 1, 1, false]]);
+  assert.equal(under.costs, 60);
+  assert.equal(under.runs.get(1).energy, 60);
+  assert.equal(under.notes.some((n) => n.kind === 'bill-below'), false);
   const water = figuresOf(...NOV, data({ runs, usage, costs: [cost({ id: 6, category: 'utilities', utility: 'water', amount: 30, date: '2026-11-10', periodFrom: NOV[0], periodTo: NOV[1] })] }));
   assert.equal(line(water, 'unmeasured-water')[0].amount, 30, 'no water price: the whole water bill');
 });
@@ -210,7 +213,7 @@ test('a run\'s whole figures sum the months it spans, sales after it ends includ
   });
   const figs = (m) => figuresOf(firstDayOf(m), m === '2026-11' ? '2026-11-15' : lastDayOf(m), d);
   const r = runTotals(d.runs[0], figs, d.today);
-  assert.deepEqual(r.parts, { blocks: 0, energy: 0, water: 0, own: 50, equipment: 0, shared: 100 }, 'Oct rent 100, all its; Nov rent on 30 Nov: after today');
+  assert.deepEqual(r.parts, { blocks: 0, energy: 0, water: 0, own: 50, equipment: 0, shared: 100, energyEstimated: 0 }, 'Oct rent 100, all its; Nov rent on 30 Nov: after today');
   assert.equal(r.costs, 150);
   assert.equal(r.income, 400);
   assert.equal(r.profit, 250);
@@ -460,7 +463,7 @@ test('a bill\'s top-up for its entry: its own pending only, 0 when measured cove
   assert.deepEqual(billTopUp(oct, d), { amount: 45, month: '2026-10' }, 'October\'s days all worked out');
   assert.deepEqual(billTopUp(nov, d), { amount: null, month: '2026-11' }, 'a day of its own period pending');
   const low = bill({ date: '2026-11-03', periodFrom: '2026-10-01', periodTo: '2026-10-31', amount: 100 });
-  assert.deepEqual(billTopUp(low, data({ runs, usage, costs: [low] })), { amount: 0, month: '2026-10' });
+  assert.deepEqual(billTopUp(low, data({ runs, usage, costs: [low] })), { amount: -55, month: '2026-10' }, 'Data integrity: it lowers the counted');
 });
 
 test('two bills of one utility over the same days share those days\' measured cost by their amounts: taken off once', () => {
@@ -503,7 +506,7 @@ test("the month's CSV: every cost line and sale, the formula guard, measured lin
     '2026-11-05,cost,Packaging,"PP bags, 1 kg",The farm,,Inventory,4.50',
     '2026-11-10,income,Sales,Grey oyster 20 kg,Container 1,2026-10-01,Sales,500.00',
     '2026-11-15,cost,Utilities,"Unmeasured electricity, bill of 15 Nov",The farm,,bill − measured,25.00',
-    ',cost,Utilities,Electricity measured 1–15 Nov,Container 1,2026-10-01,measured,75.00',
+    ',cost,Utilities,Electricity · measured 1–15 Nov,Container 1,2026-10-01,measured,75.00',
   ]);
   assert.equal(CSV_HEADER, 'date,type,category,what,room,run started,source,amount');
   const pending = data({ runs: [run()], usage: new Map([[1, days(...NOV, 10, { pending: true })]]), costs: [cost()] });

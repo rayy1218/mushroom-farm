@@ -5,7 +5,7 @@
 // times its output.
 
 import { fanWattFactor } from '../device/sim-power.js';
-import { MACHINES, runIntervals, estimateDay, newMeterState, advanceMeter, dayWork, dayWindows, localZone } from './usage.js';
+import { MACHINES, runIntervals, estimateDay, newMeterState, advanceMeter, dayWork, dayWindows, localZone, seenOf, intervalsIn } from './usage.js';
 
 const HOUR_MS = 3_600_000;
 const SETTLE_MS = 60_000; // a bucket is final this long after its end, like a day of the Energy card
@@ -83,8 +83,10 @@ export function bucketUsage(db, room, { from, to, bucketS, zone = localZone }) {
   const metered = room.meterAddress !== null;
   let kWh = [];
   if (starts.length > 0) {
+    // Data integrity (7.1): a machine's run time counts only while the app could see the room, as the days count it
+    const { seen } = seenOf(db, room, first, to);
     for (const machine of MACHINES) {
-      addRunTime(ms, runIntervals(db.machineLogWindow(room.id, machine, first, to), first, to, machine), machine, first, b, to);
+      addRunTime(ms, intervalsIn(runIntervals(db.machineLogWindow(room.id, machine, first, to), first, to, machine), seen), machine, first, b, to);
     }
     if (metered) kWh = meterBuckets(db, room, starts, b, to);
     else {

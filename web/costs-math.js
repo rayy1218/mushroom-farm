@@ -11,6 +11,7 @@ import { grouped } from './overview-math.js';
 import { cropShortName } from './crops.js';
 import { mainCrop } from './room-card-math.js';
 import { DOT } from './text-math.js';
+import { voidLine } from './changes-math.js'; // ---- Data integrity ----
 import { niceScale } from './usage-math.js';
 import { roomHash, batchesRunHash, BATCHES_HASH, INVENTORY_HASH, SALES_HASH } from './route.js';
 
@@ -83,7 +84,8 @@ function profitLine(t, profit) {
 // The notes under the tiles: the one pending note first; an input left out of the costs (a batch or a purchase with no
 // price) in the warning tone. [{ kind, text, warn }].
 // This month's view ends them with the monthly items still to charge (toComeNote).
-const WARN_KINDS = ['unpriced-batch', 'no-unit-cost'];
+// Data integrity: estimates over 20 % of the kWh, a room unseen, sales above the harvest, warned too.
+const WARN_KINDS = ['unpriced-batch', 'no-unit-cost', 'estimated-high', 'unseen', 'oversold'];
 export function monthNotes(view) {
   const toCome = view.repeating ? toComeNote(view) : null;
   return [...(view.pending ? [{ kind: 'pending', text: PENDING }] : []), ...view.notes, ...(toCome ? [toCome] : [])]
@@ -94,8 +96,10 @@ export function monthNotes(view) {
 // A line entered here says "entered" when the same name also comes from another source (Packaging from Inventory too).
 // A source in another module links to its page (2026-11-05, the Business audit).
 // Money truth: a material counts when used; the register's write-off.
+// Data integrity: the meter's electricity and the estimate from machine run time apart.
 export const SOURCE_WORDS = {
-  manual: null, batches: 'from Batches', inventory: 'used, from Inventory', measured: 'measured', bill: `bill${NB}−${NB}measured`, register: 'from the register',
+  manual: null, batches: 'from Batches', inventory: 'used, from Inventory', measured: 'from the meter', estimated: 'from machine run time',
+  bill: `bill${NB}−${NB}counted`, register: 'from the register',
 };
 const SOURCE_HASH = { batches: BATCHES_HASH, inventory: INVENTORY_HASH, sales: SALES_HASH };
 export const categoryRows = (list) => list.map((c) => {
@@ -112,6 +116,7 @@ const LABELS = {
   blocks: 'Blocks', spawn: 'Spawn', labour: 'Labour', rent: 'Rent', repairs: 'Repairs', transport: 'Transport',
   packaging: 'Packaging', utilities: 'Utilities', other: 'Other',
 };
+export const CATEGORY_NAMES = LABELS; // the Changes page's words (Data integrity)
 const UTILITY_WORDS = { electricity: 'Electricity bill', water: 'Water bill', other: null };
 const nameOf = (c) => c.label ?? LABELS[c.category]; // the server's label, else ours
 const whatOf = (c) => [c.utility ? UTILITY_WORDS[c.utility] ?? nameOf(c) : nameOf(c), c.worker, c.note].filter(Boolean).join(DOT);
@@ -123,13 +128,15 @@ export const isBill = (v) => v.category === 'utilities' && (v.utility === 'elect
 function topUpText({ amount, month }, date) {
   const there = month === date.slice(0, 7) ? '' : ` to ${month.slice(0, 4) === date.slice(0, 4) ? monthName(month) : monthTitle(month)}`;
   if (amount === null) return 'working out';
-  return amount > 0 ? `adds ${moneyText(amount)} unmeasured${there}` : `adds nothing${there}: measured is higher`;
+  // Data integrity (8.2): a bill below what was counted lowers it
+  return amount > 0 ? `adds ${moneyText(amount)} unmeasured${there}` : amount < 0 ? `lowers the counted electricity by ${moneyText(-amount)}${there}` : `adds nothing${there}`;
 }
 
-// An entry of the month: { date, what, whom, amount, monthly, bill, topUp (a bill's words, else null) }.
+// An entry of the month: { date, what, whom, amount, monthly, bill, topUp (a bill's words, else null), voided (Data integrity:
+// "Voided 10 Nov by Lim: Entered twice", or ''), edited }.
 export const entryLine = (e) => ({
   date: dayMonth(e.date), what: whatOf(e), whom: e.roomName ?? 'The farm', amount: moneyText(e.amount), monthly: e.repeat === 'monthly',
-  bill: isBill(e), topUp: isBill(e) && e.topUp ? topUpText(e.topUp, e.date) : null,
+  bill: isBill(e), topUp: isBill(e) && e.topUp ? topUpText(e.topUp, e.date) : null, voided: voidLine(e.voided), edited: (e.edits ?? 0) > 0,
 });
 
 // A monthly item: { what, whom, amount, since, when } (since: "since Aug 2026", "since Aug 2026, until Oct 2026", "Aug 2026
@@ -192,6 +199,7 @@ export function runRow(run) {
     dates: `${dayText(run.startedAt)}${NB}–${NB}${to}`, room: run.roomName, roomHref: roomHash(run.roomId, 'harvest'),
     crops: run.crops.map((c) => cropShortName(c.crop)).join(', '), crop: mainCrop(run.crops),
     cells, loss: isLoss(cells[2]), perKgLoss: isLoss(cells[3]), incomplete: run.incomplete === true,
+    repriced: (run.repriced ?? []).length > 0, // ---- Data integrity ---- a closed month of it moved since
   };
 }
 
@@ -204,9 +212,24 @@ export function runParts(run) {
   return [
     ...(blocks ? [['Blocks', blocks, batchesRunHash(run.id)]] : []),
     ...[['Electricity', p.energy], ['Water', p.water], ['Own costs', p.own], ['Equipment written off', p.equipment], ['Share of shared costs', p.shared]]
-      .filter(([, v]) => v > 0).map(([label, v]) => [label, moneyText(v)]),
+      .filter(([, v]) => v > 0).map(([label, v]) => [label, label === 'Electricity' && p.energyEstimated > 0 ? energyWords(p) : moneyText(v)]),
     ['Income', moneyText(run.income)], ['Picked', kgText(run.kgHarvested)], ['Sold', kgText(run.kgSold)],
+    ...(run.kgNotSold > 0 ? [['Not sold', kgText(run.kgNotSold)]] : []), // Data integrity: spoiled, rejected, given away
+    ...(run.repriced?.length ? [['Re-priced', run.repriced.map(monthTitle).join(', ')]] : []), // a closed month it reached moved
   ];
+}
+
+// Data integrity (7.2): "RM 64.37 measured · RM 9.85 estimated" (all estimated: "RM 9.85 estimated").
+export function energyWords(p) {
+  const measured = Math.round((p.energy - p.energyEstimated) * 100) / 100;
+  return measured > 0 ? `${moneyText(measured)} measured${DOT}${moneyText(p.energyEstimated)} estimated` : `${moneyText(p.energyEstimated)} estimated`;
+}
+
+// ---- Data integrity ---- (8.3) a re-priced month: "Re-priced since 14 Nov: profit was RM 2,045.30, now RM 2,012.85." or null.
+export function repricedText(r) {
+  if (!r) return null;
+  const since = dayMonth(r.closedOn); // the close day (the 14th of the next month), not the day the figures were kept
+  return `Re-priced since ${since}: profit was ${moneyText(r.was.profit)}, now ${moneyText(r.now.profit)}.`;
 }
 
 const MAX_BAR_W = 48;
@@ -220,7 +243,7 @@ const emptyMonth = (x) => !x.pending && x.income === 0 && x.costs === 0;
 function barWords(x) {
   const what = x.pending || x.profit === null ? 'working out' : emptyMonth(x) ? 'nothing recorded'
     : x.profit < 0 && isLoss(moneyText(x.profit)) ? `loss ${moneyText(-x.profit)}` : `profit ${moneyText(x.profit)}`;
-  return `${monthTitle(x.month)}: ${what}`;
+  return `${monthTitle(x.month)}: ${what}${x.repriced ? ', re-priced' : ''}`; // Data integrity: a closed month moved since
 }
 
 // The chart's words for a screen reader (its aria-label): the title, the months counted by kind, the highest and the lowest.
@@ -248,6 +271,18 @@ export const noFigures = (months) => months.every(emptyMonth);
 // The months' profit bars in a width × height box: { bars: [{ month, label, x, y, w, h, loss, pending, empty, shown, words,
 // value, showValue }], zeroY, ticks: [{ y, label }] }. Profits rise from the zero line, losses hang from it, on one scale:
 // one step from niceScale of the larger side, its multiples both ways; a tick closer than 28 px to the one before is left out.
+// ---- Data integrity ---- (8.3) a re-priced month's dot over its bar { cx, cy }: over its value (a loss: over the zero line);
+// beside the value when the chart's top leaves no room.
+const DOT_GAP = 6; // px between the dot's centre and what it sits over
+const VALUE_H = 12; // a bar value's text height (co-bar-value, fs-xs)
+const CHAR_W = 6.5; // about one figure's width at fs-xs
+function repricedDot(b, zeroY) {
+  const cx = b.x + b.w / 2;
+  const over = b.loss || b.empty ? zeroY : b.showValue ? b.y - 5 - VALUE_H : b.y;
+  if (over - DOT_GAP >= 4) return { cx, cy: over - DOT_GAP };
+  return { cx: cx + (b.value.length * CHAR_W) / 2 + DOT_GAP, cy: b.y - 5 - VALUE_H / 2 + 2 };
+}
+
 export function profitBars(months, shown, width, height, m = BARS_M) {
   const values = months.map((x) => (finite(x.profit) ? x.profit : 0));
   const hi = Math.max(0, ...values);
@@ -267,11 +302,12 @@ export function profitBars(months, shown, width, height, m = BARS_M) {
     const [y0, y1] = [y(0), y(v)];
     const pending = x.profit === null || x.pending === true;
     const empty = emptyMonth(x);
-    return {
+    const bar = {
       month: x.month, label: monthTitle(x.month).slice(0, 3), x: m.left + i * slot + (slot - w) / 2,
       y: Math.min(y0, y1), w, h: Math.max(1, Math.abs(y1 - y0)), loss: isLoss(moneyText(v)), pending, empty, shown: x.month === shown,
       words: barWords(x), value: bareRm(v), showValue: !pending && !empty && (x.month === shown || slot >= VALUE_SLOT),
     };
+    return { ...bar, dot: x.repriced && !pending ? repricedDot(bar, y0) : null };
   });
   // each side from zero outwards, so zero is always kept
   const side = (n, sign) => {
@@ -324,7 +360,8 @@ const monthsWord = (n) => `${n}${NB}month${n === 1 ? '' : 's'}`;
 export const equipmentLine = (e) => ({
   name: e.name, sub: [e.roomId === null ? 'The farm' : e.roomName ?? 'A deleted room', PART_NAMES[e.part] ?? 'Other', `bought ${longDay(e.boughtOn)}`].join(DOT),
   amount: moneyText(e.amount), writeOff: `${moneyText(e.monthly)} a${NB}month, ${monthsWord(e.lifeMonths)}`,
-  left: e.done || !(e.left > 0) ? 'written off' : `${moneyText(e.left)} left to write off`,
+  left: e.voided ? 'not written off: voided' : e.done || !(e.left > 0) ? 'written off' : `${moneyText(e.left)} left to write off`,
+  voided: voidLine(e.voided), edited: (e.edits ?? 0) > 0, // ---- Data integrity ----
 });
 // What the dialog's figures write off, said as they are typed: "RM 69.50 a month for 60 months." (the last month the rest:
 // "RM 33.33 a month for 3 months, the last RM 33.34."); null until they make sense.

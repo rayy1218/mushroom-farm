@@ -55,6 +55,7 @@ test('a block item and a batch move written with only the contract columns read 
   assert.deepEqual(m, {
     id: m.id, itemId: 1, at: 1000, qty: 500, unitCost: 1.2, refKind: 'batch', refId: 14, note: null, total: null, supplier: null,
     useBy: null, roomId: null, reason: null, worker: null, counted: null, lotId: null, useBySentAt: null,
+    voidedAt: null, voidedBy: null, voidReason: null,
   });
 });
 

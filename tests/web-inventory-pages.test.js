@@ -17,7 +17,7 @@ test('the dialogs: on the tasks openForm; the routes they send to; more than in 
   assert.ok(d.includes('overStock('));
   assert.ok(d.includes("`${label} anyway`"));
   assert.ok(d.includes("closeLabel: 'Keep it'"));
-  assert.ok(d.includes("label: 'Delete this record'"));
+  assert.ok(d.includes('label: `Void this ${voidLabel(move)}`'), 'Data integrity: a record is voided, not deleted');
 });
 
 test('the list page: mounted by the router; reads the list on the inventory events; its buttons and links', () => {
@@ -169,7 +169,7 @@ test('audit #2: after a record the page says what was saved, with Undo for a min
   const d = src('inventory-dialogs.js');
   assert.ok(d.includes('onDone?.({ at: Date.now(), ...done(sent.reply) });'));
   assert.ok(d.includes("made(doneText({ kind: 'use'") && d.includes("made(doneText({ kind: 'purchase'") && d.includes("made(doneText({ kind: 'throwOut'"));
-  assert.ok(d.includes("doneText({ kind: 'deleted' })"));
+  assert.ok(d.includes("onDone?.({ text: 'Voided' })"), 'Data integrity: a void says so');
 });
 
 test('audit #3 and #5: Count stock keeps typed figures until saved, asks before leaving, Save at the foot of a phone', () => {

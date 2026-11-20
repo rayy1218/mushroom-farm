@@ -48,14 +48,14 @@ test('record refused: an unknown or archived buyer, a room that is gone', (t) =>
   refused(() => sales.record({ soldAt: NOW, buyerId: buyer.id, lines: line }), 400, 'buyerId');
 });
 
-test('edit: lines replaced, paid kept; an archived buyer kept on its own sale; a date after the paid day refused', (t) => {
+test('edit: lines replaced; an archived buyer kept on its own sale; a paid sale is not edited (Data integrity 4.2)', (t) => {
   const { sales, buyer } = setup(t);
   const d = sales.record({ soldAt: NOW - 3 * DAY, buyerId: buyer.id, lines: [{ crop: 'oyster', kg: 2, priceKg: 10 }] });
-  sales.setPaid(d.id, { paidAt: NOW - 2 * DAY });
   sales.editBuyer(buyer.id, { archived: true });
   const e = sales.edit(d.id, { soldAt: NOW - 3 * DAY, buyerId: buyer.id, lines: [{ crop: 'black', kg: 1, priceKg: 9 }] });
-  assert.deepEqual([e.id, e.paidAt, e.lines.map((l) => l.crop)], [d.id, NOW - 2 * DAY, ['black']]);
-  refused(() => sales.edit(d.id, { soldAt: NOW - 1 * DAY, buyerId: buyer.id, lines: [{ crop: 'black', kg: 1, priceKg: 9 }] }), 400, 'soldAt');
+  assert.deepEqual([e.id, e.paidAt, e.lines.map((l) => l.crop)], [d.id, null, ['black']]);
+  sales.setPaid(d.id, { paidAt: NOW - 2 * DAY });
+  refused(() => sales.edit(d.id, { soldAt: NOW - 3 * DAY, buyerId: buyer.id, lines: [{ crop: 'black', kg: 1, priceKg: 9 }] }), 409, 'paidAt');
   refused(() => sales.edit(999, { soldAt: NOW, buyerId: buyer.id, lines: [{ crop: 'black', kg: 1, priceKg: 9 }] }), 404, undefined);
 });
 
@@ -63,11 +63,12 @@ test('paid and unpaid; delete', (t) => {
   const { sales, buyer } = setup(t);
   const d = sales.record({ soldAt: NOW - DAY, buyerId: buyer.id, lines: [{ crop: 'oyster', kg: 2, priceKg: 10 }] });
   assert.equal(sales.setPaid(d.id, { paidAt: NOW }).paidAt, NOW);
-  assert.equal(sales.setPaid(d.id, { paidAt: null }).paidAt, null);
+  refused(() => sales.setPaid(d.id, { paidAt: null }), 400, 'reason');
+  assert.equal(sales.setPaid(d.id, { paidAt: null, reason: "The buyer's transfer bounced" }).paidAt, null);
   refused(() => sales.setPaid(d.id, { paidAt: NOW - 3 * DAY }), 400, 'paidAt');
   refused(() => sales.setPaid(999, { paidAt: null }), 404, undefined);
-  sales.remove(d.id);
-  refused(() => sales.remove(d.id), 404, undefined);
+  refused(() => sales.remove(d.id), 409, undefined); // void it instead (Data integrity 4.3)
+  refused(() => sales.remove(999), 404, undefined);
 });
 
 test('buyers: a name taken is 409 without regard to case; a buyer with sales cannot be deleted, only archived', (t) => {
@@ -89,7 +90,7 @@ test('the view: the period\'s deliveries and totals with harvested kg, owed all 
   db.setProgram(roomId, { ...db.getProgram(roomId), crops }, { change: 'start', at: NOW - 60 * DAY });
   const run = db.openRun(roomId);
   db.insertHarvest({ roomId, runId: run.id, crop: 'oyster', stage: 'fruiting', flush: 1, blocks: 500, kg: 20, pickedAt: NOW - 2 * DAY, worker: null, taskId: null, at: NOW });
-  sales.record({ soldAt: NOW - 40 * DAY, buyerId: buyer.id, lines: [{ crop: 'oyster', kg: 5, priceKg: 10 }] }); // out of 30 days, unpaid
+  sales.record({ soldAt: NOW - 40 * DAY, buyerId: buyer.id, lines: [{ crop: 'oyster', kg: 5, priceKg: 10 }], confirmed: ['before-picked'] }); // out of 30 days, unpaid
   const d = sales.record({ soldAt: NOW - DAY, buyerId: buyer.id, lines: [{ crop: 'oyster', kg: 15, priceKg: 11 }] });
   sales.setPaid(d.id, { paidAt: NOW });
   const v = sales.view({ days: 30 });
@@ -144,13 +145,15 @@ test('edit onto an archived buyer other than its own is refused', (t) => {
   refused(() => sales.edit(d.id, { soldAt: NOW - DAY, buyerId: b.id, lines: line }), 400, 'buyerId');
 });
 
-test('paid day: an edit within the paid day is allowed, the day after is refused', (t) => {
+test('paid day: a paid sale is marked unpaid before an edit; a paid day before the sale is refused', (t) => {
   const { sales, buyer } = setup(t);
   const day = (h) => Date.UTC(2026, 10, 3, h - 8);
   const d = sales.record({ soldAt: day(1) - DAY, buyerId: buyer.id, lines: line });
   sales.setPaid(d.id, { paidAt: day(9) });
+  refused(() => sales.edit(d.id, { soldAt: day(15), buyerId: buyer.id, lines: line }), 409, 'paidAt');
+  sales.setPaid(d.id, { paidAt: null, reason: 'Paid the wrong delivery' });
   assert.equal(sales.edit(d.id, { soldAt: day(15), buyerId: buyer.id, lines: line }).soldAt, day(15));
-  refused(() => sales.edit(d.id, { soldAt: day(9) + DAY, buyerId: buyer.id, lines: line }), 400, 'soldAt');
+  refused(() => sales.setPaid(d.id, { paidAt: day(9) - DAY }), 400, 'paidAt');
 });
 
 test('the view: the to day\'s late sale and harvest counted, the day before from not; archived buyers not counted', (t) => {
@@ -159,7 +162,7 @@ test('the view: the to day\'s late sale and harvest counted, the day before from
   db.setProgram(roomId, { ...db.getProgram(roomId), crops }, { change: 'start', at: NOW - 60 * DAY });
   const run = db.openRun(roomId);
   const pick = (kg, pickedAt) => db.insertHarvest({ roomId, runId: run.id, crop: 'oyster', stage: 'fruiting', flush: 1, blocks: 500, kg, pickedAt, worker: null, taskId: null, at: pickedAt });
-  const sell = (kg, soldAt) => sales.record({ soldAt, buyerId: buyer.id, lines: [{ crop: 'oyster', kg, priceKg: 10 }] });
+  const sell = (kg, soldAt) => sales.record({ soldAt, buyerId: buyer.id, lines: [{ crop: 'oyster', kg, priceKg: 10 }], confirmed: ['before-picked', 'oversell'] });
   sell(3, Date.UTC(2026, 10, 5, 15, 0)); pick(7, Date.UTC(2026, 10, 5, 15, 0));
   sell(5, Date.UTC(2026, 9, 6, 16, 0)); pick(11, Date.UTC(2026, 9, 6, 16, 0)); // 7 Oct 00:00 farm: in
   sell(100, Date.UTC(2026, 9, 6, 15, 59)); pick(200, Date.UTC(2026, 9, 6, 15, 59)); // 6 Oct 23:59: out
@@ -206,7 +209,9 @@ test('listeners: every write tells them; one that throws is logged and the write
   const d = step(() => sales.record({ soldAt: NOW - DAY, buyerId: buyer.id, lines: line }));
   step(() => sales.edit(d.id, { soldAt: NOW - DAY, buyerId: buyer.id, lines: line }));
   step(() => sales.setPaid(d.id, { paidAt: NOW }));
-  step(() => sales.remove(d.id));
+  step(() => sales.setPaid(d.id, { paidAt: null, reason: 'Paid the wrong delivery' }));
+  step(() => sales.voidSale(d.id, { reason: 'Entered twice' }));
+  step(() => sales.restoreSale(d.id, {}));
   const b = step(() => sales.addBuyer({ name: 'Z' }));
   step(() => sales.editBuyer(b.id, { phone: '1' }));
   step(() => sales.removeBuyer(b.id));
@@ -231,7 +236,7 @@ test('buyers: renaming to its own name in another case is allowed; an unknown id
   refused(() => sales.editBuyer(999, { phone: '1' }), 404, undefined);
   const other = sales.addBuyer({ name: 'Borong Lim' });
   sales.record({ soldAt: NOW - DAY, buyerId: buyer.id, lines: line });
-  sales.record({ soldAt: NOW - DAY, buyerId: buyer.id, lines: line });
+  sales.record({ soldAt: NOW - DAY, buyerId: buyer.id, lines: line, confirmed: ['duplicate'] });
   const e = sales.editBuyer(buyer.id, { phone: '1' });
   assert.deepEqual([e.sales, e.owed], [2, 40]);
   assert.deepEqual(sales.buyers().map((b) => [b.name, b.sales, b.owed]), [['Borong Lim', 0, 0], ['KEDAI AH SENG', 2, 40]]);

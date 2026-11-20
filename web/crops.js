@@ -19,6 +19,13 @@ export const CROPS = {
 };
 export const CROP_KEYS = Object.keys(CROPS);
 
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.2) How many days a crop keeps fresh after its pick: unsold
+// kg older than this is "past its keeping days". From the Economics research (codes as there) or the lead's estimate; a farm
+// sets its own in Settings → Yield (keepDays).
+export const KEEP_DAYS = { oyster: 3, black: 3, pink: 2, abalone: 3, golden: 2, woodear: 5, reishi: 30, milky: 5, lionsmane: 5 };
+export const KEEP_DAYS_MAX = 60;
+export const keepDaysOf = (crop, cropYield) => cropYield?.[crop]?.keepDays ?? KEEP_DAYS[crop] ?? 3;
+
 // A crop's name on a record (a harvest, the myGAP sheet): the list's name without " (draft)", a setup label; the real aliases
 // ("(lingzhi)", "(wood ear)") stay. An unknown key as it is.
 export const cropShortName = (key) => (CROPS[key]?.name ?? String(key ?? '')).replace(/ \(draft\)$/, '');

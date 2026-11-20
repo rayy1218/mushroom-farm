@@ -140,3 +140,9 @@ test('records on one day sort by run start last, whatever the input order', () =
   const hs = [H('oyster', 1, 1, 2000, { roomId: 7, runId: 2 }), H('oyster', 2, 1, 1000, { roomId: 7, runId: 1 })];
   assert.deepEqual(recordRows(hs, rooms, runs).map((r) => r.runStartedAt), [0, 86_400_000]);
 });
+
+test('Data integrity (7.2): the cost says what of it is estimated and how long the room was not seen, when any', () => {
+  const f = runFigures(RUN, [H('oyster', 100, 1, 10)], YIELD, { cost: 74.22, days: 12, water: false, estimated: 9.85, unseenMs: 6 * 3_600_000 });
+  assert.deepEqual(f.cost, { costPerKg: 0.7422, cost: 74.22, days: 12, water: false, estimated: 9.85, unseenMs: 21_600_000 });
+  assert.deepEqual(runFigures(RUN, [H('oyster', 100, 1, 10)], YIELD, { cost: 5, days: 2, water: false }).cost, { costPerKg: 0.05, cost: 5, days: 2, water: false });
+});

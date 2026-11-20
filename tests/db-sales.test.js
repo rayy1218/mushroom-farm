@@ -40,7 +40,8 @@ test('a version 20 file is upgraded to 23 or later: buyers and sales made, nothi
   const indexes = check.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'sales' ORDER BY name").all().map((r) => r.name);
   assert.deepEqual(indexes, ['sales_by_buyer', 'sales_by_delivery', 'sales_by_run', 'sales_by_time', 'sales_unpaid']);
   assert.deepEqual(check.prepare('PRAGMA table_info(sales)').all().map((c) => c.name), ['id', 'delivery_id', 'sold_at', 'crop', 'kg',
-    'price_kg', 'total', 'buyer', 'buyer_id', 'invoice_no', 'room_id', 'run_id', 'note', 'paid_at', 'created_at']);
+    'price_kg', 'total', 'buyer', 'buyer_id', 'invoice_no', 'room_id', 'run_id', 'note', 'paid_at', 'created_at', 'voided_at', 'voided_by',
+    'void_reason']); // the void columns: Data integrity's 29
   db.insertBuyer({ name: 'Borong Lim', phone: null, note: null, prices: {} }, 1);
   assert.throws(() => db.insertBuyer({ name: 'BORONG LIM', phone: null, note: null, prices: {} }, 2), /UNIQUE/);
 });

@@ -31,6 +31,7 @@ export const DEFAULT_CROP = 'lionsmane'; // the farm's main target (PRODUCT.md)
 const PARTS_OF = {
   'yours.yieldG': ['harvest', 'batches'], 'yours.loss': ['harvest', 'batches'], 'yours.blocks': ['harvest'],
   price: ['harvest', 'sales'], blockPrice: ['harvest', 'batches'], 'yours.kwhBlock': ['harvest', 'energy'],
+  shrink: ['harvest', 'sales'], // ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.3)
   'yours.workers': ['costs'], 'yours.workerMonth': ['costs'], // ---- Money truth ----
   ...Object.fromEntries(EQUIPMENT_KEYS.map((k) => [k, ['costs']])),
 };
@@ -206,7 +207,7 @@ export function createEconomics({
       const used = own ? { value: own.value, source: 'owner' } : below[0];
       const notes = [];
       if (actual?.pending) notes.push('pending');
-      for (const p of PARTS_OF[f.key] ?? []) if (errors[p] && (p !== 'sales' || f.key === 'price')) notes.push(`not-read:${p}`);
+      for (const p of PARTS_OF[f.key] ?? []) if (errors[p] && (p !== 'sales' || f.key === 'price' || f.key === 'shrink')) notes.push(`not-read:${p}`);
       const measured = runs['yours.loss']?.runs?.measured === true; // the loss from Batches' checks, the yield per good block
       if (f.key === 'yours.loss' && used.source === 'runs' && !measured) notes.push('loss-in-yield');
       if (f.key === 'yours.loss' && own && yieldFrom === 'runs' && !measured) notes.push('loss-twice');

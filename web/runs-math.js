@@ -6,12 +6,12 @@
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { kgText, perBlockText, beText, dayRange, whenMs } from './harvest-math.js';
-import { moneyText, perKgText, monthNotes, runParts, runRow } from './costs-math.js';
+import { moneyText, perKgText, monthNotes, runParts, runRow, monthTitle } from './costs-math.js';
 import { dateText, countBlocks, rmText } from './batches-math.js';
 import { deliveryRow, priceText } from './sales-math.js';
 import { mainCrop } from './room-card-math.js';
 import { farmDate } from './tasks-math.js';
-import { roomHash, runHash, batchHash } from './route.js';
+import { roomHash, runHash, batchHash, costsHash } from './route.js';
 
 const NB = '\u00a0';
 const DASH = '—';
@@ -56,6 +56,8 @@ export function listRow(run) {
     crop: mainCrop(run.crops), cells: [kgText(run.kg), perBlockText(run.perBlock, { cell: true }), ...c.cells],
     costsLine: run.pending ? WORKING : run.incomplete ? 'Some costs have no price' : null,
     loss: c.loss, perKgLoss: c.perKgLoss,
+    // ---- Data integrity ---- (8.3) "Re-priced" under Profit, a link to the first closed month of it that moved
+    repriced: run.repriced?.length ? { text: 'Re-priced', href: costsHash(run.repriced[0]) } : null,
   };
 }
 
@@ -74,6 +76,15 @@ export function runTitle(run) {
   return parts.length ? `${andList(parts)} ${parts.length === 1 && cropsOf(run)[0].blocks === 1 ? 'block' : 'blocks'}` : 'A run';
 }
 
+// ---- Data integrity ---- (8.3) the run page's line when a closed month of it moved since: "Re-priced: September 2026's
+// figures changed after it closed." or null.
+export function repricedLine(v) {
+  const months = v.repriced ?? [];
+  if (!months.length) return null;
+  const names = months.map(monthTitle);
+  return `Re-priced: ${names.length === 1 ? `${names[0]}’s figures` : `the figures of ${names.slice(0, -1).join(', ')} and ${names.at(-1)}`} changed after ${names.length === 1 ? 'it' : 'they'} closed.`;
+}
+
 // The line under the title: { room, roomHref, dates } ("Container 1 · since 4 Nov"; the room a link to its Harvest tab).
 export const runSub = (run, today) => ({ ...roomOf(run), dates: runDates(run, today) });
 
@@ -86,7 +97,12 @@ export function pageTiles(v) {
   const profitLabel = v.endedAt === null ? 'Profit so far' : 'Profit';
   const profit = moneyText(v.profit);
   const perKg = perKgText(v.profitPerKg);
-  const unsold = Math.round((v.kg - (v.kgSold ?? 0)) * 10) / 10;
+  // Data integrity: what is left once sold and recorded not sold (spoiled, given away), each said
+  const notSold = v.kgNotSold ?? 0;
+  const left = Math.round((v.kg - (v.kgSold ?? 0) - notSold) * 10) / 10;
+  // (G10: once any is recorded not sold, all three: "24.0 kg sold · 166.0 kg not sold · 0.0 kg left")
+  const pickedLine = notSold > 0 ? [`${kgText(v.kgSold ?? 0)} sold`, `${kgText(notSold)} not sold`, `${kgText(Math.max(0, left))} left`].join(DOT)
+    : left > 0 ? `${kgText(left)} left` : '';
   return [
     v.pending ? waiting(profitLabel) : { label: profitLabel, value: profit, ...(isLoss(profit) ? { line: 'Loss', tone: 'loss' } : {}) },
     { label: 'Income', value: moneyText(v.income), line: v.kgSold > 0 ? `${kgText(v.kgSold)} sold` : NOTHING_SOLD },
@@ -94,7 +110,7 @@ export function pageTiles(v) {
     v.pending ? waiting('Profit per kg') : {
       label: 'Profit per kg', value: perKg, line: v.kgSold > 0 ? `on ${kgText(v.kgSold)} sold` : NOTHING_SOLD, ...(isLoss(perKg) ? { tone: 'loss' } : {}),
     },
-    { label: 'Picked', value: kgText(v.kg), ...(unsold > 0 ? { line: `${kgText(unsold)} not sold` } : {}) },
+    { label: 'Picked', value: kgText(v.kg), ...(pickedLine ? { line: pickedLine } : {}) },
     { label: 'kg per block', value: perBlockText(v.perBlock, { cell: true }) },
     { label: 'BE', title: 'Biological efficiency', value: beText(v.be, { cell: true }) },
   ];
@@ -184,13 +200,13 @@ export const untiedText = (untied) => (untied?.total > 0 ? `${rmText(untied.tota
 // The Sales card's foot: "48.0 kg · RM 576.00".
 export const salesTotal = (sales) => `${kgText(sales.kg)}${DOT}${rmText(sales.total)}`;
 
-const NOT_COSTS = new Set(['Income', 'Picked', 'Sold']); // runParts' last rows: the tiles say them
+const NOT_COSTS = new Set(['Income', 'Picked', 'Sold', 'Not sold', 'Re-priced']); // runParts' last rows: the tiles and the page say them
 // The Costs card's rows: Costs' run breakdown (its runParts: Blocks a link to the run's batches, Electricity, Water, Own costs,
 // Equipment written off (Money truth), Share of shared costs; the parts that are not 0), Electricity and Water kept at 0 in words (unpricedWord), [[label, value,
 // href?, quiet?]] (quiet: words, not a figure); none before Costs answers.
 export function costRows(v) {
   if (!v.costsByKind) return [];
-  const run = { id: v.id, parts: v.costsByKind.parts, notes: v.costsByKind.notes, income: v.income, kgHarvested: v.kg, kgSold: v.kgSold };
+  const run = { id: v.id, parts: v.costsByKind.parts, notes: v.costsByKind.notes, income: v.income, kgHarvested: v.kg, kgSold: v.kgSold, repriced: v.repriced };
   const rows = new Map(runParts(run).filter(([label]) => !NOT_COSTS.has(label)).map((r) => [r[0], r]));
   for (const [key, label] of [['energy', 'Electricity'], ['water', 'Water']]) if (!rows.has(label)) rows.set(label, [label, unpricedWord(v, key), null, true]);
   return ['Blocks', 'Electricity', 'Water', 'Own costs', 'Equipment written off', 'Share of shared costs'].map((l) => rows.get(l)).filter(Boolean);

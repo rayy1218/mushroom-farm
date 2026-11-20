@@ -25,6 +25,7 @@ Built for one farm in lowland Malaysia. The owner and the workers each sign in, 
 | Workers forget a task, or do it on the wrong day | The Today page lists each room's tasks for the stage it is in, plus upkeep that is due. Workers tick them off on a phone |
 | You don't know what a kilogram costs to grow | Energy (kWh and RM) and water (L) per room, harvests per room and crop, costs and sales give a profit per run and per kg |
 | A month of buying looks like a loss, and stock and equipment never show | Costs counts materials when used and blocks when they go into a room; what was bought is a cash line apart, the stock is valued, equipment is written off a month at a time, and sales reach the run that grew them |
+| A paid sale edited to a few sen, the same cost entered twice, a sale many times the harvest | Every money record keeps its history (who, when, before, after, why) and is voided, never deleted; a paid sale changes only after Mark unpaid with a reason; the app asks once before a likely duplicate or an unlikely figure. What was never sold is recorded as Not sold, and electricity is priced by the tariff of its own day |
 | You are about to buy a container, an aircon or a new crop and can't tell if it pays | Economics compares a month of your room with the other ways to get the crop (a highland grower, a lowland shed, importing), with the break-even price and the payback. A simulator tests a room's walls, weather and machines before you buy them |
 | myGAP paperwork | Printable task, harvest and batch sheets, and CSV exports |
 
@@ -162,7 +163,7 @@ Environment variables. All are optional.
 | `DEVICE_HOST` | device app | `127.0.0.1` | Address both device ports listen on (`0.0.0.0` in Docker) |
 | `TZ` | both | the machine's | The time zone: set `Asia/Kuala_Lumpur`; the lights and the task days follow the clock. Docker and the systemd units already set it |
 
-Everything else (bands, prices, poll interval, Telegram, outdoor probe address, workers, task rules) is set on the Settings page and stored in the database.
+Everything else (bands, the electricity tariff by date and the water price, each crop's yield, price and keeping days, poll interval, Telegram, outdoor probe address, workers, task rules) is set on the Settings page and stored in the database. Every change to a money record is kept in the change log: `GET /api/changes` (and `.csv`), the owner's Changes page at `#/business/changes`.
 
 ### Devices
 

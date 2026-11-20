@@ -89,8 +89,8 @@ test('the checks', (t) => {
   refused(() => s.costs.add({ ...bill, periodFrom: '2026-08-02', periodTo: '2026-08-31' }), 400, 'Pick a first day up to 92 days before the bill’s date', 'periodFrom');
   refused(() => s.costs.add({ ...bill, periodFrom: '2026-11-20', periodTo: '2026-12-05' }), 400, 'Pick a last day up to 31 days after the bill’s date', 'periodTo');
   assert.equal(s.costs.add({ ...bill, periodFrom: '2026-08-03', periodTo: '2026-09-02' }).periodFrom, '2026-08-03', '92 days before');
-  assert.equal(s.costs.add({ ...bill, periodFrom: '2026-11-04', periodTo: '2026-12-04' }).periodTo, '2026-12-04', '31 days after');
-  const made = s.costs.add(bill);
+  assert.equal(s.costs.add({ ...bill, periodFrom: '2026-11-04', periodTo: '2026-12-04', confirmed: ['duplicate'] }).periodTo, '2026-12-04', '31 days after');
+  const made = s.costs.add({ ...bill, confirmed: ['duplicate'] }); // the same bill as the one before (Data integrity 5.2)
   assert.deepEqual([made.periodFrom, made.periodTo], ['2026-11-01', '2026-11-30'], 'default: the bill date\'s month');
   const wage = s.costs.add({ ...ok, category: 'labour', worker: 'Ali', repeat: 'monthly' });
   assert.equal(wage.worker, 'Ali');
@@ -102,8 +102,8 @@ test('edit, delete, change from a month and stop', (t) => {
   const one = s.costs.add({ date: '2026-11-03', category: 'repairs', amount: 10 });
   assert.equal(s.costs.edit(one.id, { amount: 12 }).amount, 12, 'a field left out keeps its value');
   refused(() => s.costs.edit(999, { amount: 1 }), 404, 'Cost not found', undefined);
-  s.costs.remove(one.id);
-  refused(() => s.costs.remove(one.id), 404, 'Cost not found', undefined);
+  refused(() => s.costs.remove(one.id), 409, 'Void it instead: a money record is kept.', undefined);
+  s.costs.voidCost(one.id, { reason: 'Entered twice' });
 
   const rent = s.costs.add({ date: '2026-08-31', category: 'rent', amount: 1500, repeat: 'monthly' });
   refused(() => s.costs.change(rent.id, { from: '2026-12', amount: 1600 }), 400, 'Pick a month from Aug 2026 to Nov 2026', 'from');

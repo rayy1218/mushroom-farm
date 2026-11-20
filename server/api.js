@@ -25,18 +25,16 @@ import { createCostRoutes } from './costs-api.js'; // ---- Costs ----
 import { createRunRoutes } from './runs-api.js'; // ---- Runs ----
 import { createBusinessRoutes } from './business-api.js'; // ---- Summary ----
 import { createEconomicsRoutes } from './economics-api.js'; // ---- Economics ----
+import { createChangeRoutes } from './changes-api.js'; // ---- Data integrity ----
 import { DEFAULT_GATEWAY, sameGateway } from './gateways.js';
 import { heldOf } from './alarms.js';
+import { HttpError } from './http-error.js';
+import { whoOf } from './changes.js'; // ---- Data integrity ----
+import { tariffOf } from './tariffs.js';
 
 const MAX_BODY = 64 * 1024;
 
-export class HttpError extends Error {
-  constructor(status, message, field) {
-    super(message);
-    this.status = status;
-    this.field = field;
-  }
-}
+export { HttpError } from './http-error.js';
 
 export function send(res, status, data) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -119,6 +117,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
   const runRoutes = createRunRoutes({ db, events, harvests, batches }); // ---- Runs ---- (spec 2026-11-05-runs-design.md 5)
   const businessRoutes = createBusinessRoutes({ db, events, harvests, batches }); // ---- Summary ---- (spec 2026-11-06-business-summary-design.md 5)
   const economicsRoutes = createEconomicsRoutes({ db, events, harvests, batches, simulations }); // ---- Economics ---- (spec 2026-11-06-economics-design.md 7)
+  const changeRoutes = createChangeRoutes({ db }); // ---- Data integrity ---- the change log (spec 2026-11-12-data-integrity-design.md 10)
   // The room body; on the farm's gateway its addresses must differ from the outdoor sensor's (read through that gateway).
   // stored: the room as it is (an update): a filter setting or the gateway left out is its stored value, so the checks compare
   // what will be saved. The farm's own gateway is stored as null, its one spelling, so the address checks see it as the farm's.
@@ -170,7 +169,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
 
   const prices = () => {
     const { electricityPrice, waterPrice } = readSettings(db);
-    return { electricity: electricityPrice, water: waterPrice };
+    return { electricity: electricityPrice, water: waterPrice, tariff: tariffOf(db) }; // Data integrity: each day at its own price
   };
 
   async function route(req, res, path, url) {
@@ -185,6 +184,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
     if (await runRoutes(req, res, path, { send, readJson, HttpError, url })) return; // ---- Runs ----
     if (await businessRoutes(req, res, path, { send, HttpError })) return; // ---- Summary ----
     if (await economicsRoutes(req, res, path, { send, readJson, HttpError, url })) return; // ---- Economics ----
+    if (await changeRoutes(req, res, path, { send, HttpError, url })) return; // ---- Data integrity ----
     if (path === '/api/settings') {
       if (req.method === 'GET') return send(res, 200, settingsReply());
       if (req.method !== 'PUT') throw notFound();
@@ -195,11 +195,13 @@ export function createApi(db, machines = null, controller = null, poller = null,
       const user = outdoorAddress == null ? undefined
         : db.listRooms().find((r) => r.gateway === null && ADDRESS_FIELDS.some((f) => r[f] === outdoorAddress));
       if (user) throw new HttpError(400, `Address ${outdoorAddress} is used by ${user.name}`, 'outdoorAddress');
-      writeSettings(db, result.settings);
+      writeSettings(db, result.settings, { who: whoOf(req) }); // Data integrity: the electricity price a tariff rate from today
       if (result.settings.pollSeconds !== undefined) poller?.setIntervalMs(readSettings(db).pollSeconds * 1000);
       telegram?.settingsChanged();
       // The yield figures and the prices are every room's harvest figures (RM value, BE, cost per kg): all rooms (null).
       if (['cropYield', 'electricityPrice', 'waterPrice'].some((key) => Object.hasOwn(result.settings, key))) publishHarvest(null);
+      // ---- Data integrity ---- the price is a tariff rate from today: every cost moves (as a tariff route tells)
+      if (['electricityPrice', 'waterPrice'].some((key) => Object.hasOwn(result.settings, key))) events?.publish('costs', {});
       return send(res, 200, settingsReply());
     }
     if (path === '/api/settings/telegram/test' && telegram) {
@@ -399,7 +401,7 @@ export function createApi(db, machines = null, controller = null, poller = null,
       return send(res, 200, updated);
     }
     if (req.method === 'DELETE') {
-      if (!db.deleteRoom(id)) throw noRoom();
+      if (!db.deleteRoom(id, { by: whoOf(req) })) throw noRoom(); // Data integrity: logged with who
       machines?.forget(id);
       controller?.forget(id);
       simulations?.forgetRoom(id);
@@ -416,7 +418,8 @@ export function createApi(db, machines = null, controller = null, poller = null,
       await route(req, res, url.pathname, url);
     } catch (err) {
       if (err instanceof HttpError || err instanceof CommandError) {
-        send(res, err.status, err.field ? { error: err.message, field: err.field } : { error: err.message });
+        // an ask (server/asks.js) carries its asks: the dialog shows them and sends again with them confirmed
+        send(res, err.status, { error: err.message, ...(err.field ? { field: err.field } : {}), ...(err.asks ? { asks: err.asks } : {}) });
       } else if (err instanceof NameTakenError) {
         send(res, 409, { error: err.message, field: 'name' });
       } else if (err instanceof AddressTakenError) {

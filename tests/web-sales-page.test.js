@@ -60,7 +60,7 @@ test('styles: the end marker closes the block; no colour literals; every token d
 });
 
 test('buttons: names for a screen reader, the Owed toggle, focus keys, quiet Edit', () => {
-  assert.ok(page.includes('aria-label\', `Edit the sale of ${r.day} to ${r.buyer}`'));
+  assert.ok(page.includes("'aria-label', `${r.voided ? 'Open' : 'Edit'} the sale of ${r.day} to ${r.buyer}${r.voided ? ', voided' : ''}`"));
   assert.ok(page.includes('`Mark the sale of ${r.day} to ${r.buyer} paid`'));
   assert.ok(page.includes("toggle.setAttribute('aria-expanded', String(on));"));
   for (const k of ['`edit-${d.id}`', '`paid-${d.id}`', '`owed-${b.buyerId}`']) assert.ok(page.includes(k), k);
@@ -75,14 +75,16 @@ test('Record / Edit sale: its own dialog, lines added and removed, the buyer pic
   assert.ok(dialogs.includes("'Add a crop'"));
   assert.ok(dialogs.includes("'New buyer…'"));
   assert.ok(dialogs.includes("'Their invoice or receipt number'"));
-  assert.ok(dialogs.includes("'Delete this sale'"));
+  assert.ok(dialogs.includes("'Void this sale'"), 'void, not delete (Data integrity 4)');
   assert.ok(dialogs.includes('footText('));
   assert.ok(dialogs.includes('prefill('));
-  assert.ok(dialogs.includes('unlikely('));
+  assert.ok(!dialogs.includes('unlikely('), "the unlikely values are the server's asks (Data integrity 5)");
+  assert.ok(dialogs.includes('confirm.body(body)') && dialogs.includes('asksProblems(err.asks'));
   assert.ok(dialogs.includes("request('POST', '/api/sales'"));
   assert.ok(dialogs.includes('request(\'PUT\', `/api/sales/deliveries/${'));
   assert.ok(dialogs.includes("request('GET', '/api/settings')"), 'the expected prices');
-  assert.ok(dialogs.includes("mark.unpaid ? 'Mark paid' : 'Mark unpaid'"), "an Edit's paid line");
+  assert.ok(dialogs.includes("mark.unpaid ? 'Mark paid' : 'Mark unpaid…'"), "an Edit's paid line");
+  assert.ok(dialogs.includes('paidLockText(delivery)') && dialogs.includes("label: 'Why is it no longer paid?'"), 'a paid sale read only until Mark unpaid');
 });
 
 test('Mark paid, Delete and Buyers use openForm', () => {
@@ -91,7 +93,7 @@ test('Mark paid, Delete and Buyers use openForm', () => {
   assert.ok(dialogs.includes("el('form', 'sl-form bz-form')"), 'and on Record a sale');
   assert.ok(dialogs.includes("title: 'Mark paid'"));
   assert.ok(dialogs.includes("label: 'Paid on'"));
-  assert.ok(dialogs.includes("label: 'Delete sale'"));
+  assert.ok(dialogs.includes("label: 'Void sale'"));
   assert.ok(dialogs.includes("'Add a buyer'"));
   assert.ok(dialogs.includes("'Archive'") && dialogs.includes("'Restore'") && dialogs.includes("'Delete buyer'"));
 });
@@ -110,8 +112,7 @@ test('review: a late answer goes to the page, not a later dialog; the buttons he
   assert.ok(dialogs.includes('if (gone()) { lost('), 'every await checks the opening is still there');
   assert.ok(dialogs.includes('for (const b of held) b.disabled = on;'), 'Cancel, Delete this sale, the paid toggle and the primary held');
   assert.ok(dialogs.includes("input.addEventListener('input', () => clearBox({ input, error }));"));
-  assert.ok(dialogs.includes('primary.textContent = label; // plain while sending'), 'a failed send does not still say "anyway"');
-  assert.ok(dialogs.includes("import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num, deliveryRow } from './sales-math.js';"));
+  assert.ok(dialogs.includes('primary.textContent = anyway(label);'), 'the server asked: "Record anyway"');
   assert.ok(!dialogs.includes('function priceNumber'), 'the one number reader');
   assert.ok(dialogs.includes('date.input.max = farmDate(now);'), 'today as at the submit');
 });
@@ -174,7 +175,7 @@ test('the page repaints when the phone query changes (the row limit in the paint
   assert.ok(page.includes('const media = window.matchMedia(PHONE);'));
   assert.ok(page.includes("media.addEventListener('change', onMedia);"));
   assert.ok(page.includes("media.removeEventListener('change', onMedia);"));
-  assert.ok(page.includes('const key = JSON.stringify([sales, showAll, limit]);'));
+  assert.ok(page.includes('const key = JSON.stringify([sales, notSold, showAll, limit]);'));
 });
 
 test('finish review: "RM per kg" kept whole in a head; "expected" inside the RM box; a phone line gives Crop its own row', () => {
@@ -194,4 +195,11 @@ test('joint audit: the head links the myGAP 4-6 sheet (B4); the period one row o
   assert.ok(css.includes('.sl-tools > .range-bar button { flex: 1 1 auto; padding: 4px 6px; white-space: nowrap; }'));
   assert.ok(page.includes('lines.append(roomsNode(d.lines));'));
   assert.ok(page.includes("a.href = roomHash(r.roomId, 'harvest');"));
+});
+
+// UI check (2026-11-13): a voided sale or Not sold record's button says Open, as Costs, Inventory and Harvest do (it opens read
+// only, with Restore).
+test('a voided row\'s button reads Open', () => {
+  const page = readFileSync(new URL('../web/sales-page.js', import.meta.url), 'utf8');
+  assert.equal(page.split("el('button', 'tk-quiet bz-quiet sl-edit', r.voided ? 'Open' : 'Edit')").length, 3, 'a sale and a Not sold record');
 });

@@ -8,6 +8,8 @@ import { CROPS, CROP_KEYS, cropShortName } from '../web/crops.js';
 import { KINDS, ITEM_UNITS, WHOLE_UNITS, itemView, attentionOf, sheetRows, stockOf, round3 } from './inventory-math.js';
 import { batchTitle } from '../web/inventory-math.js';
 import { madePricer } from './batches.js'; // ---- Money truth ---- a made delivery's blocks at their live price
+import { record as logChange, reasonOf as reasonGiven, voidedOf, undoAllowed, APP } from './changes.js'; // ---- Data integrity ----
+import { askClosed } from './closes.js';
 
 // The names Batches gives its block items ("<crop> blocks", by the crop's short name or its full name), lower case. Batches
 // finds or makes that item with `WHERE kind = 'blocks' AND name = ?`; a worker's own item of such a name (any case) would
@@ -116,6 +118,23 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     if (!m) throw new InventoryError(404, 'No such record');
     return m;
   }
+
+  // ---- Data integrity (spec 2026-11-12-data-integrity-design.md 3 and 4) ----
+  const FAMILY_REASON = 'Its purchase was voided';
+  // A move as its change entries keep it: its fields, its item's name and its room's then.
+  const snapshotOf = (m) => ({
+    ...Object.fromEntries(MOVE_FIELDS.map((f) => [f, m[f]])), itemId: m.itemId, itemName: db.stockItem(m.itemId)?.name ?? null,
+    unit: db.stockItem(m.itemId)?.unit ?? null,
+    roomName: m.roomId === null || m.roomId === undefined ? null : db.getRoom(m.roomId)?.name ?? null,
+  });
+  // The days a move reprices (8.3's ask): a purchase its day to today (the lots after it), another its day.
+  const daysOfMove = (m) => (m.refKind === 'purchase' ? { from: localDate(m.at), to: today() } : { from: localDate(m.at), to: localDate(m.at) });
+  // New moves written and each logged 'add' with who, in one transaction. → the moves.
+  const logged = (who, write) => db.transaction(() => {
+    const moves = write();
+    for (const m of moves) logChange(db, who, now(), { kind: 'move', rowId: m.id, action: 'add', after: snapshotOf(m) });
+    return moves;
+  });
   const roomNames = () => new Map(db.listRooms().map((r) => [r.id, r.name]));
   // Every move, by item.
   function movesByItem() {
@@ -169,11 +188,14 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   // when Batches' table is there; null for none or a deleted room), the earlier suppliers and the item's earlier reasons. A
   // batch move and a batch's lot carry batchTitle, the batch as Batches names it (null when the batch is gone), and a batch
   // move its batch's roomId and batchKind ('bought' or 'made'; joint audit B2).
+  // Data integrity: the figures from the moves not voided; the list holds the voided ones too (voided, edits).
   function item(id) {
     const it = itemOf(id);
     const moves = db.itemStockMoves(it.id);
+    const listed = db.itemStockMovesAll(it.id);
+    const edits = db.editCounts('move');
     const rooms = roomNames();
-    const batchIds = [...new Set(moves.filter((m) => m.refKind === 'batch' && m.refId !== null).map((m) => m.refId))];
+    const batchIds = [...new Set(listed.filter((m) => m.refKind === 'batch' && m.refId !== null).map((m) => m.refId))];
     const batches = db.batchRows(batchIds);
     const day = today();
     // A receipt (an in-move) is the whole delivery: its blocks are the move's, not what is left on the first row after a split.
@@ -183,9 +205,12 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     return {
       ...view,
       lots: view.lots.map((l) => (l.refKind === 'batch' ? { ...l, batchTitle: titleOf(l.refId, l.qty) } : l)),
-      moves: moves.slice().reverse().map((m) => {
+      moves: listed.slice().reverse().map((m) => {
         const roomId = roomIdOf(m);
-        const out = { ...Object.fromEntries(MOVE_FIELDS.map((f) => [f, m[f]])), roomId, roomName: roomId === null ? null : rooms.get(roomId) ?? null };
+        const out = {
+          ...Object.fromEntries(MOVE_FIELDS.map((f) => [f, m[f]])), roomId, roomName: roomId === null ? null : rooms.get(roomId) ?? null,
+          voided: voidedOf(m), edits: edits.get(m.id) ?? 0,
+        };
         return m.refKind === 'batch' ? { ...out, batchTitle: titleOf(m.refId, m.qty), batchKind: batches.get(m.refId)?.kind ?? null } : out;
       }),
       suppliers: suppliers(),
@@ -262,7 +287,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   // Only an item with no moves (else archive it).
   function removeItem(id) {
     const it = itemOf(id);
-    if (db.itemStockMoves(it.id).length) throw new InventoryError(409, 'Archive it instead: it has records');
+    if (db.itemStockMovesAll(it.id).length) throw new InventoryError(409, 'Archive it instead: it has records');
     db.deleteStockItem(it.id);
     tell(it.id);
   }
@@ -307,40 +332,43 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   }
 
   // { itemId, qty, total, supplier?, useBy?, day? } → the move. Not a block item: Batches brings blocks in.
-  function purchase(body) {
+  function purchase(body, who = APP) {
     const b = bodyOf(body);
     const it = openItem(b.itemId);
     if (it.kind === 'blocks') throw new InventoryError(409, 'Blocks come in from Batches');
     const qty = qtyOf(b.qty, it.unit);
     const total = totalOf(b.total);
     const at = dayAt(b.day);
-    const [move] = db.insertStockMoves([{
+    askClosed(db, [{ from: localDate(at), to: today() }], b, 'day');
+    const [move] = logged(who, () => db.insertStockMoves([{
       itemId: it.id, at, qty, refKind: 'purchase', total, unitCost: unitCost(total, qty), supplier: supplierOf(b.supplier), useBy: useByOf(b.useBy, at),
-    }]);
+    }]));
     tell(it.id);
     return move;
   }
 
   // { itemId, qty (the amount used, over 0), roomId?, reason?, worker, at? } → the move (its qty under 0). Not a block item:
   // blocks go into a room through Batches (joint audit B1); Count stock still adjusts them.
-  function use(body) {
+  function use(body, who = APP) {
     const b = bodyOf(body);
     const it = openItem(b.itemId);
     if (it.kind === 'blocks') throw new InventoryError(409, 'Blocks go into a room from Batches: Put into a room');
     const qty = qtyOf(b.qty, it.unit);
     const fields = { roomId: roomOf(b.roomId), reason: reasonOf(b.reason), worker: workerOf(b.worker), at: atOf(b.at) };
-    const [move] = db.insertStockMoves([{ itemId: it.id, qty: -qty, refKind: 'use', ...fields }]);
+    askClosed(db, [localDate(fields.at)], b, 'at');
+    const [move] = logged(who, () => db.insertStockMoves([{ itemId: it.id, qty: -qty, refKind: 'use', ...fields }]));
     tell(it.id);
     return move;
   }
 
   // A purchase's qty, total, supplier, useBy, day; a use's qty, roomId, reason, worker, at. A count is deleted and counted
   // again; a batch move is Batches'. → the move.
-  function editMove(id, body) {
+  function editMove(id, body, who = APP) {
     const m = moveOf(id);
     const b = bodyOf(body);
     if (m.refKind === 'batch') throw new InventoryError(409, 'Change it in Batches');
-    if (m.refKind === 'adjust') throw new InventoryError(409, 'A count is not edited: delete it and count again');
+    if (m.voidedAt !== null) throw new InventoryError(409, 'Restore it first');
+    if (m.refKind === 'adjust') throw new InventoryError(409, 'A count is not edited: void it and count again');
     const it = db.stockItem(m.itemId);
     let next;
     if (m.refKind === 'purchase') {
@@ -359,22 +387,72 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
         at: given(b.at) && b.at !== null && b.at !== m.at ? atOf(b.at) : m.at,
       };
     }
-    const saved = db.updateStockMove(m.id, next);
+    askClosed(db, [daysOfMove(m), daysOfMove(next)], body, 'at');
+    const saved = db.transaction(() => {
+      const out = db.updateStockMove(m.id, next);
+      logChange(db, who, now(), { kind: 'move', rowId: m.id, action: 'edit', before: snapshotOf(m), after: snapshotOf(out) });
+      return out;
+    });
     tell(m.itemId);
     return saved;
   }
 
-  // A purchase (with the throw-outs taken from it), a use or a count; never a batch move.
-  function removeMove(id) {
+  // Undo (Data integrity 4.3): a purchase (with the throw-outs taken from it), a use or a count within 60 s of its record, by
+  // the same person; else 409 (void it). Never a batch move. Each move that goes keeps an 'undo' entry.
+  function removeMove(id, who = APP) {
     const m = moveOf(id);
     if (m.refKind === 'batch') throw new InventoryError(409, 'Change it in Batches');
-    db.deleteStockMove(m.id);
+    if (!undoAllowed(db, 'move', m.id, who, now())) throw new InventoryError(409, 'Void it instead: a money record is kept.');
+    db.transaction(() => {
+      const family = db.stockMoveFamily(m.id);
+      db.deleteStockMove(m.id);
+      for (const x of family) logChange(db, who, now(), { kind: 'move', rowId: x.id, action: 'undo', before: snapshotOf(x) });
+    });
     tell(m.itemId);
+  }
+
+  // Void a purchase (and the throw-outs taken from its lot), a use or a count { reason } (Data integrity 4.1): it stays on
+  // the item's page, struck, and leaves the stock, the lots, the costs and the sheet. Never a batch move. → the move.
+  function voidMove(id, body, who = APP) {
+    const m = moveOf(id);
+    if (m.refKind === 'batch') throw new InventoryError(409, 'Change it in Batches');
+    if (m.voidedAt !== null) throw new InventoryError(409, 'This record is voided already');
+    const reason = reasonGiven(body, { words: 'Say why you void it', Err: InventoryError });
+    askClosed(db, [daysOfMove(m)], body, 'at');
+    const at = now();
+    db.transaction(() => {
+      for (const x of db.stockMoveFamily(m.id)) {
+        if (x.voidedAt !== null) continue;
+        const why = x.id === m.id ? reason : FAMILY_REASON;
+        db.voidRow('stock_moves', x.id, { at, by: who.name, reason: why });
+        logChange(db, who, at, { kind: 'move', rowId: x.id, action: 'void', before: snapshotOf(x), reason: why });
+      }
+    });
+    tell(m.itemId);
+    const out = db.stockMove(m.id);
+    return { ...out, voided: voidedOf(out) };
+  }
+
+  // Restore a voided move { reason? }, and the throw-outs its void took with it.
+  function restoreMove(id, body, who = APP) {
+    const m = moveOf(id);
+    if (m.voidedAt === null) throw new InventoryError(409, 'This record is not voided');
+    const reason = reasonGiven(body ?? {}, { required: false, Err: InventoryError });
+    askClosed(db, [daysOfMove(m)], body, 'at');
+    db.transaction(() => {
+      for (const x of db.stockMoveFamily(m.id)) {
+        if (x.voidedAt === null || (x.id !== m.id && x.voidReason !== FAMILY_REASON)) continue;
+        db.restoreRow('stock_moves', x.id);
+        logChange(db, who, now(), { kind: 'move', rowId: x.id, action: 'restore', before: snapshotOf(db.stockMove(x.id)), reason });
+      }
+    });
+    tell(m.itemId);
+    return { ...db.stockMove(m.id), voided: null };
   }
 
   // What is left of a soon or expired lot, taken from that lot: a use with the reason "Expired" (or "Thrown out" before its
   // day) and lotId. { worker } → the move.
-  function throwOut(moveId, body) {
+  function throwOut(moveId, body, who = APP) {
     const b = bodyOf(body);
     const m = moveOf(moveId);
     const it = openItem(m.itemId);
@@ -382,9 +460,9 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
     if (!lot) throw new InventoryError(409, 'Nothing is left of it');
     if (!lot.state) throw new InventoryError(409, 'It is not near its use-by');
     const worker = workerOf(b.worker);
-    const [move] = db.insertStockMoves([{
+    const [move] = logged(who, () => db.insertStockMoves([{
       itemId: it.id, at: now(), qty: -lot.left, refKind: 'use', reason: lot.state === 'expired' ? 'Expired' : 'Thrown out', worker, lotId: m.id,
-    }]);
+    }]));
     tell(it.id);
     return move;
   }
@@ -393,7 +471,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
 
   // { worker, counts: [{ itemId, qty }] }: each a count against the records at this moment (qty: the difference, 0 when it
   // matches; counted: the figure), all in one transaction; one bad entry (field counts.<index>) saves none. → { moves }.
-  function count(body) {
+  function count(body, who = APP) {
     const b = bodyOf(body);
     if (!Array.isArray(b.counts) || b.counts.length === 0) throw new InventoryError(400, 'Give at least one count', 'counts');
     if (b.counts.length > MAX_COUNTS) throw new InventoryError(400, `Count at most ${MAX_COUNTS} items at once`, 'counts');
@@ -410,7 +488,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
       const counted = qtyOf(c.qty, it.unit, field, { zero: true });
       return { itemId: it.id, at, qty: round3(counted - stockOf(db.itemStockMoves(it.id))), refKind: 'adjust', counted, worker };
     });
-    const moves = db.insertStockMoves(list);
+    const moves = logged(who, () => db.insertStockMoves(list));
     tell(null);
     return { moves };
   }
@@ -442,7 +520,7 @@ export function createInventory({ db, now = Date.now, log = console.error }) {
   }
 
   return {
-    list, item, addItem, editItem, removeItem, purchase, use, editMove, removeMove, throwOut, count, purchases, sheet,
+    list, item, addItem, editItem, removeItem, purchase, use, editMove, removeMove, voidMove, restoreMove, throwOut, count, purchases, sheet,
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);

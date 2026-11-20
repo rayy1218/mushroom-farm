@@ -8,6 +8,7 @@ import { whenMs } from './harvest-math.js';
 import { normaliseClock } from './light-math.js';
 import { countBlocks, dateText } from './batches-math.js';
 import { batchHash, roomHash } from './route.js';
+import { voidLine } from './changes-math.js'; // ---- Data integrity ----
 
 const NB = ' ';
 const DASH = '—';
@@ -162,7 +163,7 @@ export const itemGroups = (items) => KIND_ORDER.map((kind) => ({ kind, label: KI
 export const stockHint = (item) => (item ? `${qtyText(item.qty, item.unit)} in stock` : '');
 
 // The line a page shows after a record (audit #2), with Undo for a new purchase, use, throw-out or count for UNDO_MS.
-export const UNDO_MS = 60_000;
+export const UNDO_MS = 58_000; // Data integrity: 2 s inside the server's 60 s (server/changes.js UNDO_MS), so a late press never meets a 409
 export function doneText({ kind, qty, unit, name, room = null, worker = null, count = 0 }) {
   const by = worker ? ` by ${worker}` : '';
   if (kind === 'use') return `Used ${qtyText(qty, unit)} of ${name}${room ? ` in ${room}` : ''}${by}`;
@@ -230,20 +231,26 @@ export function moveLine(m, item, today = null) {
     parts = m.roomName ? [{ text: 'Used in ' }, roomPart(m), ...(rest ? [{ text: `${DOT}${rest}` }] : [])]
       : [{ text: joined('Used in a deleted room', m.reason, m.worker) }];
   }
-  const edit = m.refKind === 'batch' ? null : m.refKind === 'adjust' ? 'delete' : 'edit';
-  return { when, what: parts.map((p) => p.text).join(''), parts, qty: qtyText(m.qty, item.unit, { signed: true }), edit };
+  // Data integrity: a count is voided, not edited; a voided move opens as itself (Restore, History); a batch move is Batches'
+  const edit = m.refKind === 'batch' ? null : m.voided ? 'open' : m.refKind === 'adjust' ? 'void' : 'edit';
+  return {
+    when, what: parts.map((p) => p.text).join(''), parts, qty: qtyText(m.qty, item.unit, { signed: true }), edit,
+    voided: voidLine(m.voided), edited: (m.edits ?? 0) > 0,
+  };
 }
 
-// The Delete confirm: "Delete the purchase of 5.00 L of Bleach on 3 Nov?"; its lead (null for none).
-export function deleteTitle(m, item) {
+// ---- Data integrity ---- (4.1) A move is voided, never deleted (Undo inside its minute aside): what it is ('purchase', 'use',
+// 'throw-out', 'count': "Void this use", "Void use"), the confirm's title "Void the purchase of 5.00 L of Bleach on 3 Nov?"
+// and its lead (null for none).
+export const voidLabel = (m) => (m.refKind === 'purchase' ? 'purchase' : m.refKind === 'adjust' ? 'count' : m.lotId !== null && m.lotId !== undefined ? 'throw-out' : 'use');
+export function voidTitle(m, item) {
   const day = dayText(farmDate(m.at));
-  if (m.refKind === 'adjust') return `Delete the count of ${item.name} on ${day}?`;
-  const what = m.refKind === 'purchase' ? 'purchase' : m.lotId !== null && m.lotId !== undefined ? 'throw-out' : 'use';
-  return `Delete the ${what} of ${qtyText(Math.abs(m.qty), item.unit)} of ${item.name} on ${day}?`;
+  if (m.refKind === 'adjust') return `Void the count of ${item.name} on ${day}?`;
+  return `Void the ${voidLabel(m)} of ${qtyText(Math.abs(m.qty), item.unit)} of ${item.name} on ${day}?`;
 }
-export function deleteLead(m, { throwOuts = false } = {}) {
+export function voidLead(m, { throwOuts = false } = {}) {
   if (m.refKind === 'adjust') return 'In stock goes back to what the records said without it.';
-  return m.refKind === 'purchase' && throwOuts ? 'The throw-outs taken from it go with it.' : null;
+  return m.refKind === 'purchase' && throwOuts ? 'The throw-outs taken from it are voided with it.' : null;
 }
 
 // The Throw out confirm.

@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
+import { seenAllDay } from './integrity-fixture.js';
 import { fixedZone, roomDays } from '../server/usage.js';
 import { bucketUsage } from '../server/usage-buckets.js';
 
@@ -49,9 +50,10 @@ test('the estimate per bucket adds up to the day estimate of the Energy card, wa
 });
 
 test('the intake against the filter: the day mean pressure scales every bucket of the day', (t) => {
-  const { db, room } = setup(t, { dpAddress: 7, intakeW: 100, exhaustW: 0, circulationW: 0, humidifierW: 0, acInputW: 0 });
+  const { db, room } = setup(t, { dpAddress: 7, trhAddress: 1, intakeW: 100, exhaustW: 0, circulationW: 0, humidifierW: 0, acInputW: 0 });
   log(db, room, 'intake', at(19, 0), true);
   log(db, room, 'intake', at(19, 4), false);
+  seenAllDay(db, room.id, at(19, 0), at(20, 0)); // the room seen all day (Data integrity)
   db.addFilterReading({ roomId: room.id, address: 7, at: at(19, 1), ok: true, pa: 200 }); // the fan's maximum: 1.15
   const now = at(20, 0);
   const day = roomDays(db, room, { now, zone, count: 2 })[0];

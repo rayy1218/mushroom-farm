@@ -113,9 +113,10 @@ SELECT b.*, rm.name AS room_name, ru.started_at AS run_started_at, ru.ended_at A
 FROM batches b LEFT JOIN rooms rm ON rm.id = b.room_id LEFT JOIN runs ru ON ru.id = b.run_id
      LEFT JOIN batch_materials s ON s.batch_id = COALESCE(b.parent_id, b.id) AND s.item = 'spawn'`;
 // The latest purchase price of the stock item i (Inventory's 'purchase' moves; contract section 5).
+// (Data integrity: a voided move counts in neither; the column is there from version 29, before Batches reads)
 const LATEST_PRICE = `SELECT m.unit_cost FROM stock_moves m WHERE m.item_id = i.id AND m.ref_kind = 'purchase' AND m.unit_cost IS NOT NULL
-  ORDER BY m.at DESC, m.id DESC LIMIT 1`;
-const STOCK_QTY = 'SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.item_id = i.id';
+  AND m.voided_at IS NULL ORDER BY m.at DESC, m.id DESC LIMIT 1`;
+const STOCK_QTY = 'SELECT COALESCE(SUM(m.qty), 0) FROM stock_moves m WHERE m.item_id = i.id AND m.voided_at IS NULL';
 const MATERIAL_ORDER = "CASE item WHEN 'sawdust' THEN 0 WHEN 'bran' THEN 1 WHEN 'lime' THEN 2 WHEN 'gypsum' THEN 3 WHEN 'other' THEN 4 WHEN 'bags' THEN 5 ELSE 6 END";
 
 
@@ -320,7 +321,8 @@ export function createBatchStore(db) {
       if (!hasStock() || !itemIds.length) return [];
       const has = new Set(db.prepare('PRAGMA table_info(stock_moves)').all().map((c) => c.name));
       return db.prepare(`SELECT id, item_id, at, qty, unit_cost, ref_kind, ref_id, ${has.has('total') ? 'total' : 'NULL AS total'},
-        ${has.has('lot_id') ? 'lot_id' : 'NULL AS lot_id'} FROM stock_moves WHERE item_id IN (${itemIds.map(() => '?').join(', ')}) ORDER BY at, id`)
+        ${has.has('lot_id') ? 'lot_id' : 'NULL AS lot_id'} FROM stock_moves WHERE item_id IN (${itemIds.map(() => '?').join(', ')})
+        ${has.has('voided_at') ? 'AND voided_at IS NULL' : ''} ORDER BY at, id`)
         .all(...itemIds).map((r) => ({
           id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refKind: r.ref_kind, refId: r.ref_id, total: r.total, lotId: r.lot_id,
         }));

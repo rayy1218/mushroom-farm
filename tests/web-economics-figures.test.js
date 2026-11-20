@@ -67,6 +67,8 @@ test('Your runs\' notes: yield, price, block price with batches left out, electr
   assert.deepEqual(note('blockPrice', { runs: { count: 4, blocks: 7000, batches: 5, batchesLeftOut: 2 } }), ['Your runs: 7,000 blocks in 5 batches. · 2 batches without a price left out.']);
   assert.deepEqual(note('blockPrice', { runs: { count: 4, blocks: 1000, batches: 1, batchesLeftOut: 0 } }), ['Your runs: 1,000 blocks in 1 batch.']);
   assert.deepEqual(note('yours.kwhBlock', { runs: { count: 4, kWh: 3412.6, days: 140, blocks: 7000 } }), ['Your runs: 3,412.6 kWh measured over 140 days for 7,000 blocks.']);
+  assert.deepEqual(note('yours.kwhBlock', { runs: { count: 4, kWh: 3412.6, days: 140, blocks: 7000, estimatedPct: 34, unseenDays: 2 } }),
+    ['Your runs: 3,412.6 kWh over 140 days for 7,000 blocks, of which 34 % estimated, 2 days not seen.'], 'Data integrity 7.2');
   assert.deepEqual(note('yours.blocks', { runs: { from: 'crop' } }), ["Container 1's blocks now (its Crop tab)."]);
   assert.deepEqual(note('yours.blocks', { runs: { from: 'run', at: at('2026-08-12') } }), ["Container 1's last run, 12 Aug."]);
   assert.deepEqual(note('yours.loss', { value: 0, runs, notes: ['loss-in-yield'] }), ["Counted in your yield: your runs' kg a block is over every block put in."]);

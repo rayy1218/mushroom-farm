@@ -72,7 +72,7 @@ test('deliveries from lines: newest first, lines in the crop list\'s order, sums
   const list = deliveriesOf(rows, { rooms: new Map([[7, { name: 'Container 1' }]]), runs: new Map([[3, { startedAt: 500 }]]), buyers: new Map([[0, { archived: true }]]) });
   assert.deepEqual(list.map((d) => [d.id, d.kg, d.total, d.buyerArchived]), [[2, 1.25, 11.25, true], [1, 16.5, 189, false]]);
   assert.deepEqual(list[1].lines.map((l) => [l.crop, l.roomName, l.runStartedAt]), [['oyster', 'Container 1', 500], ['pink', null, null]]);
-  assert.deepEqual(Object.keys(list[1]), ['id', 'soldAt', 'buyerId', 'buyer', 'buyerArchived', 'invoiceNo', 'note', 'paidAt', 'kg', 'total', 'lines']);
+  assert.deepEqual(Object.keys(list[1]), ['id', 'soldAt', 'buyerId', 'buyer', 'buyerArchived', 'invoiceNo', 'note', 'paidAt', 'kg', 'total', 'lines', 'voided']);
   assert.deepEqual(Object.keys(list[1].lines[0]), ['id', 'crop', 'kg', 'priceKg', 'total', 'roomId', 'roomName', 'runId', 'runStartedAt']);
 });
 

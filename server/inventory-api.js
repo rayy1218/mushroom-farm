@@ -5,10 +5,11 @@
 
 import { createInventory } from './inventory.js';
 import { createInventoryAlerts } from './inventory-alerts.js';
+import { whoOf } from './changes.js'; // ---- Data integrity ----
 
 const ID = '([1-9][0-9]{0,14})';
 const ONE_ITEM = new RegExp(`^/api/inventory/items/${ID}$`);
-const ONE_MOVE = new RegExp(`^/api/inventory/moves/${ID}$`);
+const ONE_MOVE = new RegExp(`^/api/inventory/moves/${ID}(/void|/restore)?$`); // Data integrity: void, restore
 const THROW_OUT = new RegExp(`^/api/inventory/lots/${ID}/throw-out$`);
 
 // events: the farm's bus (null in some tests). alerts: options for createInventoryAlerts (tests). → { routes, inventory,
@@ -58,28 +59,32 @@ export function createInventoryApi({ db, events = null, now = Date.now, alerts: 
     }
     if (path === '/api/inventory/purchases') {
       if (method === 'GET') send(res, 200, inventory.purchases(url.searchParams.get('from'), url.searchParams.get('to')));
-      else if (method === 'POST') send(res, 201, inventory.purchase(await readJson(req)));
+      else if (method === 'POST') send(res, 201, inventory.purchase(await readJson(req), whoOf(req)));
       else throw notFound();
       return true;
     }
     if (path === '/api/inventory/uses' || path === '/api/inventory/counts') {
       if (method !== 'POST') throw notFound();
       const body = await readJson(req);
-      send(res, 201, path === '/api/inventory/uses' ? inventory.use(body) : inventory.count(body));
+      send(res, 201, path === '/api/inventory/uses' ? inventory.use(body, whoOf(req)) : inventory.count(body, whoOf(req)));
       return true;
     }
     const move = ONE_MOVE.exec(path);
     if (move) {
       const id = Number(move[1]);
-      if (method === 'PUT') send(res, 200, inventory.editMove(id, await readJson(req)));
-      else if (method === 'DELETE') { inventory.removeMove(id); noContent(res); }
+      if (move[2]) {
+        if (method !== 'POST') throw notFound();
+        const body = await readJson(req);
+        send(res, 200, move[2] === '/void' ? inventory.voidMove(id, body, whoOf(req)) : inventory.restoreMove(id, body, whoOf(req)));
+      } else if (method === 'PUT') send(res, 200, inventory.editMove(id, await readJson(req), whoOf(req)));
+      else if (method === 'DELETE') { inventory.removeMove(id, whoOf(req)); noContent(res); } // Undo: its minute, its person
       else throw notFound();
       return true;
     }
     const lot = THROW_OUT.exec(path);
     if (lot) {
       if (method !== 'POST') throw notFound();
-      send(res, 201, inventory.throwOut(Number(lot[1]), await readJson(req)));
+      send(res, 201, inventory.throwOut(Number(lot[1]), await readJson(req), whoOf(req)));
       return true;
     }
     if (path === '/api/inventory/sheet') {

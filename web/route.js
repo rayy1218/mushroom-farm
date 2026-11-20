@@ -133,6 +133,29 @@ function parseEconomics(hash) {
   return { name: 'economics', room, crop: ECONOMICS_CROPS.includes(p.get('crop')) ? p.get('crop') : null };
 }
 // ---- end Economics ----
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 11): the Changes page, its period, kind and person in the
+// query (30 days, every kind, everyone without them). Not a tab: reached from the Summary, the History folds and Settings.
+export const CHANGES_HASH = '#/business/changes';
+const CHANGE_DAYS = [7, 30, 90, 365];
+const CHANGE_KINDS = ['sale', 'cost', 'equipment', 'harvest', 'move', 'not-sold', 'tariff', 'month', 'room'];
+// id (with its kind): one record's changes, a History fold's "All changes".
+export function changesHash({ days = 30, kind = null, by = null, id = null } = {}) {
+  const one = kind && id !== null;
+  const q = (one ? [`kind=${kind}`, `id=${id}`]
+    : [days !== 30 ? `days=${days}` : '', kind ? `kind=${kind}` : '', by ? `by=${encodeURIComponent(by)}` : '']).filter(Boolean).join('&');
+  return q ? `${CHANGES_HASH}?${q}` : CHANGES_HASH;
+}
+function parseChanges(hash) {
+  const m = /^#\/business\/changes\/?(?:\?(.*))?$/.exec(hash);
+  if (!m) return null;
+  const p = new URLSearchParams(m[1] ?? '');
+  const days = Number(p.get('days'));
+  const by = (p.get('by') ?? '').trim();
+  const kind = CHANGE_KINDS.includes(p.get('kind')) ? p.get('kind') : null;
+  const id = kind && /^[1-9][0-9]{0,14}$/.test(p.get('id') ?? '') ? Number(p.get('id')) : null;
+  return { name: 'changes', days: CHANGE_DAYS.includes(days) ? days : 30, kind, by: by || null, id };
+}
+// ---- end Data integrity ----
 
 // ---- Business (the integration, 2026-11-05; DESIGN.md "Business") ----: the top bar's one Business entry opens #/business,
 // the Summary tab (spec 2026-11-06-business-summary-design.md 2: always, no memory of the last tab); the seven pages share a
@@ -156,13 +179,15 @@ const BUSINESS_PAGES = new Map([
   ['sales', 'sales'], ['costs', 'costs'],
   ['runs', 'runs'], ['run', 'runs'], // ---- Runs ----
   ['economics', 'economics'], // ---- Economics ----
+  ['changes', 'summary'], // ---- Data integrity ---- reached from the Summary
 ]);
 export const businessTabOf = (route) => BUSINESS_PAGES.get(route?.name) ?? null;
 export const businessStrip = (route) => (BUSINESS_TABS.some((t) => t.key === route?.name) ? route.name : null);
 
 // ---- Login ---- the pages a worker may open: null when route is one, else the address to show instead (Today; a room's
 // owner tab: its Now tab).
-const WORKER_PAGES = new Set(['today', 'calendar', 'overview', 'detail', 'harvest', 'inventory', 'inventoryItem', 'inventoryCount']);
+// (Data integrity: the Changes page too, so a worker reads "Ask the owner" where the server refuses the log)
+const WORKER_PAGES = new Set(['today', 'calendar', 'overview', 'detail', 'harvest', 'inventory', 'inventoryItem', 'inventoryCount', 'changes']);
 export function workerHash(route) {
   if (!WORKER_PAGES.has(route?.name)) return '#/today';
   if (route.name === 'detail' && OWNER_TABS.includes(route.tab)) return roomHash(route.id, 'now');
@@ -213,6 +238,8 @@ export function parseRoute(hash) {
   if (runs) return runs;
   const economics = parseEconomics(hash ?? ''); // ---- Economics ----
   if (economics) return economics;
+  const changes = parseChanges(hash ?? ''); // ---- Data integrity ----
+  if (changes) return changes;
   if (/^#\/settings\/?$/.test(hash ?? '')) return { name: 'settings' };
   return { name: 'overview' };
 }
@@ -240,6 +267,7 @@ export function canonicalHash(route) {
   if (route.name === 'runs') return runsHash(route.crop); // ---- Runs ----
   if (route.name === 'run') return runHash(route.id);
   if (route.name === 'economics') return economicsHash(route); // ---- Economics ----
+  if (route.name === 'changes') return changesHash(route); // ---- Data integrity ----
   return route.name === 'settings' ? '#/settings' : '#/overview';
 }
 

@@ -71,7 +71,7 @@ test('rows: categories with their source, entries, monthly items, runs', () => {
   assert.deepEqual(categoryRows([{ key: 'blocks-batches', label: 'Blocks', source: 'batches', amount: 250, share: 83 }]),
     [{ label: 'Blocks', source: 'from Batches', href: '#/business/batches', amount: `RM${NB}250.00`, share: `83${NB}%` }]);
   assert.deepEqual(entryLine({ date: '2026-11-03', label: 'Labour', worker: 'Ali', note: 'Oct sales bonus', roomName: null, amount: 230, repeat: null }),
-    { date: '3 Nov', what: `Labour${DOT}Ali${DOT}Oct sales bonus`, whom: 'The farm', amount: `RM${NB}230.00`, monthly: false, bill: false, topUp: null });
+    { date: '3 Nov', what: `Labour${DOT}Ali${DOT}Oct sales bonus`, whom: 'The farm', amount: `RM${NB}230.00`, monthly: false, bill: false, topUp: null, voided: '', edited: false });
   assert.deepEqual(repeatingLine({ date: '2026-08-31', category: 'rent', note: 'Shop lot', worker: null, roomName: null, amount: 1500 }),
     { what: `Rent${DOT}Shop lot`, whom: 'The farm', amount: `RM${NB}1,500.00 a${NB}month`, since: 'since Aug 2026', when: 'on the 31st' });
   const rent = { date: '2026-08-31', category: 'rent', note: '', roomName: null, amount: 1500 };
@@ -197,7 +197,7 @@ test('a closed run ending after farm midnight reads the farm day', () => {
 
 test('entry lines: a utility bill and a monthly repeat; category rows without a share or source', () => {
   assert.deepEqual(entryLine({ date: '2026-11-03', category: 'utilities', utility: 'electricity', roomName: 'Container 1', amount: 90, repeat: 'monthly' }),
-    { date: '3 Nov', what: 'Electricity bill', whom: 'Container 1', amount: `RM${NB}90.00`, monthly: true, bill: true, topUp: null });
+    { date: '3 Nov', what: 'Electricity bill', whom: 'Container 1', amount: `RM${NB}90.00`, monthly: true, bill: true, topUp: null, voided: '', edited: false });
   assert.deepEqual(categoryRows([{ label: 'Other', source: 'mystery', amount: 10, share: null }]),
     [{ label: 'Other', source: null, href: null, amount: `RM${NB}10.00`, share: '—' }]);
 });
@@ -217,12 +217,12 @@ test('an electricity bill in Entries: tagged, with what it adds', () => {
   const bill = { date: '2026-10-31', category: 'utilities', utility: 'electricity', roomName: null, amount: 580, repeat: null };
   const adds = (amount, month = '2026-10') => entryLine({ ...bill, topUp: { amount, month } });
   assert.deepEqual([adds(580).bill, adds(580).topUp], [true, `adds RM${NB}580.00 unmeasured`]);
-  assert.equal(adds(0).topUp, 'adds nothing: measured is higher');
+  assert.equal(adds(0).topUp, 'adds nothing');
   assert.equal(adds(null).topUp, 'working out');
   const late = { ...bill, date: '2026-11-03' };
   assert.equal(entryLine({ ...late, topUp: { amount: 580, month: '2026-10' } }).topUp, `adds RM${NB}580.00 unmeasured to October`, 'its period ended in October');
   assert.equal(entryLine({ ...late, date: '2027-01-04', topUp: { amount: 580, month: '2026-12' } }).topUp, `adds RM${NB}580.00 unmeasured to December 2026`);
-  assert.equal(entryLine({ ...late, topUp: { amount: 0, month: '2026-10' } }).topUp, 'adds nothing to October: measured is higher');
+  assert.equal(entryLine({ ...late, topUp: { amount: 0, month: '2026-10' } }).topUp, 'adds nothing to October');
   const other = entryLine({ ...bill, utility: 'other', topUp: undefined });
   assert.deepEqual([other.bill, other.topUp], [false, null]);
 });
@@ -404,8 +404,9 @@ test('Profit says what it is before the write-off; the sources\' words; a run\'s
   assert.equal(boughtView({ total: 0, lines: [], unpriced: [] }), null);
   assert.equal(BOUGHT_NOTE, 'Paid this month; a cost once used.');
   const line = equipmentLine({ name: 'Daikin', roomId: 2, roomName: 'Container 1', part: 'cooling', boughtOn: '2025-01-03', amount: 4170, lifeMonths: 60, monthly: 69.5, left: 2641, done: false });
-  assert.deepEqual(Object.fromEntries(Object.entries(line).map(([k, v]) => [k, plain(v)])), {
+  assert.deepEqual(Object.fromEntries(Object.entries(line).map(([k, v]) => [k, typeof v === 'string' ? plain(v) : v])), {
     name: 'Daikin', sub: 'Container 1 · Cooling · bought 3 Jan 2025', amount: 'RM 4,170.00', writeOff: 'RM 69.50 a month, 60 months', left: 'RM 2,641.00 left to write off',
+    voided: '', edited: false,
   });
   assert.equal(equipmentLine({ name: 'Mixer', roomId: null, part: 'other', boughtOn: '2024-03-15', amount: 1200, lifeMonths: 1, monthly: 1200, left: 0, done: true }).left, 'written off');
   assert.equal(plain(writeOffWords({ amount: '4,170.00', resale: '0', lifeMonths: '60' })), 'RM 69.50 a month for 60 months.');

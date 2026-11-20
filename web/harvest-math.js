@@ -41,9 +41,21 @@ export function costKgText(v) {
 
 const daysText = (days) => `${days}${NB}${days === 1 ? 'day' : 'days'}`;
 
-// What a cost per kg counts, short enough for a tile: "electricity and water · 46 days" (at today's prices: pricesNote).
-function costBasis({ days, water }) {
-  return `${water ? 'electricity and water' : 'electricity'}${finite(days) ? `${DOT}${daysText(days)}` : ''}`;
+// ---- Data integrity ---- (7.2) a time the app could not see a room: "6 h", "6 h 55 min", "2 days 3 h", "40 min" (to the 5
+// minutes, as Costs' note and the Energy card; under 5 minutes ''). A day or more leaves the minutes out.
+export function unseenText(ms) {
+  const mins = finite(ms) ? Math.round(ms / 300_000) * 5 : 0;
+  const [d, h, m] = [Math.floor(mins / 1440), Math.floor((mins % 1440) / 60), mins % 60];
+  return [d ? `${d}${NB}${d === 1 ? 'day' : 'days'}` : '', h ? `${h}${NB}h` : '', m && !d ? `${m}${NB}min` : ''].filter(Boolean).join(' ');
+}
+
+// What a cost per kg counts, short enough for a tile: "electricity and water · 46 days" (each day's rate: pricesNote); Data
+// integrity (7.2): "· incl. RM 9.85 estimated" when some of it is estimated from machine run time, "· 6 h not seen" when the
+// room was not seen for a while (nothing counted for that time).
+function costBasis({ days, water, estimated, unseenMs }) {
+  const unseen = unseenText(unseenMs);
+  return [water ? 'electricity and water' : 'electricity', finite(days) ? daysText(days) : null, estimated > 0 ? `incl. ${rmText(estimated)} estimated` : null,
+    unseen ? `${unseen} not seen` : null].filter(Boolean).join(DOT);
 }
 
 // "RM 3.10 per kg · electricity and water over 46 days at today’s prices".
@@ -63,8 +75,10 @@ function costTile(cost) {
   return finite(cost?.costPerKg) ? { label, value: costKgText(cost.costPerKg), line: costBasis(cost) } : { label, value: DASH };
 }
 
-// The note under the tiles when an energy per kg shows: its prices are today's.
-export const pricesNote = (cost) => (finite(cost?.costPerKg) ? 'Energy per kg is at today’s prices.' : null);
+// The note under the tiles when an energy per kg shows: each day's electricity at its own rate (Data integrity 8.1: the dated
+// tariff), the water at today's price (no dated water price).
+export const pricesNote = (cost) => (finite(cost?.costPerKg)
+  ? `Energy per kg: each day’s electricity at its own rate${cost.water ? ', the water at today’s price' : ''}.` : null);
 
 const names = (crops) => crops.map(cropName).join(', ');
 
@@ -103,10 +117,14 @@ function longDate(date) {
 
 // The myGAP sheet: one row per record of the farm's reply (a day, room, crop and run), the sales cells left blank for the
 // farmer. records: [{ date, roomName, crop, runStartedAt (ms), kg }]; the run's day is the farm's (UTC+8).
+// Data integrity (11): a voided record (the server's records carry one a voided pick) keeps its row, the void on the cells
+// (cells.voided, not a cell: the page strikes the row and says it), so the sales sheet that merges these rows keeps it too.
 export function sheetRows(records) {
   return (Array.isArray(records) ? records : []).map((h) => {
     const run = finite(h.runStartedAt) ? dayMonth(farmDate(h.runStartedAt)) : DASH;
-    return [longDate(h.date), cropName(h.crop), `${h.roomName}${DOT}run of ${run}`, finite(h.kg) ? grouped(h.kg, 2) : '', '', '', '', '', ''];
+    const cells = [longDate(h.date), cropName(h.crop), `${h.roomName}${DOT}run of ${run}`, finite(h.kg) ? grouped(h.kg, 2) : '', '', '', '', '', ''];
+    if (h.voided) Object.defineProperty(cells, 'voided', { value: h.voided });
+    return cells;
   });
 }
 
@@ -217,8 +235,10 @@ export function runTiles(run) {
 }
 
 // Delete's title names the harvest; its lead when and who ("Picked 4 Nov 14:36 by Kumar.").
-export const deleteTitle = (h) => `Delete ${kgText(h.kg, { exact: true })} of ${cropName(h.crop)}?`;
-export const deleteLead = (h) => `Picked ${whenText(h.pickedAt)}${h.worker ? ` by ${h.worker}` : ''}.`;
+// Data integrity (4.1): a harvest is voided, never deleted; its confirm's title and lead, and a voided one's own dialog.
+export const voidTitle = (h) => `Void ${kgText(h.kg, { exact: true })} of ${cropName(h.crop)}?`;
+export const voidedTitle = (h) => `${kgText(h.kg, { exact: true })} of ${cropName(h.crop)}`;
+export const pickedLead = (h) => `Picked ${whenText(h.pickedAt)}${h.worker ? ` by ${h.worker}` : ''}.`;
 
 // Record a harvest's title with the room ("Record a harvest · Room 1") and its lead, the stamp the harvest will take
 // ("Flush 3 · Fruiting"; null when unknown).
@@ -267,35 +287,9 @@ function pickedOf(values, { run, now, shown }) {
 
 // One pick over this many kg a block asks again before it is kept (Record, Edit, the harvest check's Done): a whole good
 // flush is about 0.2 to 0.3 kg a block, so more in one pick is likelier a slipped decimal point or the wrong blocks than a
-// real pick. Asked, not refused: the farmer may know better.
+// real pick. Asked, not refused: the farmer may know better. Data integrity (5.1): the server asks (server/integrity-math.js,
+// the room's picks of the last 10 minutes summed); the dialogs show its asks.
 export const PICK_MAX_PER_BLOCK = 0.3;
-
-// A pick of kg from the crop's blocks in the run: null when plausible (or the blocks unknown), else { perBlock, message }.
-export function pickCheck(kg, blocks) {
-  if (!finite(kg) || !finite(blocks) || blocks <= 0 || kg / blocks <= PICK_MAX_PER_BLOCK) return null;
-  const perBlock = kg / blocks;
-  return { perBlock, message: `That's ${perBlockText(perBlock)} in one pick. Is ${kgText(kg, { exact: true })} right?` };
-}
-
-// A dialog's picks [{ field, kg, blocks }] → each implausible one, [{ field, message }] for its box ([] when none).
-export const pickWarnings = (picks) => picks.flatMap((p) => {
-  const c = pickCheck(p.kg, p.blocks);
-  return c ? [{ field: p.field, message: c.message }] : [];
-});
-
-// Record's pick (recordBody's body): the kg over the run's blocks of the crop picked.
-export const recordPicks = (body, run) => [{ field: 'kg', kg: body.kg, blocks: (run?.crops ?? []).find((c) => c.crop === body.crop)?.blocks }];
-
-// Edit's pick (editBody's body): a changed kg over the harvest's own blocks; a kg left as it was is not asked about.
-export const editPicks = (body, h) => ('kg' in body ? [{ field: 'kg', kg: body.kg, blocks: h.blocks }] : []);
-
-// The picks of a Done body (tasks-math.js doneBody) on a harvest check: its kg boxes with the run's blocks of each crop
-// (the row's harvestCrops); [] for another row or nothing weighed.
-export function donePicks(row, body) {
-  const crops = Array.isArray(row?.harvestCrops) ? row.harvestCrops : [];
-  if (body?.amounts) return crops.filter((c) => finite(body.amounts[c.crop])).map((c) => ({ field: `kg:${c.crop}`, kg: body.amounts[c.crop], blocks: c.blocks }));
-  return crops.length === 1 && finite(body?.amount) ? [{ field: 'amount', kg: body.amount, blocks: crops[0].blocks }] : [];
-}
 
 // Record a harvest's body { crop, kg, worker, pickedAt? } (crop: the run's only crop when there is no picker), or { error, field }.
 export function recordBody(values, { run, now, shown }) {

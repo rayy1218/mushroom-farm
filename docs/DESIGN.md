@@ -572,8 +572,12 @@ A card's handful of headline figures (Energy and water, a simulation's results, 
 ### Rows
 Most cards are lists of rows, and every list is built the same way: rows ruled by a `border` hairline above each (none above the first), 8 to 10 px tall padding, the thing's picture or number at the left, its name (500) over a sub-line (13 px `ink-2` or `muted`: what it does, when, who), and its state or actions at the right (a pill, a switch, quiet buttons). A closed or done row drops to `ink-2` 400 and fades its picture to 60 %; it is never struck through. Machines, alarms, tasks, harvests, calendar items, workers, task rules and the Overview's room and energy lines are all this row.
 
+**The Void Rule.** (2026-11-12, Data integrity) A voided money record (a sale, cost, equipment item, harvest, stock move, Not sold record or tariff rate) stays in its place in its list: the row drops to `ink-2` 400, its figures (kg, RM) are struck through (1 px, `muted`), a muted "Voided" chip sits before them, and under it "Voided 10 Nov by Lim: Entered twice" (13 px `muted`, not struck). It is the one row whose figures are struck: a done task or a closed row never is. It opens read only with Restore and its History; it leaves every figure. A record changed since it was made says a muted "edited" (13 px) after its date (`.dx-` styles, spec `docs/specs/2026-11-12-data-integrity-design.md` 11).
+
 ### Folds
 A part that can be put away (a Setup part on a phone, what a run was given, the room drawing on a small phone, a run's flushes, "+ 4 daily tasks") folds under its own title: the title is the summary, 44 px tall on a phone, a drawn chevron at its right end (8 px, 2 px `muted` lines) pointing down when closed and up when open; a fold inside a row (a past run) puts a 6 px chevron before its words and turns it. The browser's own disclosure triangle is not used. A fold says what it holds in its title ("What this run was given", "Show the room drawing", "+ 4 daily tasks"); never "More".
+
+The History fold (2026-11-12, Data integrity) sits at the foot of every owner's Edit dialog of a money record, over its buttons: "History", "History (4)" once read; open, the record's change-log entries newest first, one a row ("10 Nov 14:03 · Lim · Edited: kg 38.40 → 3.84"), "Recorded before the change log began" for an older record, and "All changes" opening the Changes page. A worker's dialogs have none (the log holds money).
 
 ### Messages
 | Kind | Look | Where |
@@ -586,6 +590,7 @@ A part that can be put away (a Setup part on a phone, what a run was given, the 
 | Unsent | "Unsent changes" in 13 px 600 `warning-text` beside Send | Control and Machines edits not yet sent |
 | Stale | 13 px 600 `warning-text` over the readings ("These are the readings from 08:12; the farm server can't be reached."); the readings stay, greyed, their pills and dots in grey | The server's stream dropped |
 | Load fail | A card at the screen's foot, `critical` edge, its words and a primary Reload | The app did not start in 8 s |
+| Ask | The Field error's look in `warning-text` under its box (the box's `aria-describedby`, polite); asks on one box share its line; the primary reads "Record anyway" ("Save anyway"); a changed value asks again | The server asks once before a likely mistake: a duplicate, a sale beyond the harvest or before any pick, an unlikely price, kg or pick, a closed month (Data integrity 5). A worker's asks carry no RM |
 
 Messages say what happened and what to do in plain words, with the number and unit when there is one; never "Error" or "Something went wrong" alone.
 

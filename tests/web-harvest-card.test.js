@@ -58,12 +58,12 @@ test('Settings → Yield: the inputs styled as the app\'s, 44 px on a phone, the
   assert.ok(yd.includes("short: 'Dry kg per block'") && yd.includes("short: 'Expected RM per kg'"));
   assert.ok(yd.includes('td.dataset.label = c.short;'));
   // a text box, so "1,5" is an error yieldBody names rather than a number box's silent empty
-  assert.ok(yd.includes("type: 'text', inputMode: 'decimal', autocomplete: 'off', placeholder: 'not set'"));
+  assert.ok(yd.includes("type: 'text', inputMode: keep ? 'numeric' : 'decimal', autocomplete: 'off', placeholder: keep ? String(KEEP_DAYS[crop]) : 'not set'"), 'Data integrity: whole days for Keeps fresh');
   assert.doesNotMatch(yd, /type: 'number'/);
   assert.ok(yd.includes("`${CROPS[crop].name}: ${c.label}, ${c.range[0].toLocaleString('en-US')} to ${c.range[1].toLocaleString('en-US')}`"), 'the range in its name');
 });
 
-test('Record, Edit and Delete: the task dialog form, the worker box, the time box, the bodies from harvest-math', () => {
+test('Record, Edit and Void: the task dialog form, the worker box, the time box, the bodies from harvest-math', () => {
   assert.match(dialogs, /export function openForm\(/);
   // a date box and a 24 h text box, not the browser's time input (it follows the browser's locale: 02:03 PM)
   assert.doesNotMatch(dialogs, /datetime-local/);
@@ -78,11 +78,10 @@ test('Record, Edit and Delete: the task dialog form, the worker box, the time bo
   assert.ok(card.includes('const lead = [recordLead(view.stamp)].filter(Boolean);'), 'and the flush and stage it takes');
   assert.ok(card.includes("r.field === 'pickedAt' ? { ...r, field: 'pickedDate' } : r"), "the server's pickedAt error under the date box");
   assert.ok(card.includes("workerField(names, 'Who picked it')"));
-  assert.ok(card.includes("return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));"));
-  assert.ok(card.includes("return onTime(await send('PUT', `/api/harvests/${h.id}`, body));"));
-  assert.ok(card.includes("const r = await send('DELETE', `/api/harvests/${h.id}`);"));
-  assert.ok(card.includes('title: deleteTitle(h),'), 'the harvest named once, in the title');
-  assert.ok(card.includes('lead: [deleteLead(h), ...(h.taskId ? ["Its harvest check\'s kg becomes the total of what is left."] : [])],'), "a check's row says what happens to the check's kg");
+  // Data integrity: through the server's asks; a harvest is voided (web-harvest-integrity.test.js), never deleted
+  assert.ok(card.includes("return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body, form, recording));"));
+  assert.ok(card.includes("return onTime(await send('PUT', `/api/harvests/${h.id}`, body, form, saving));"));
+  assert.ok(card.includes('title: voidTitle(h), lead: [pickedLead(h), ...(h.taskId ? ["Its harvest check\'s kg becomes the total of what is left."] : [])],'), "the harvest named once, in the title; a check's row says what happens to the check's kg");
   assert.ok(card.includes("options: crops.map((c) => [c.crop, cropShortName(c.crop)])"), 'no (draft) in the crop picker');
 });
 
@@ -94,17 +93,16 @@ test('Record a harvest is off until the first answer; a farm app without the har
     'OUTDATED, Record hidden, and back before the timer is set');
 });
 
-test("one Edit a row, Delete in the Edit dialog's footer; 8 rows (5 on a phone), the meta on one line (audit #8)", () => {
+test("one Edit a row, Void in the Edit dialog's footer; 8 rows (5 on a phone), the meta on one line (audit #8)", () => {
   assert.ok(!card.includes("button('Delete', 'tk-quiet')"));
-  assert.ok(card.includes("buttons: [{ label: 'Delete this harvest', action: () => deleteHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],"));
+  assert.ok(card.includes("buttons: [{ label: 'Void this harvest', action: () => voidHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],"));
   assert.ok(card.includes('const SHOWN = 8;') && card.includes('const SHOWN_PHONE = 5;'));
   assert.match(css, /\.hv-meta \{[^}]*white-space: nowrap; text-overflow: ellipsis;/);
-  assert.ok(card.includes("if (edit?.isConnected && !document.querySelector('dialog[open]')) edit.focus();"), 'Keep it: back to the row');
+  assert.ok(card.includes("if (edit?.isConnected && !document.querySelector('dialog[open]')) edit.focus();"), 'Cancel: back to the row');
 });
 
-test("after a Delete the cursor goes to the next row's Edit, else the list's title", () => {
-  assert.ok(card.includes('const near = li.nextElementSibling ?? li.previousElementSibling;'));
-  assert.ok(card.includes('pendingFocus = [near && `edit-${near.dataset.id}`, fallback].filter(Boolean);'));
+test("after a Void the cursor goes back to the row (it stays, struck), else the list's title", () => {
+  assert.ok(card.includes('const back = () => { pendingFocus = [`edit-${h.id}`, fallback]; };'));
   assert.ok(card.includes("listTitle.tabIndex = -1;\n  listTitle.dataset.focusKey = 'harvests-title';"));
   assert.ok(card.includes("harvestRow(h, run, 'harvests-title')") && card.includes('harvestRow(h, run, `run-${run.id}`)'));
   assert.ok(card.includes('const keys = pendingFocus ?? (focusKey ? [focusKey] : []);'));
@@ -137,17 +135,8 @@ test('a mixed room\'s flushes on a phone: the per-crop columns give way to the s
   assert.ok(css.includes('#tk-dialog-title:focus { outline: none; }'));
 });
 
-test('an implausible pick asks once in Record, Edit and Done (the behaviour: web-pick-guard.test.js)', () => {
-  assert.ok(card.includes("const implausible = pickGuard({ value: 'record', label: 'Record', fields: ['crop', 'kg'] });"), 'a crop change asks again');
-  assert.ok(card.includes('const asked = implausible(form, recordPicks(body, run));'));
-  assert.ok(card.includes("const implausible = pickGuard({ value: 'save', label: 'Save', fields: ['kg'] });"));
-  assert.ok(card.includes('const asked = implausible(form, editPicks(body, h));'), 'Edit: only a changed kg');
-  assert.ok(dialogs.includes("const implausible = pickGuard({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) });"));
-  assert.ok(dialogs.includes('const asked = implausible(form, donePicks(row, body));'));
-});
-
-test('the pick question is a check, not a fault: amber under the kg box, the box not marked invalid, still read out', () => {
-  assert.ok(dialogs.includes('return warnings.map((w) => ({ ...w, warn: true }));'));
+// Data integrity (5.1): the pick is the server's ask now (web-harvest-integrity.test.js); its words still show as a check
+test('an ask is a check, not a fault: amber under the kg box, the box not marked invalid, still read out', () => {
   assert.ok(dialogs.includes("err.classList.toggle('field-warn', Boolean(p.warn));"));
   assert.ok(dialogs.includes("if (p.warn) input.dataset.warn = '';\n        else input.setAttribute('aria-invalid', 'true');"));
   assert.ok(dialogs.includes('for (const p of boxed) {'), 'each box of a list: a mixed Done warns on every crop at once');

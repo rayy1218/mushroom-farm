@@ -129,3 +129,8 @@ test('the myGAP sheet: the sales of the same days as their own rows, the Total w
   assert.ok(page.includes('data-sold') && page.includes('data-income'));
   assert.ok(page.includes("live.on('sales', () => reload.call())"));
 });
+
+// ---- Data integrity ---- (4.1) the myGAP 4-6 sheet leaves a voided pick out: struck on the screen, not printed
+test('a voided pick is struck on the page and left out of the printed sheet', () => {
+  assert.match(css, /@media print \{ \.hv-sheet \.dx-voided \{ display: none; \} \}/);
+});

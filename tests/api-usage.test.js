@@ -28,6 +28,10 @@ beforeEach(() => {
   for (const room of db.listRooms()) db.deleteRoom(room.id);
   for (const key of ['pollSeconds', 'outdoorAddress', 'electricityPrice', 'waterPrice']) db.setSetting(key, '');
   db.setSetting('pollSeconds', '5');
+  // the tariff back to its one first rate at the default price (Data integrity: Settings' price is a rate from today)
+  const [first, ...later] = db.listTariffs().filter((r) => !r.voided);
+  for (const r of later) db.voidRow('tariffs', r.id, { at: 1, by: 'test', reason: 'reset' });
+  db.updateTariff(first.id, { from: first.from, rate: 0.55, afa: 0, note: '' });
   intervals.length = 0;
 });
 
@@ -190,7 +194,7 @@ test('GET /api/rooms/:id/usage and /api/usage: shape, days, prices, errors', asy
   assert.deepEqual(res.body.prices, { electricity: 0.5, water: 2 });
   assert.equal(res.body.days.length, 30);
   assert.match(res.body.days[0].date, /^\d{4}-\d{2}-\d{2}$/);
-  assert.deepEqual(Object.keys(res.body.days[29]), ['date', 'kWh', 'metered', 'byMachine', 'waterL']);
+  assert.deepEqual(Object.keys(res.body.days[29]), ['date', 'kWh', 'kWhMeasured', 'kWhEstimated', 'unseenMs', 'metered', 'byMachine', 'waterL']);
   assert.deepEqual(Object.keys(res.body.days[29].byMachine), ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights', 'ac', 'rest']);
   // The hour may straddle midnight, so look at the 30 days.
   assert.ok(Math.abs(res.body.last30.kWh - 1) < 0.01, String(res.body.last30.kWh));

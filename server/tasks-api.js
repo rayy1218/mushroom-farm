@@ -5,6 +5,7 @@
 import { DAILY_RULES, CLEAR_OUT, UPKEEP_RULES, SLOTS } from './task-rules.js';
 import { MAX_TEXT, MAX_NAME } from './tasks.js';
 import { checkRange } from './calendar.js';
+import { whoOf } from './changes.js';
 
 const ROOM_TASKS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/tasks$/;
 const TASK_ACTION = /^\/api\/tasks\/([1-9][0-9]{0,14})\/(done|skip|cancel|undo)$/;
@@ -205,7 +206,7 @@ export function createTaskRoutes({ db, tasks, cropOf = () => null }) {
       // (a task that is not there goes on to its 404; one not done or skipped to undo's own 409)
       const row = action[2] === 'undo' && req.who?.role === 'worker' ? db.getTask(id) : null;
       if (row && (row.status === 'done' || row.status === 'skipped') && row.worker !== req.who.name) throw new HttpError(403, 'Ask the owner');
-      send(res, 200, action[2] === 'undo' ? tasks.undo(id) : tasks[action[2]](id, await readBody()));
+      send(res, 200, action[2] === 'undo' ? tasks.undo(id, whoOf(req)) : tasks[action[2]](id, await readBody(), whoOf(req)));
       return true;
     }
     const log = ROOM_LOG.exec(path);

@@ -98,3 +98,18 @@ test('the links in: Harvest\'s This run and past runs, Costs\' run breakdown, Ba
   const batches = src('batches-page.js');
   assert.ok(batches.includes('run.href = runHash(r.runId);'));
 });
+
+// UI check (Data integrity, the Void Rule): a voided pick stays in the run's Picks, struck, its void said; never as counted.
+test('the run page\'s picks: a voided one in place, struck, with who and why', () => {
+  assert.ok(page.includes("const marks = harvestMarks(h);"));
+  assert.ok(page.includes("if (marks.voided) {"));
+  assert.ok(page.includes("li.classList.add('dx-voided');"));
+  assert.ok(page.includes("el('span', 'hv-kg dx-figure', l.kg)"));
+  assert.ok(page.includes("text.append(el('p', 'dx-void-line', marks.voided));"));
+});
+
+// UI check (2026-11-13): on a phone a run's long name ("Container 3 · recorded 4 Nov – now") wraps; it ran under Profit, the
+// desk's nowrap (.rn-table .rn-name) outranking the phone's rule.
+test('a run\'s name wraps on a phone', () => {
+  assert.match(runsCss, /\.rn-table \.rn-run > th \{ grid-column: 1 \/ 3; grid-row: 1; align-self: center; font-size: var\(--fs-md\); white-space: normal; \}/);
+});

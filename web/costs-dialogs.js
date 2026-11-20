@@ -1,10 +1,12 @@
 // The Costs page's dialogs (spec 2026-11-05-costs-design.md 6), through the tasks' openForm: Add a cost, Edit a one-off (with
-// a quiet Delete), Change a monthly item from a month (with its Stop and Delete), Stop it, and the Delete confirm. Each sends
-// one request and calls onDone() when it went through; the page reloads on the costs event too. The pure parts (the body,
-// the checks, where a cost lands, a bill's period, what a Stop or a Delete removes) are in web/costs-math.js.
+// a quiet Void), Change a monthly item from a month (with its Stop and Void), Stop it, the Void confirm and a voided cost's
+// own dialog (Data integrity 4 and 11: a money record is voided, never deleted; Edit and Change carry the History fold). Each
+// sends one request through the server's asks (a likely duplicate, a closed month: "Save anyway") and calls onDone() when it
+// went through; the page reloads on the costs event too. The pure parts (the body, the checks, where a cost lands, a bill's
+// period, what a Stop or a Void removes) are in web/costs-math.js.
 //   openAddDialog({ rooms, today, first, runsIn, onDone, onLost, alive }) · openEditDialog({ cost, …the same })
 //   openChangeDialog({ cost, month, today, onDone, onLost }) · openStopDialog({ cost, today, onDone, onLost })
-//   openDeleteDialog({ cost, today, onDone, onLost })
+//   openVoidDialog({ cost, today, onDone, onLost }) · openVoidedDialog({ cost, onDone, onLost })
 // rooms: [{ id, name }]; today: 'YYYY-MM-DD'; first: the oldest month kept ('YYYY-MM', the dates' least); month: the month on
 // show (Change's From picked first); runsIn(month) → a promise of the month's runs (GET /api/costs/month's runs), for the line
 // saying where a one-off room cost lands; alive() → false once the page is gone (Add and Edit read the workers first).
@@ -16,6 +18,9 @@ import {
   stopWords, deleteWords, amountBox,
 } from './costs-math.js';
 import { DOT } from './text-math.js';
+import { askingSend } from './asks.js';
+import { openVoid, openVoided } from './void-dialog.js';
+import { addHistory } from './changes-fold.js';
 
 const CATEGORY_OPTIONS = [
   ['labour', 'Labour'], ['rent', 'Rent'], ['utilities', 'Utilities'], ['repairs', 'Repairs'], ['transport', 'Transport'],
@@ -25,7 +30,7 @@ const UTILITY_OPTIONS = [['electricity', 'Electricity bill'], ['water', 'Water b
 const MAX_NOTE = 200; // server/costs.js
 const MAX_NAME = 40; // a worker's name (server/tasks.js)
 const NO_NAMES = 'The workers could not be read. Try again.';
-const BILL_HINT = 'The measured electricity already counts; only the part not measured (bill − measured) is added.';
+const BILL_HINT = 'The counted electricity (metered and estimated) already counts; only the difference (bill − counted) is added, or taken off when the bill is lower.';
 const WATER_HINT = 'The measured water already counts; only the part not measured (bill − measured) is added.';
 
 // openForm with the Business pages' form class: bz-form (its footer sticks at the dialog's foot on a phone, a destructive
@@ -147,19 +152,26 @@ function costFields(c, { rooms, workers, today, first }) {
   ];
 }
 
-// One send: the browser's check first (check(values) → a problem or null), then the request; true when it went through
-// (onDone called), else the problem to show.
-const sender = (send, onDone, check = () => null) => async (v, ...rest) => {
-  const p = check(v);
-  if (p) return p;
-  try {
-    await send(v, ...rest);
-    onDone();
-    return true;
-  } catch (err) {
-    return problem(err);
-  }
-};
+// One send: the browser's check first (check(values) → a problem or null), then post(body(values)) through the server's
+// asks (the same values again go with them confirmed; the primary `value` reads "<label> anyway" meanwhile); true when it
+// went through (onDone called), else the problem or the asks to show.
+function sender({ body, post, onDone, check = () => null, value, label, fields = [] }) {
+  const send = askingSend({ value, label, fields });
+  return async (v, _which, form) => {
+    const p = check(v);
+    if (p) return p;
+    try {
+      const out = await send(form, body(v), post);
+      if (out !== true) return out;
+      onDone();
+      return true;
+    } catch (err) {
+      return problem(err);
+    }
+  };
+}
+// The boxes of a cost whose change asks again (a duplicate is the date, category, amount and place).
+const COST_BOXES = ['date', 'category', 'utility', 'amount', 'roomId', 'periodFrom', 'periodTo'];
 
 // Add and Edit's common end: the boxes following each other, and the workers' problem said on their box when unread.
 function follow(form, { rooms, today, runsIn, workers, kept }) {
@@ -184,15 +196,15 @@ export async function openAddDialog({ rooms, today, first, runsIn, onDone, onLos
     ],
     buttons: [{ value: 'add', label: 'Add', primary: true }],
     onLost,
-    submit: sender(
-      (v) => request('POST', '/api/costs', { ...bodyOf(v), repeat: v.repeat && !isBill(v) ? 'monthly' : null }), onDone,
-      (v) => checkCost(v, { workersFailed: workers === null }),
-    ),
+    submit: sender({
+      body: (v) => ({ ...bodyOf(v), repeat: v.repeat && !isBill(v) ? 'monthly' : null }), post: (b) => request('POST', '/api/costs', b), onDone,
+      check: (v) => checkCost(v, { workersFailed: workers === null }), value: 'add', label: 'Add', fields: [...COST_BOXES, 'repeat'],
+    }),
   });
   follow(form, { rooms, today, runsIn, workers, kept: false });
 }
 
-// Edit a one-off, with a quiet Delete at the footer's start.
+// Edit a one-off, with a quiet Void at the footer's start and its History.
 export async function openEditDialog({ cost, rooms, today, first, runsIn, onDone, onLost, alive = () => true }) {
   const workers = await loadWorkers().catch(() => null);
   if (!alive()) return;
@@ -202,13 +214,17 @@ export async function openEditDialog({ cost, rooms, today, first, runsIn, onDone
     title: 'Edit a cost',
     fields: costFields(cost, { rooms, workers, today, first }),
     buttons: [
-      { label: 'Delete this cost', action: () => openDeleteDialog({ cost, today, onDone, onLost }) },
+      { label: 'Void this cost', action: () => openVoidDialog({ cost, today, onDone, onLost }) },
       { value: 'save', label: 'Save', primary: true },
     ],
     onLost,
-    submit: sender((v) => request('PUT', `/api/costs/${cost.id}`, bodyOf(v)), onDone, (v) => checkCost(v, { workersFailed: workers === null })),
+    submit: sender({
+      body: bodyOf, post: (b) => request('PUT', `/api/costs/${cost.id}`, b), onDone, check: (v) => checkCost(v, { workersFailed: workers === null }),
+      value: 'save', label: 'Save', fields: COST_BOXES,
+    }),
   });
   follow(form, { rooms, today, runsIn, workers, kept });
+  addHistory({ kind: 'cost', id: cost.id });
 }
 
 // The months a Change or a Stop may pick: its first to this month, or to its last month when stopped earlier (the server's
@@ -218,7 +234,7 @@ function monthsOf(cost, today) {
   return monthsBetween(cost.date.slice(0, 7), cost.repeatUntil && cost.repeatUntil < current ? cost.repeatUntil : current);
 }
 
-// A monthly item's new amount from a month (earlier months keep the old one), with its Stop and Delete.
+// A monthly item's new amount from a month (earlier months keep the old one), with its Stop, its Void and its History.
 export function openChangeDialog({ cost, month, today, onDone, onLost }) {
   const months = monthsOf(cost, today);
   const { what } = entryLine(cost);
@@ -232,16 +248,17 @@ export function openChangeDialog({ cost, month, today, onDone, onLost }) {
     ],
     buttons: [
       { label: 'Stop', action: () => openStopDialog({ cost, today, onDone, onLost }) },
-      { label: 'Delete this item', action: () => openDeleteDialog({ cost, today, onDone, onLost }) },
+      { label: 'Void this item', action: () => openVoidDialog({ cost, today, onDone, onLost }) },
       { value: 'save', label: 'Save', primary: true },
     ],
     onLost,
-    submit: sender(
-      (v) => request('POST', `/api/costs/${cost.id}/change`, { from: v.from, amount: bodyOf(v).amount, note: v.note }), onDone,
-      (v) => checkCost({ amount: v.amount }),
-    ),
+    submit: sender({
+      body: (v) => ({ from: v.from, amount: bodyOf(v).amount, note: v.note }), post: (b) => request('POST', `/api/costs/${cost.id}/change`, b), onDone,
+      check: (v) => checkCost({ amount: v.amount }), value: 'save', label: 'Save', fields: ['from', 'amount'],
+    }),
   });
-  // Stop is no harm by itself (its own dialog says what it removes): a quiet button; only Delete is red
+  addHistory({ kind: 'cost', id: cost.id });
+  // Stop is no harm by itself (its own dialog says what it removes): a quiet button; only Void is red
   const stop = [...form.input('from').form.querySelectorAll('.actions .tk-aside')].find((b) => b.textContent === 'Stop');
   stop?.classList.replace('danger-text', 'tk-quiet');
   stop?.classList.add('co-aside-quiet');
@@ -257,7 +274,9 @@ export function openStopDialog({ cost, today, onDone, onLost }) {
     fields: [{ name: 'after', label: 'Last month', kind: 'select', value: clampMonth(today.slice(0, 7), months), options: months.map((m) => [m, monthTitle(m)]) }],
     buttons: [{ value: 'stop', label: 'Stop', primary: true }],
     onLost,
-    submit: sender((v) => request('POST', `/api/costs/${cost.id}/stop`, { after: v.after }), onDone),
+    submit: sender({
+      body: (v) => ({ after: v.after }), post: (b) => request('POST', `/api/costs/${cost.id}/stop`, b), onDone, value: 'stop', label: 'Stop', fields: ['after'],
+    }),
   });
   const warning = lineUnder(form, 'after', 'tk-f-after-gone', 'c-hint co-warn');
   const sync = () => {
@@ -272,21 +291,26 @@ export function openStopDialog({ cost, today, onDone, onLost }) {
   sync();
 }
 
-// The Delete confirm: a monthly item goes with every month it charged (named: how many, their sum, which months). A danger
-// button that is also the submit (openForm gives it the red fill).
-export function openDeleteDialog({ cost, today, onDone, onLost }) {
+// The Void confirm (its reason required): a monthly item leaves the figures with every month it charged (named: how many,
+// their sum, which months); it stays listed, struck through, and can be restored.
+export function openVoidDialog({ cost, today, onDone, onLost }) {
   const monthly = cost.repeat === 'monthly';
   const { what } = entryLine(cost);
   const amount = monthly ? repeatingLine(cost).amount : moneyText(cost.amount);
   const gone = monthly ? deleteWords(cost, today) : null;
-  ask({
-    title: monthly ? 'Delete this monthly item?' : 'Delete this cost?',
-    lead: [
-      `${what}${DOT}${amount}`,
-      monthly ? `${gone ? `Every month it charged goes too: ${gone}.` : 'It has not charged yet.'} To end it from a month, use Stop.` : 'This cannot be undone.',
-    ],
-    buttons: [{ value: 'delete', label: 'Delete', danger: true, primary: true }],
-    onLost,
-    submit: sender(() => request('DELETE', `/api/costs/${cost.id}`), onDone),
+  return openVoid({
+    title: monthly ? 'Void this monthly item?' : 'Void this cost?',
+    lead: [`${what}${DOT}${amount}`, ...(monthly ? [`${gone ? `Every month it charged leaves the figures too: ${gone}.` : 'It has not charged yet.'} To end it from a month, use Stop.`] : [])],
+    label: monthly ? 'Void item' : 'Void cost', path: `/api/costs/${cost.id}/void`, onChanged: onDone, onError: onLost,
+  });
+}
+
+// A voided cost's own dialog: what it was, the void said, Restore and its History.
+export function openVoidedDialog({ cost, onDone, onLost }) {
+  const { what } = entryLine(cost);
+  const monthly = cost.repeat === 'monthly';
+  return openVoided({
+    title: monthly ? `Monthly item: ${what}` : `Cost: ${what}`, lead: [`${monthly ? repeatingLine(cost).amount : moneyText(cost.amount)}${DOT}${cost.date}`],
+    voided: cost.voided, path: `/api/costs/${cost.costId ?? cost.id}/restore`, onChanged: onDone, onError: onLost, kind: 'cost', id: cost.costId ?? cost.id,
   });
 }

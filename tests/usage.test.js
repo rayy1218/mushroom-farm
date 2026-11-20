@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
+import { seenAllDay } from './integrity-fixture.js';
 import {
   fixedZone, localZone, dayWindows, runIntervals, msPerDay, meteredDays, totals, roomUsage, farmUsage,
 } from '../server/usage.js';
@@ -126,9 +127,11 @@ test('a metered day uses the meter; rest is the meter minus the fans and humidif
   on(db, room, 'intake', at(20, 0));
   on(db, room, 'intake', at(20, 1), false); // 1 kWh
   on(db, room, 'ac', at(20, 0), true, { mode: 'cool', setpoint: 22, fan: 'auto' });
-  db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 0, 5), ok: true, powerW: 1, energyKwh: 50 });
-  db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 5), ok: true, powerW: 1, energyKwh: 53.5 });
-  db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 6), ok: false, error: 'timeout' }); // not counted
+  // the meter read every 10 minutes all morning (Data integrity: metered while a reading is fresh): 50 to 53.5 kWh by 05:00
+  for (let i = 0; i <= 60; i += 1) {
+    db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 0) + i * 600_000, ok: true, powerW: 1, energyKwh: Math.min(53.5, 50 + i * (3.5 / 30)) });
+  }
+  db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 6) + 1, ok: false, error: 'timeout' }); // not counted
   const today = roomUsage(db, room.id, { days: 1, prices: PRICES, now: NOW, zone }).days[0];
   assert.equal(today.metered, true);
   assert.equal(today.kWh, 3.5);
@@ -136,7 +139,8 @@ test('a metered day uses the meter; rest is the meter minus the fans and humidif
 });
 
 test('rest is never negative; a day with one good reading is estimated', (t) => {
-  const { db, room } = setup(t, { meterAddress: 30, intakeW: 1000 });
+  const { db, room } = setup(t, { meterAddress: 30, intakeW: 1000, trhAddress: 1 });
+  seenAllDay(db, room.id, at(20, 0), NOW);
   on(db, room, 'intake', at(20, 0));
   on(db, room, 'intake', at(20, 4), false); // 4 kWh estimated
   db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 1), ok: true, powerW: 1, energyKwh: 10 });
@@ -145,9 +149,10 @@ test('rest is never negative; a day with one good reading is estimated', (t) => 
   assert.equal(today.kWh, 4);
   db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 2), ok: true, powerW: 1, energyKwh: 11 });
   today = roomUsage(db, room.id, { days: 1, prices: PRICES, now: NOW, zone }).days[0];
-  assert.equal(today.metered, true);
-  assert.equal(today.kWh, 1);
-  assert.equal(today.byMachine.rest, 0); // metered 1 kWh is less than the 4 kWh of fan estimates
+  // metered 01:00 to 01:15 and 02:00 to 02:15 (a reading is fresh 15 minutes): 1 kWh measured; the intake's other 3.5 h
+  // estimated; rest the meter less the intake's 0.5 h then
+  assert.deepEqual([today.metered, today.kWhMeasured, today.kWhEstimated, today.kWh], [false, 1, 3.5, 4.5]);
+  assert.equal(today.byMachine.rest, 0.5);
 });
 
 test('a room without a meter is never metered, even with old readings', (t) => {
@@ -168,15 +173,15 @@ test('totals: today, 7 and 30 days with cost, water cost only with a water price
   const usage = roomUsage(db, room.id, { days: 1, prices: { electricity: 0.55, water: 2 }, now: NOW, zone });
   assert.deepEqual(usage.prices, { electricity: 0.55, water: 2 });
   assert.equal(usage.days.length, 1);
-  assert.deepEqual(usage.today, { kWh: 2, cost: 1.1, waterL: 10, waterCost: 0.02, metered: false });
-  assert.deepEqual(usage.last7, { kWh: 3, cost: 1.65, waterL: 10, waterCost: 0.02, metered: false });
+  assert.deepEqual(usage.today, { kWh: 2, cost: 1.1, estimated: 1.1, waterL: 10, waterCost: 0.02, metered: false });
+  assert.deepEqual(usage.last7, { kWh: 3, cost: 1.65, estimated: 1.65, waterL: 10, waterCost: 0.02, metered: false });
   assert.equal(usage.last30.kWh, 3);
   const free = roomUsage(db, room.id, { days: 1, prices: PRICES, now: NOW, zone });
   assert.equal(free.today.waterCost, null);
 });
 
 test('totals of no days are zero and not metered', () => {
-  assert.deepEqual(totals([], PRICES), { kWh: 0, cost: 0, waterL: 0, waterCost: null, metered: false });
+  assert.deepEqual(totals([], PRICES), { kWh: 0, cost: 0, estimated: 0, waterL: 0, waterCost: null, metered: false });
 });
 
 test('days: the number of days returned follows the query, the totals do not', (t) => {
@@ -199,7 +204,7 @@ test('the farm: days summed over the rooms, a line per room', (t) => {
   assert.equal(farm.days[1].byMachine.intake, 1);
   assert.equal(farm.days[1].byMachine.exhaust, 1);
   assert.equal(farm.days[1].metered, false); // room A has no meter
-  assert.deepEqual(farm.today, { kWh: 2, cost: 1, waterL: 0, waterCost: null, metered: false });
+  assert.deepEqual(farm.today, { kWh: 2, cost: 1, estimated: 1, waterL: 0, waterCost: null, metered: false });
   assert.deepEqual(farm.rooms.map((r) => [r.id, r.name, r.today.kWh, r.last30.kWh]), [[1, 'A', 1, 1], [2, 'B', 1, 1]]);
   assert.deepEqual(Object.keys(farm), ['prices', 'days', 'today', 'last7', 'last30', 'rooms']);
 });

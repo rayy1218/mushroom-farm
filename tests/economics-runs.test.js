@@ -182,6 +182,11 @@ test('the electricity per block: each day to the run open on it, ÷ every block 
   const f = farm(t);
   // run 1: 12 Aug – 23 Sep (43 days, 1,500 blocks), run 2: 24 Sep – 3 Nov (41 days, 1,000 blocks), 10 kWh a day
   assert.deepEqual(read(f).figures['yours.kwhBlock'], { value: 0.336, runs: { count: 2, kWh: 840, days: 84, blocks: 2500 } });
+  // Data integrity (7.2): the share estimated from machine run time and the days not seen, when any
+  const mixed = (room, count) => daysOf(10)(room, count).map((d, i) => ({ ...d, kWhEstimated: i % 2 ? 4 : 0, unseenMs: i % 30 === 0 ? 3_600_000 : 0 }));
+  const runs = read(f, 'lionsmane', { days: mixed }).figures['yours.kwhBlock'].runs;
+  assert.equal(runs.estimatedPct, 20, '4 of 10 kWh on every other day');
+  assert.ok(runs.unseenDays > 0);
   assert.deepEqual(read(f, 'lionsmane', { days: daysOf(10, ['2026-10-01']) }).figures['yours.kwhBlock'], { value: null, pending: true, runs: { count: 2 } });
   assert.equal(read(f, 'lionsmane', { days: daysOf(0) }).figures['yours.kwhBlock'], undefined, 'no kWh recorded: left to the next source');
   // 20 Sep 2027: run 1 started 405 days before, past the 400 kept; run 2 alone

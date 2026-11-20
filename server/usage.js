@@ -3,6 +3,7 @@
 
 import { fanWattFactor } from '../device/sim-power.js';
 import { meanCountedPa } from './filter.js';
+import { energyCost } from './energy-cost.js'; // ---- Data integrity ----
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -82,6 +83,95 @@ export function msPerDay(intervals, days) {
     });
   }
   return out;
+}
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 7.1) Seen time: a room is seen while one of its good
+// readings is at most SEEN_MS old; metered while a good meter reading is. A machine's run time counts only while the room is
+// seen (an outage is no longer costed as running all day); the meter's time is measured, the rest of the seen time estimated.
+export const SEEN_MS = 15 * 60_000; // three readings at the slowest reading interval (300 s)
+const spanMs = (spans) => spans.reduce((s, [a, b]) => s + (b - a), 0);
+// Spans [[start, end]] from seenBoundaries' rows (each reading covers `gap` ms after it), clipped to [from, to].
+export function spansOf(rows, from, to, gap = SEEN_MS) {
+  const last = rows.find((r) => r.at === null)?.prev ?? null;
+  if (last === null) return [];
+  const starts = rows.filter((r) => r.at !== null).sort((a, b) => a.at - b.at);
+  const spans = [];
+  let start = null;
+  for (const r of starts) {
+    if (r.prev === null) { start = r.at; continue; }
+    if (start !== null) spans.push([start, r.prev + gap]);
+    start = r.at;
+  }
+  if (start !== null) spans.push([start, last + gap]);
+  return clipSpans(spans, from, to);
+}
+export const clipSpans = (spans, from, to) => spans.map(([a, b]) => [Math.max(a, from), Math.min(b, to)]).filter(([a, b]) => b > a);
+// Spans a less spans b (both sorted, not overlapping).
+export function subtractSpans(a, b) {
+  const out = [];
+  for (const [s, e] of a) {
+    let cur = s;
+    for (const [bs, be] of b) {
+      if (be <= cur || bs >= e) continue;
+      if (bs > cur) out.push([cur, bs]);
+      cur = Math.max(cur, be);
+    }
+    if (cur < e) out.push([cur, e]);
+  }
+  return out;
+}
+// Spans a joined with spans b, sorted and merged.
+export function unionSpans(a, b) {
+  const all = [...a, ...b].sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const [s, e] of all) {
+    const top = out.at(-1);
+    if (top && s <= top[1]) top[1] = Math.max(top[1], e);
+    else out.push([s, e]);
+  }
+  return out;
+}
+// Machine intervals [{ start, end, kind }] cut to the spans.
+export const intervalsIn = (intervals, spans) => intervals.flatMap((iv) => spans
+  .map(([a, b]) => ({ ...iv, start: Math.max(iv.start, a), end: Math.min(iv.end, b) })).filter((x) => x.end > x.start));
+
+// Two machines' ms per kind ({ on?, full?, fan? } each) added.
+const addMs = (a, b) => Object.fromEntries(MACHINES.map((m) => {
+  const out = { ...(a[m] ?? {}) };
+  for (const [k, v] of Object.entries(b[m] ?? {})) out[k] = (out[k] ?? 0) + v;
+  return [m, out];
+}));
+
+// When the app could see the room in [from, to): { seen, metered (spans), unseenMs }. A room with no sensor or meter is
+// always seen (the app has nothing else to go by); so is the time before its first good reading.
+export function seenOf(db, room, from, to) {
+  const devices = [room.trhAddress, room.co2Address, room.meterAddress, room.dpAddress].some((a) => a !== null && a !== undefined);
+  if (!devices) return { seen: [[from, to]], metered: [], unseenMs: 0 };
+  const first = db.firstReadingAt(room.id);
+  let seen = spansOf(db.seenBoundaries(room.id, from - SEEN_MS, to, SEEN_MS), from, to);
+  if (first === null || first > from) seen = unionSpans(seen, clipSpans([[from, first === null ? to : first]], from, to));
+  const metered = room.meterAddress === null || room.meterAddress === undefined ? []
+    : spansOf(db.seenBoundaries(room.id, from - SEEN_MS, to, SEEN_MS, { meterOnly: true }), from, to);
+  return { seen, metered, unseenMs: (to - from) - spanMs(seen) };
+}
+
+// seenOf for a day of the usage cache: the spans read so far kept on the entry (entry.seen: { upto, seen, metered }), only
+// the readings since (and the SEEN_MS before them) read again; the time before the room's first reading added on top.
+function seenOfDay(db, room, entry, from, to) {
+  const devices = [room.trhAddress, room.co2Address, room.meterAddress, room.dpAddress].some((a) => a !== null && a !== undefined);
+  if (!devices) return { seen: [[from, to]], metered: [], unseenMs: 0 };
+  const s = entry.seen ?? (entry.seen = { upto: from, seen: [], metered: [] });
+  if (to > s.upto) {
+    const lo = Math.max(from, s.upto) - SEEN_MS;
+    s.seen = unionSpans(s.seen, spansOf(db.seenBoundaries(room.id, lo, to, SEEN_MS), from, to));
+    if (room.meterAddress !== null && room.meterAddress !== undefined) {
+      s.metered = unionSpans(s.metered, spansOf(db.seenBoundaries(room.id, lo, to, SEEN_MS, { meterOnly: true }), from, to));
+    }
+    s.upto = to;
+  }
+  const first = db.firstReadingAt(room.id);
+  const seen = first === null || first > from ? unionSpans(s.seen, clipSpans([[from, first === null ? to : first]], from, to)) : s.seen;
+  return { seen: clipSpans(seen, from, to), metered: clipSpans(s.metered, from, to), unseenMs: (to - from) - spanMs(clipSpans(seen, from, to)) };
 }
 
 // Estimated kWh of each machine in one day from its run time and the room's ratings; the intake's rating times intakeFactor
@@ -201,19 +291,28 @@ export function dayWork(db, room, day, { now, zone }) {
   }
   if (entry.meter) advanceMeter(db, room.id, entry.meter, hi, settled);
   if (entry.ms) return entry;
+  // Data integrity: each machine's run time split into the metered time and the seen time not metered (estimated); none
+  // while the room is not seen. Today's seen time is read on from where the last request left it (entry.seen).
+  const { seen, metered, unseenMs } = seenOfDay(db, room, entry, day.start, day.end);
+  const estimated = subtractSpans(seen, metered);
   const ms = {};
+  const msMetered = {};
   for (const machine of MACHINES) {
-    ms[machine] = msPerDay(runIntervals(db.machineLogWindow(room.id, machine, day.start, day.end), day.start, day.end, machine), [day])[0];
+    const on = runIntervals(db.machineLogWindow(room.id, machine, day.start, day.end), day.start, day.end, machine);
+    ms[machine] = msPerDay(intervalsIn(on, estimated), [day])[0];
+    msMetered[machine] = msPerDay(intervalsIn(on, metered), [day])[0];
   }
   const pa = room.dpAddress === null ? null
     : meanCountedPa(db.filterReadingsWindow(room.id, day.start, hi), db.machineLogWindow(room.id, 'intake', day.start - 60_000, day.end));
-  if (settled) Object.assign(entry, { ms, pa });
-  return { ...entry, ms, pa };
+  if (settled) Object.assign(entry, { ms, msMetered, unseenMs, pa });
+  return { ...entry, ms, msMetered, unseenMs, pa };
 }
 
-// The days of a room: [{ date, kWh, metered, byMachine, waterL }], oldest first, with the unrounded numbers rounded to 3
-// places. When a day is metered, the aircon estimate is replaced by `rest` (metered minus the other machines, at least 0);
-// estimates of the other machines above the metered kWh are scaled down so that byMachine adds up to kWh.
+// The days of a room: [{ date, kWh, kWhMeasured, kWhEstimated, unseenMs, metered, byMachine, waterL }], oldest first, with the
+// unrounded numbers rounded to 3 places. kWhMeasured: the meter's; kWhEstimated: the machines' run time while the room was
+// seen and not metered (Data integrity 7.1); kWh their sum; metered: measured and nothing estimated. In the metered time the
+// aircon estimate is replaced by `rest` (metered minus the other machines, at least 0); estimates of the other machines above
+// the metered kWh are scaled down so that their metered part adds up to it.
 // cachedOnly: a day that ended and is not in the cache yet is not worked out but given as { date, pending: true } (a cold
 // year of one-second readings takes seconds: warmRoom works it out in the background); today and a day not yet settled are
 // read as always (one day, from the last reading on).
@@ -229,31 +328,41 @@ export function roomDays(db, room, { now, zone, count, cachedOnly = false }) {
     const end = zone.addDays(day.start, 1);
     if (cachedOnly && now >= end + SETTLE_MS && !cache.get(`${day.start}/${end}`)?.ms) return { date: day.date, pending: true };
     const work = dayWork(db, room, day, { now, zone });
-    const est = estimateDay(work.ms, room, work.pa === null ? 1 : fanWattFactor(work.pa, room.filterCleanPa, room.fanMaxPa));
+    const factor = work.pa === null ? 1 : fanWattFactor(work.pa, room.filterCleanPa, room.fanMaxPa);
     const isMetered = room.meterAddress !== null && work.meter.readings >= 2;
-    const others = est.intake + est.exhaust + est.circulation + est.humidifier + est.dehumidifier + est.lights;
+    const inMeter = estimateDay(work.msMetered ?? {}, room, factor); // the metered time
+    // the seen time not metered; a day the meter gave fewer than two readings: its metered time is estimated too
+    const est = estimateDay(isMetered ? work.ms : addMs(work.ms, work.msMetered ?? {}), room, factor);
+    const sumOf = (e, keys = MACHINES) => keys.reduce((s, k) => s + e[k], 0);
+    const OTHERS = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights'];
+    const kWhEstimated = round(sumOf(est), 3);
+    const kWhMeasured = isMetered ? round(work.meter.kWh, 3) : 0;
     let byMachine = { ...est, rest: 0 };
     if (isMetered) {
       const metered = work.meter.kWh;
+      const others = sumOf(inMeter, OTHERS);
       const scale = others > metered ? metered / others : 1; // the estimates are above the meter: they cannot be all right
-      byMachine = {
-        intake: est.intake * scale, exhaust: est.exhaust * scale, circulation: est.circulation * scale,
-        humidifier: est.humidifier * scale, dehumidifier: est.dehumidifier * scale, lights: est.lights * scale, ac: 0, rest: Math.max(0, metered - others),
-      };
+      byMachine = { ...Object.fromEntries(OTHERS.map((k) => [k, inMeter[k] * scale + est[k]])), ac: est.ac, rest: Math.max(0, metered - others) };
     }
-    const kWh = round(isMetered ? work.meter.kWh : others + est.ac, 3);
+    const kWh = round(kWhMeasured + kWhEstimated, 3);
     for (const key of Object.keys(byMachine)) byMachine[key] = round(byMachine[key], 3);
-    if (isMetered && others > work.meter.kWh) { // the rounding must not move the sum off kWh: the biggest machine takes the rest
+    { // the rounding must not move the sum off kWh: the biggest machine takes the rest
       const sum = Object.values(byMachine).reduce((a, b) => a + b, 0);
-      const biggest = ['intake', 'exhaust', 'circulation', 'humidifier', 'dehumidifier', 'lights'].reduce((a, b) => (byMachine[b] > byMachine[a] ? b : a));
-      byMachine[biggest] = round(byMachine[biggest] + kWh - sum, 3);
+      if (Math.abs(sum - kWh) > 1e-9 && kWh > 0) {
+        const biggest = [...MACHINES, 'rest'].reduce((a, b) => (byMachine[b] > byMachine[a] ? b : a));
+        byMachine[biggest] = round(byMachine[biggest] + kWh - sum, 3);
+      }
     }
+    const humidifierMs = (work.ms.humidifier.on ?? 0) + (work.msMetered?.humidifier?.on ?? 0);
     return {
       date: day.date,
       kWh,
-      metered: isMetered,
+      kWhMeasured,
+      kWhEstimated,
+      unseenMs: work.unseenMs ?? 0,
+      metered: isMetered && kWhEstimated === 0,
       byMachine,
-      waterL: round(((work.ms.humidifier.on ?? 0) / HOUR_MS) * room.humidifierLH, 3),
+      waterL: round((humidifierMs / HOUR_MS) * room.humidifierLH, 3),
     };
   });
 }
@@ -289,16 +398,13 @@ export async function warmRoom(db, roomId, { now = Date.now(), zone = localZone,
 }
 
 // { kWh, cost, waterL, waterCost, metered } over a list of days; cost in the price's currency, 2 places.
+// Data integrity (spec 9): each day priced at its own tariff price (prices.tariff, else prices.electricity) and rounded, then
+// summed (energy-cost.js), so the Energy card's RM is Costs' and Harvest's; estimated: the RM of the estimated kWh.
 export function totals(days, prices) {
   const kWh = round(days.reduce((sum, d) => sum + d.kWh, 0), 3);
   const waterL = round(days.reduce((sum, d) => sum + d.waterL, 0), 3);
-  return {
-    kWh,
-    cost: round(kWh * prices.electricity, 2),
-    waterL,
-    waterCost: prices.water === null ? null : round((waterL / 1000) * prices.water, 2),
-    metered: isMetered(days),
-  };
+  const c = energyCost(days, prices);
+  return { kWh, cost: c.electricity, estimated: c.estimated, waterL, waterCost: c.water, metered: isMetered(days) };
 }
 
 // A range is metered when it has a metered day and every day that used anything is metered (days before the room's
@@ -307,6 +413,9 @@ function isMetered(days) {
   const used = days.filter((d) => d.metered || d.kWh > 0);
   return used.length > 0 && used.every((d) => d.metered);
 }
+
+// The prices a reply shows: today's electricity and the water's (the tariff stays inside: Data integrity).
+const shownPrices = ({ electricity, water }) => ({ electricity, water });
 
 const summary = (days, prices) => ({
   today: totals(days.slice(-1), prices),
@@ -320,7 +429,7 @@ export function roomUsage(db, roomId, { days = 30, prices, now = Date.now(), zon
   const room = db.getRoom(roomId);
   if (!room) return null;
   const all = roomDays(db, room, { now, zone, count: Math.max(days, MIN_DAYS) });
-  return { prices, days: all.slice(-days), ...summary(all, prices) };
+  return { prices: shownPrices(prices), days: all.slice(-days), ...summary(all, prices) };
 }
 
 // GET /api/usage: the same for the whole farm (days summed over the rooms; metered when every room is) plus
@@ -334,17 +443,30 @@ export function farmUsage(db, { days = 30, prices, now = Date.now(), zone = loca
     return {
       date: day.date,
       kWh: round(mine.reduce((s, d) => s + d.kWh, 0), 3),
+      // ---- Data integrity ---- (7.1) the farm's measured, estimated and unseen parts: its rooms' summed
+      kWhMeasured: round(mine.reduce((s, d) => s + d.kWhMeasured, 0), 3),
+      kWhEstimated: round(mine.reduce((s, d) => s + d.kWhEstimated, 0), 3),
+      unseenMs: mine.reduce((s, d) => s + d.unseenMs, 0),
       metered: isMetered(mine), // every room that used anything that day is metered
       byMachine,
       waterL: round(mine.reduce((s, d) => s + d.waterL, 0), 3),
     };
   });
+  // ---- Data integrity ---- (9, G18) each room-day priced and rounded on its own: the farm's RM is the sum of its rooms'
+  const period = (n) => farmTotals(rooms.map((r) => totals(r.days.slice(-n), prices)), farm.slice(-n), prices);
   return {
-    prices,
+    prices: shownPrices(prices),
     days: farm.slice(-days),
-    ...summary(farm, prices),
+    today: period(1), last7: period(7), last30: period(30),
     rooms: rooms.map(({ room, days: d }) => ({
       id: room.id, name: room.name, today: totals(d.slice(-1), prices), last30: totals(d.slice(-30), prices),
     })),
   };
+}
+
+// The rooms' totals of a period summed (the RM to the sen); metered as the farm's days of it.
+function farmTotals(list, days, prices) {
+  const add = (key, places) => round(list.reduce((sum, t) => sum + t[key], 0), places);
+  const water = prices.water === null || prices.water === undefined;
+  return { kWh: add('kWh', 3), cost: add('cost', 2), estimated: add('estimated', 2), waterL: add('waterL', 3), waterCost: water ? null : add('waterCost', 2), metered: isMetered(days) };
 }

@@ -62,8 +62,8 @@ function farm(s) {
   db.insertHarvest({ roomId: room, runId: run.id, crop: 'oyster', stage: 'fruiting', flush: 1, blocks: 1, kg: 20, pickedAt: at('2026-11-10'), worker: null, taskId: null, at: at('2026-11-10') });
   const kedai = sales.addBuyer({ name: 'Kedai Ah Seng' });
   const pasar = sales.addBuyer({ name: 'Pasar Tani' });
-  sales.record({ soldAt: at('2026-11-05'), buyerId: kedai.id, lines: [{ crop: 'oyster', kg: 8, priceKg: 12, roomId: room }] });
-  sales.record({ soldAt: at('2026-11-12'), buyerId: pasar.id, lines: [{ crop: 'oyster', kg: 2, priceKg: 12, roomId: room }] });
+  sales.record({ soldAt: at('2026-11-05'), buyerId: kedai.id, lines: [{ crop: 'oyster', kg: 8, priceKg: 12, roomId: room }], confirmed: ['before-picked'] });
+  sales.record({ soldAt: at('2026-11-12'), buyerId: pasar.id, lines: [{ crop: 'oyster', kg: 2, priceKg: 12, roomId: room }], confirmed: ['before-picked'] });
   const sawdust = inventory.addItem({ name: 'Sawdust', kind: 'other', unit: 'kg' });
   inventory.use({ itemId: sawdust.id, qty: 30, worker: 'Ali' });
   const bags = inventory.addItem({ name: 'Grow bags', kind: 'bags', unit: 'pcs', reorderAt: 200 });
@@ -82,7 +82,7 @@ test('summary: the reply\'s parts; the month\'s money is Costs\' own, last month
   farm(s);
   await s.warm();
   const r = s.business.summary();
-  assert.deepEqual(Object.keys(r), ['month', 'lastMonth', 'needs', 'runs', 'stock', 'errors']);
+  assert.deepEqual(Object.keys(r), ['month', 'lastMonth', 'needs', 'unsold', 'runs', 'stock', 'errors']);
   const view = s.costs.monthView();
   assert.deepEqual(r.month, { month: '2026-11', today: '2026-11-15', pending: false, tiles: view.tiles, repeating: view.repeating, bought: view.bought });
   assert.deepEqual(r.stock, s.inventory.list().value, 'Inventory\'s worth (Money truth)');
@@ -224,7 +224,7 @@ test('summary: the open runs as Runs lists them; an ended run is not in progress
   const { runs } = s.business.summary();
   assert.deepEqual(runs.map((r) => [r.id, r.roomName, r.kg, r.endedAt]), [[f.run.id, 'Container 1', 20, null]]);
   assert.deepEqual(Object.keys(runs[0]), ['id', 'roomId', 'roomName', 'crops', 'partial', 'blocksInAt', 'startedAt', 'endedAt', 'kg', 'perBlock',
-    'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete']);
+    'income', 'costs', 'profit', 'profitPerKg', 'pending', 'incomplete', 'repriced']);
   s.db.setProgram(f.room, { ...s.db.getProgram(f.room), crops: [] }, { change: 'end', at: at('2026-11-15', 9) });
   assert.deepEqual(s.business.summary().runs, []);
 });
@@ -266,6 +266,6 @@ test('summary: every module failing: each part null or empty, every part named',
     costs: { monthView: fail }, sales: { view: fail }, inventory: { list: fail }, batches: { list: fail }, runs: { list: fail },
   });
   const r = s.business.summary();
-  assert.deepEqual(r, { month: null, lastMonth: null, needs: [], runs: null, stock: null, errors: Object.fromEntries(PARTS.map((p) => [p, PART_FAILED])) });
+  assert.deepEqual(r, { month: null, lastMonth: null, needs: [], unsold: null, runs: null, stock: null, errors: Object.fromEntries(PARTS.map((p) => [p, PART_FAILED])) });
   assert.equal(PART_FAILED, 'Something went wrong');
 });

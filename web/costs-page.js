@@ -17,9 +17,12 @@ import {
   monthTitle, addMonths, monthTiles, monthNotes, categoryRows, categoryTotal, entryLine, repeatingLine, RUN_COLUMNS, runRow, runParts,
   profitBars, BARS_M, chartMonths, chartTitle, noFigures, chartWords, SHARED_NOTE,
   boughtView, BOUGHT_NOTE, equipmentLine, EQUIPMENT_NONE, // ---- Money truth ----
+  repricedText, // ---- Data integrity ----
 } from './costs-math.js';
-import { openAddDialog, openEditDialog, openChangeDialog, openStopDialog } from './costs-dialogs.js';
-import { openEquipmentDialog } from './costs-equipment.js'; // ---- Money truth ----
+import { openAddDialog, openEditDialog, openChangeDialog, openStopDialog, openVoidedDialog } from './costs-dialogs.js';
+import { openEquipmentDialog, openEquipmentVoided } from './costs-equipment.js'; // ---- Money truth ----
+import { recordTitle, entryLine as changeLine } from './changes-math.js'; // ---- Data integrity ----
+import { errorText } from './task-dialogs.js';
 
 const REFRESH_MS = 60_000;
 const LISTEN = ['costs', 'harvest', 'sales', 'batches', 'inventory'].filter((type) => EVENT_TYPES.includes(type));
@@ -51,6 +54,7 @@ const TEMPLATE = `
       <h2 id="co-month-title" data-title></h2>
       <div class="us-tiles hv-tiles co-tiles" data-tiles></div>
       <ul class="co-notes" data-notes></ul>
+      <div class="co-repriced" data-repriced hidden></div>
       <h3 class="co-chart-title" id="co-chart-title" data-chart-title></h3>
       <div class="co-chart" data-chart></div>
     </section>
@@ -114,6 +118,7 @@ export function mount(container, { month = null } = {}) {
     tiles: q('[data-tiles]'), notes: q('[data-notes]'), chartTitle: q('[data-chart-title]'), chart: q('[data-chart]'),
     categories: q('[data-categories]'), entries: q('[data-entries]'), repeating: q('[data-repeating]'), runs: q('[data-runs]'),
     equipment: q('[data-equipment]'), addEquipment: q('[data-add-equipment]'), // ---- Money truth ----
+    repriced: q('[data-repriced]'), // ---- Data integrity ----
   };
   document.title = 'Costs · Mushroom farm';
 
@@ -260,7 +265,55 @@ export function mount(container, { month = null } = {}) {
     const notes = monthNotes(view);
     els.notes.replaceChildren(...notes.map((n) => noteNode('li', '', n)));
     els.notes.hidden = notes.length === 0;
+    paintRepriced();
     paintChart();
+  }
+
+  // ---- Data integrity ---- (8.3) a closed month whose figures moved since: what its profit was and is, the changes that
+  // reached it (a fold), and Keep the new figures (they become the month's kept ones; the line goes).
+  let keepOpen = false;
+  function paintRepriced() {
+    const r = view.repriced ?? null;
+    els.repriced.hidden = !r;
+    if (!r) {
+      els.repriced.replaceChildren();
+      return;
+    }
+    const lead = el('p', 'co-repriced-text', repricedText(r));
+    const toggle = el('button', 'dx-history-toggle', `What changed (${r.changes.length})`);
+    toggle.type = 'button';
+    toggle.dataset.focusKey = 'repriced-changes';
+    toggle.setAttribute('aria-expanded', String(keepOpen));
+    toggle.setAttribute('aria-controls', 'co-repriced-list');
+    const list = el('ol', 'dx-history-list');
+    list.id = 'co-repriced-list';
+    list.hidden = !keepOpen;
+    for (const e of r.changes) list.append(el('li', '', `${recordTitle(e)}: ${changeLine(e)}`));
+    toggle.addEventListener('click', () => {
+      keepOpen = !keepOpen;
+      toggle.setAttribute('aria-expanded', String(keepOpen));
+      list.hidden = !keepOpen;
+    });
+    const keep = el('button', '', 'Keep the new figures');
+    keep.type = 'button';
+    keep.dataset.focusKey = 'repriced-keep';
+    const said = el('p', 'field-error');
+    said.setAttribute('role', 'alert');
+    said.hidden = true;
+    keep.addEventListener('click', async () => {
+      keep.disabled = true;
+      try {
+        await request('POST', `/api/costs/months/${view.month.replace('-', '')}/keep`, {});
+        reload.call();
+      } catch (err) {
+        said.textContent = errorText(err);
+        said.hidden = false;
+        keep.disabled = false;
+      }
+    });
+    const row = el('div', 'co-repriced-acts');
+    row.append(toggle, keep);
+    els.repriced.replaceChildren(lead, row, list, said);
   }
 
   // The months' profit bars: one Tab stop (the shown month), ← → Home End move along them, Enter opens a month.
@@ -309,6 +362,8 @@ export function mount(container, { month = null } = {}) {
         const y = b.loss ? b.y + b.h + 13 : b.y - 5;
         link.append(svg('text', { x: b.x + b.w / 2, y, 'text-anchor': 'middle', class: 'co-bar-value', 'aria-hidden': 'true' }, b.value));
       }
+      // ---- Data integrity ---- a re-priced month: a dot over its bar (its name says "re-priced")
+      if (b.dot) link.append(svg('circle', { cx: b.dot.cx, cy: b.dot.cy, r: 3, class: 'co-bar-repriced', 'aria-hidden': 'true' }));
       if (slot >= LABEL_MIN || (i - at) % 2 === 0) {
         link.append(svg('text', { x: b.x + b.w / 2, y: CHART_H - 6, 'text-anchor': 'middle', class: `co-axis${b.shown ? ' co-axis-shown' : ''}` }, b.label));
       }
@@ -419,11 +474,21 @@ export function mount(container, { month = null } = {}) {
       const li = el('li', 'co-entry co-equip');
       const what = el('span', 'co-what', x.name);
       what.append(el('span', 'co-sub', x.sub));
-      const off = el('span', 'co-date co-equip-off', x.writeOff);
-      off.append(el('span', 'co-sub', x.left));
+      const off = el('span', 'co-date co-equip-off');
+      off.append(el('span', x.voided ? 'dx-figure' : '', x.writeOff), el('span', 'co-sub', x.left));
       const acts = el('span', 'co-acts');
-      acts.append(quietButton('Edit', `equipment-${item.id}`, () => openEquipmentDialog({ item, rooms, today: view.today, onDone: () => reloadAll(), onLost: showError }), `Edit ${x.name}`));
-      li.append(what, el('span', 'co-amount', x.amount), off, acts);
+      // Data integrity: a voided item stays, struck, its void said; it opens as itself (Restore, History)
+      if (x.edited) what.append(el('span', 'dx-edited', 'edited'));
+      if (x.voided) {
+        li.classList.add('dx-voided');
+        what.prepend(el('span', 'dx-chip', 'Voided'));
+        what.append(el('span', 'dx-void-line', x.voided));
+      }
+      const done = { onDone: () => reloadAll(), onLost: showError };
+      acts.append(x.voided
+        ? quietButton('Open', `equipment-${item.id}`, () => openEquipmentVoided({ item, ...done }), `Open ${x.name}, voided`)
+        : quietButton('Edit', `equipment-${item.id}`, () => openEquipmentDialog({ item, rooms, today: view.today, ...done }), `Edit ${x.name}`));
+      li.append(what, el('span', `co-amount${x.voided ? ' dx-figure' : ''}`, x.amount), off, acts);
       list.append(li);
     }
     els.equipment.replaceChildren(list);
@@ -450,14 +515,22 @@ export function mount(container, { month = null } = {}) {
       if (x.monthly) what.append(' ', el('span', 'co-tag', 'monthly'));
       if (x.bill) what.append(' ', el('span', 'co-tag', 'bill'));
       if (x.topUp) what.append(el('span', 'co-sub', x.topUp));
+      // Data integrity: a voided cost stays in the month's list, struck, its void said; it opens as itself
+      if (x.edited) what.append(el('span', 'dx-edited', 'edited'));
+      if (x.voided) {
+        li.classList.add('dx-voided');
+        what.prepend(el('span', 'dx-chip', 'Voided'));
+        what.append(el('span', 'dx-void-line', x.voided));
+      }
       const acts = el('span', 'co-acts');
-      acts.append(quietButton('Edit', `edit-${e.costId}-${e.date}`, () => {
+      acts.append(quietButton(x.voided ? 'Open' : 'Edit', `edit-${e.costId}-${e.date}`, () => {
         const c = costOr(e.costId);
         if (!c) return;
-        if (c.repeat === 'monthly') openChangeDialog({ cost: c, ...dialogOpts() });
+        if (c.voided) openVoidedDialog({ cost: c, ...dialogOpts() });
+        else if (c.repeat === 'monthly') openChangeDialog({ cost: c, ...dialogOpts() });
         else openEditDialog({ cost: c, ...dialogOpts() });
-      }, `Edit ${x.what}, ${x.date}`));
-      li.append(el('span', 'co-date', x.date), what, el('span', 'co-whom', x.whom), el('span', 'co-amount', x.amount), acts);
+      }, `${x.voided ? 'Open' : 'Edit'} ${x.what}, ${x.date}${x.voided ? ', voided' : ''}`));
+      li.append(el('span', 'co-date', x.date), what, el('span', 'co-whom', x.whom), el('span', `co-amount${x.voided ? ' dx-figure' : ''}`, x.amount), acts);
       list.append(li);
     }
     els.entries.replaceChildren(list);
@@ -523,6 +596,7 @@ export function mount(container, { month = null } = {}) {
         // a loss: only the figure in the loss tone, and Profit says "Loss" in words (the month card's way)
         if (loss) td.append(el('span', 'co-loss', c), ...(i === 4 ? [el('span', 'co-sub', 'Loss')] : []));
         if (i === 3 && r.incomplete) td.append(el('span', 'co-sub', 'Some costs have no price'));
+        if (i === 4 && r.repriced) td.append(el('span', 'co-sub', 'Re-priced')); // ---- Data integrity ---- a closed month of it moved
         return td;
       });
       tr.append(th, ...cells);

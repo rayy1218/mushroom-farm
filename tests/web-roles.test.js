@@ -63,7 +63,7 @@ test('Sign out looks like the other top links; the picker\'s rules are gone', ()
 const server = (name) => readFileSync(new URL(`../server/${name}`, import.meta.url), 'utf8');
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE'];
 
-const PAGES_OF_A_WORKER = ['route.js', "const WORKER_PAGES = new Set(['today', 'calendar', 'overview', 'detail', 'harvest', 'inventory', 'inventoryItem', 'inventoryCount']);"];
+const PAGES_OF_A_WORKER = ['route.js', "const WORKER_PAGES = new Set(['today', 'calendar', 'overview', 'detail', 'harvest', 'inventory', 'inventoryItem', 'inventoryCount', 'changes']);"];
 const NO_SETUP_TAB = ['route.js', "export const OWNER_TABS = ['simulations', 'setup'];"];
 // no switches: a worker reads the control settings for the bands only (spec 2026-11-12-alarms-triage-design.md 7)
 const NO_SWITCHES = ['room-detail.js', 'manual: inManual && isOwner(),'];
@@ -81,6 +81,8 @@ const OWNER_ONLY = [
   ['suggest-page.js', 'Suggest machines', OWNER_PAGE], ['sales-page.js', 'Sales', OWNER_PAGE], ['costs-page.js', 'Costs', OWNER_PAGE],
   ['runs-page.js', 'Runs and a run', OWNER_PAGE], ['business-page.js', 'the Business summary', OWNER_PAGE],
   ['economics-page.js', 'Economics', OWNER_PAGE], // ---- Economics ----
+  // ---- Data integrity ---- a worker opens the Changes page and reads whose it is: the server refuses the log (403)
+  ['changes-page.js', 'the Changes page (the log holds money)', { 'app.js': ['changes-page.js', 'if (err.status === 403) {'] }],
   ['batches-sheet.js', "Batches' myGAP sheet", OWNER_PAGE], ['task-sheet.js', "a room's month sheet", OWNER_PAGE],
   ['inventory-sheet.js', "Inventory's myGAP sheet", OWNER_PAGE],
   ['batches-page.js', 'Batches; on Today its Blocks waiting card, made for an owner only',
@@ -98,10 +100,22 @@ const OWNER_ONLY = [
 const WRAPPERS = {
   'api.js': ['export async function request(method, path, body, timeout = 10000) {', 'res = await fetch(path, init);'],
   'crop-card.js': ['async function send(body, fields, after) {'],
-  'harvest-card.js': ['async function send(method, path, body) {', 'await request(method, path, body, COMMAND_TIMEOUT);'],
-  'inventory-dialogs.js': ['async function send(method, path, body) {', 'const reply = await request(method, path, body, COMMAND_TIMEOUT);'],
-  'task-dialogs.js': ['async function send(path, body, form = null) {', "const row = await request('POST', path, body, COMMAND_TIMEOUT);"],
+  'harvest-card.js': ['async function send(method, path, body, form = null, asking = null) {',
+    "const out = await asking(form, body, (b) => request(method, path, b, COMMAND_TIMEOUT), (f) => (f === 'pickedAt' ? 'pickedDate' : f));",
+    '} else await request(method, path, body, COMMAND_TIMEOUT);'],
+  'inventory-dialogs.js': ['async function send(method, path, body, asks = null) {', 'const reply = await request(method, path, asks ? asks.body(body) : body, COMMAND_TIMEOUT);'],
+  'task-dialogs.js': ['async function send(path, body, form = null, asking = null) {',
+    "const out = await asking(form, body, async (b) => { row = await request('POST', path, b, COMMAND_TIMEOUT); });",
+    "} else row = await request('POST', path, body, COMMAND_TIMEOUT);"],
 };
+// ---- Data integrity ---- the shared parts a worker's dialogs import: the asks' send, the void confirm's post (its path the
+// caller's: a void or restore, each behind its owner's guard), the History fold (owner only, below)
+Object.assign(WRAPPERS, {
+  'asks.js': ['await send(confirm.body(body));'],
+  'not-sold-dialog.js': ['const out = await send(f, r.body, async (body) => {'], // its routes on the lines under it
+  'void-dialog.js': ['async function send(path, body, confirm, primary, label, field) {', "await request('POST', path, confirm.body(body), TIMEOUT);",
+    "const r = await send(path, { reason }, confirm, handle.button('void'), label, 'reason');", "const r = await send(path, {}, confirm, handle.button('restore'), 'Restore', null);"],
+});
 const FIXED_ROUTE_SEND = new Set(['crop-card.js']);
 
 // [module, method ('?': not read off the line), path, ...[guard file, guard text]]
@@ -121,9 +135,16 @@ const EXCEPTIONS = [
   ['crop-card.js', 'PUT', '/api/rooms/1/control', ['crop-card.js', "backBtn.dataset.ownerOnly = ''"]],
   ['harvest-card.js', 'GET', '/api/batches', ['harvest-card.js', 'isOwner() ? readBlocks(data.current) : null']],
   ['harvest-card.js', 'GET', '/api/costs/summary', ['harvest-card.js', 'isOwner() ? readProfit(data.current) : null']],
-  ['harvest-card.js', 'PUT', '/api/harvests/1', ['harvest-card.js', "edit.dataset.ownerOnly = ''"]], // Edit, and Delete in its dialog
-  ['harvest-card.js', 'DELETE', '/api/harvests/1', ['harvest-card.js', "edit.dataset.ownerOnly = ''"]],
-  ['inventory-done.js', 'DELETE', '/api/inventory/moves/1', ['inventory-done.js', 'const moves = isOwner() ? result.moves : null;']], // Undo
+  ['harvest-card.js', 'PUT', '/api/harvests/1', ['harvest-card.js', "edit.dataset.ownerOnly = ''"]], // Edit, and Void in its dialog
+  // Data integrity: a harvest is voided and restored by the owner (its row's Edit or Open); a Not sold record is recorded by a
+  // worker too, changed by the owner (its row's Edit); the buyers are read for an owner's dialog only
+  ['harvest-card.js', '?', '/api/harvests/1/void', ['harvest-card.js', "edit.dataset.ownerOnly = ''; // ---- Login ---- a harvest is changed by the owner"]],
+  ['harvest-card.js', '?', '/api/harvests/1/restore', ['harvest-card.js', "edit.dataset.ownerOnly = ''; // ---- Login ---- a harvest is changed by the owner"]],
+  ['not-sold-dialog.js', 'PUT', '/api/not-sold/1', ['harvest-card.js', "edit.dataset.ownerOnly = ''; // a worker records Not sold; the owner changes it"]],
+  ['not-sold-dialog.js', '?', '/api/not-sold/1/void', ['harvest-card.js', "edit.dataset.ownerOnly = ''; // a worker records Not sold; the owner changes it"]],
+  ['not-sold-dialog.js', '?', '/api/not-sold/1/restore', ['harvest-card.js', "edit.dataset.ownerOnly = ''; // a worker records Not sold; the owner changes it"]],
+  ['not-sold-dialog.js', 'GET', '/api/buyers', ['not-sold-dialog.js', "if (isOwner()) ({ buyers } = await request('GET', '/api/buyers'));"]],
+  // Data integrity (12): Undo (DELETE /api/inventory/moves/:id) is a worker's route too, inside its minute, their own
   ['inventory-dialogs.js', '?', '/api/inventory/items/1', ['inventory-item.js', '<button type="button" data-edit data-owner-only>']], // Edit item
   ['inventory-dialogs.js', '?', '/api/inventory/items', ['inventory-page.js', '<button type="button" data-add data-owner-only>'],
     ['inventory-page.js', 'data-add-empty data-owner-only']], // Add item
@@ -132,8 +153,11 @@ const EXCEPTIONS = [
   ['inventory-dialogs.js', 'POST', '/api/inventory/purchases', ['inventory-item.js', '<button type="button" data-purchase data-owner-only>'],
     ['inventory-page.js', '<button type="button" data-purchase disabled data-owner-only>']],
   ['inventory-dialogs.js', 'PUT', '/api/inventory/moves/1', ['inventory-item.js', "b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner"]],
-  ['inventory-dialogs.js', 'DELETE', '/api/inventory/moves/1', ['inventory-item.js', "b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner"]],
+  // Data integrity: a move is voided or restored by the owner (its row's button), never deleted from a dialog
+  ['inventory-dialogs.js', '?', '/api/inventory/moves/1/void', ['inventory-item.js', "b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner"]],
+  ['inventory-dialogs.js', '?', '/api/inventory/moves/1/restore', ['inventory-item.js', "b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner"]],
   ['inventory-dialogs.js', 'POST', '/api/inventory/lots/1/throw-out', ['inventory-item.js', "action.dataset.ownerOnly = ''"]],
+  ['changes-fold.js', 'GET', '/api/changes', ['changes-fold.js', 'if (!isOwner()) return null;']], // ---- Data integrity ---- the History fold
   ['task-dialogs.js', 'POST', '/api/tasks/1/cancel', ['task-list.js', "b.dataset.ownerOnly = ''"]], // a long-term task's Cancel
   ['task-dialogs.js', 'POST', '/api/rooms/1/tasks', ['tasks-card.js', "add.dataset.ownerOnly = ''"], PAGES_OF_A_WORKER], // Add; Plan this (Suggest page)
   ['task-dialogs.js', 'PUT', '/api/rooms/1', ['task-dialogs.js', 'const update = isOwner() ? setupUpdate(row.source, room) : null;']],

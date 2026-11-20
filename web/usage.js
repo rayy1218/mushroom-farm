@@ -4,7 +4,7 @@
 import { request } from './api.js';
 import {
   USAGE_DAYS, USAGE_REFRESH_MS, usageTiles, barSeries, barLayout, barAt, barsSummary, barTip, axisLabel,
-  breakdown, breakdownNote, formatKWh, formatRM,
+  breakdown, breakdownNote, formatKWh, formatRM, noSensorLine,
 } from './usage-math.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -141,6 +141,8 @@ export function createUsageCard(host, { roomId, getRoom }) {
   const tiles = text('div', 'us-tiles');
   const hint = text('p', 'muted us-hint', PRICE_HINT);
   hint.hidden = true;
+  const sensorless = text('p', 'muted us-hint'); // ---- Data integrity ---- a room with no sensor: all of it estimated
+  sensorless.hidden = true;
   const msg = text('p', 'none', 'Loading…');
   const charts = text('div', 'us-charts');
   const energyBox = text('div', 'us-chart');
@@ -156,13 +158,16 @@ export function createUsageCard(host, { roomId, getRoom }) {
   energyBox.append(legend);
   charts.append(energyBox, waterBox);
   const tableBox = text('div', 'us-table-box');
-  host.append(tiles, hint, msg, charts, tableBox);
+  host.append(tiles, sensorless, hint, msg, charts, tableBox);
   charts.hidden = true;
 
   function paint() {
     const days = Array.isArray(usage?.days) ? usage.days : [];
     tiles.replaceChildren(...usageTileNodes(usage));
     hint.hidden = !usage || Number.isFinite(usage.prices?.water);
+    const none = noSensorLine(getRoom?.());
+    sensorless.textContent = none ?? '';
+    sensorless.hidden = !usage || !none;
     msg.hidden = days.length > 0;
     if (days.length === 0) msg.textContent = usage ? 'No usage recorded yet' : msg.textContent;
     charts.hidden = days.length === 0;
@@ -173,7 +178,7 @@ export function createUsageCard(host, { roomId, getRoom }) {
     else energyChart.update(energy);
     if (!waterChart) waterChart = drawBarChart(waterHost, water);
     else waterChart.update(water);
-    tableBox.replaceChildren(...(days.length ? [breakdownTable(days, usage?.prices?.electricity, getRoom?.()?.dehumidifier === true, getRoom?.()?.lights === true)] : []));
+    tableBox.replaceChildren(...(days.length ? [breakdownTable(days, usage, getRoom?.()?.dehumidifier === true, getRoom?.()?.lights === true)] : []));
   }
 
   async function refresh(force = false) {
@@ -206,9 +211,10 @@ export function createUsageCard(host, { roomId, getRoom }) {
   };
 }
 
-// The 30-day breakdown per machine: kWh, share and cost; a total row; one line on how the days were worked out.
-function breakdownTable(days, price, dehumidifier, lights) {
-  const b = breakdown(days, price, { dehumidifier, lights });
+// The 30-day breakdown per machine: kWh, share and cost; a total row; one line on how the days were worked out. The RM is the
+// server's for the 30 days (each room-day at its tariff, rounded: Data integrity 9), shared by kWh; never kWh × today's price.
+function breakdownTable(days, usage, dehumidifier, lights) {
+  const b = breakdown(days, null, { dehumidifier, lights, cost: usage?.last30?.cost ?? null });
   const wrap = text('div', 'us-table-wrap');
   const table = text('table', 'us-table');
   table.append(text('caption', '', 'Energy by machine, last 30 days'));

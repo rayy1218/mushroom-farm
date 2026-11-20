@@ -35,7 +35,8 @@ export function createBusiness({ costs, sales, inventory, batches, runs, zone = 
         }
       };
       const view = read('costs', () => costs.monthView());
-      const owed = read('sales', () => sales.view({ days: 7 }).owed);
+      const salesView = read('sales', () => sales.view({ days: 7 }));
+      const owed = salesView?.owed ?? null;
       const stock = read('inventory', () => inventory.list());
       const items = stock?.items ?? null;
       const blocks = read('batches', () => batches.list().batches);
@@ -44,7 +45,8 @@ export function createBusiness({ costs, sales, inventory, batches, runs, zone = 
       return {
         month: view && { month: view.month, today: view.today, pending: view.pending, tiles: view.tiles, repeating: view.repeating, bought: view.bought },
         lastMonth: last && { month: last.month, income: last.income, costs: last.costs, profit: last.profit, pending: last.pending },
-        needs: [...owedNeeds(owed), ...stockNeeds(items), ...blockNeeds(blocks), ...unpricedNeeds(blocks, zone)],
+        needs: [...owedNeeds(owed), ...oversoldNeeds(view), ...stockNeeds(items), ...blockNeeds(blocks), ...unpricedNeeds(blocks, zone)],
+        unsold: salesView?.unsold ?? null, // ---- Data integrity ---- still to sell and past its keeping days (spec 6.2)
         runs: open,
         stock: stock?.value ?? null, // ---- Money truth ---- what the stock is worth at what each lot cost
         errors,
@@ -61,6 +63,13 @@ function owedNeeds(owed) {
     kind: 'owed', total: owed.total, count: owed.count, oldestAt: owed.oldestAt, oldestBuyer: oldest?.buyer ?? null,
     buyers: owed.buyers.map((b) => b.buyer), href: SALES_HASH,
   }];
+}
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 5.3) Sales above the harvest: Costs' oversold notes of the
+// month, the crops named; to Sales.
+function oversoldNeeds(view) {
+  const notes = (view?.notes ?? []).filter((n) => n.kind === 'oversold');
+  return notes.length ? [{ kind: 'oversold', crops: notes.map((n) => n.crop), texts: notes.map((n) => n.text), href: SALES_HASH }] : [];
 }
 
 // (2) Stock below zero (a purchase not recorded), (3) stock low (at or under its reorder level, not below zero: (2) says

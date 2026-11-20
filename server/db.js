@@ -7,8 +7,9 @@ import { PROGRAM_DEFAULTS } from './program.js';
 import { FAMILY_OF, DAILY_RULES, HARVEST_RULES } from './task-rules.js';
 import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
 import { readSources } from './costs-sources.js'; // ---- Costs ----
+import { createIntegrityStore } from './integrity-db.js'; // ---- Data integrity ----
 
-const VERSION = 28;
+const VERSION = 29;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -378,8 +379,11 @@ function salesQ(db) {
     deliveryLines: db.prepare('SELECT * FROM sales WHERE delivery_id = ? ORDER BY id'),
     deleteDelivery: db.prepare('DELETE FROM sales WHERE delivery_id = ?'),
     setPaid: db.prepare('UPDATE sales SET paid_at = ? WHERE delivery_id = ?'),
-    between: db.prepare('SELECT * FROM sales WHERE sold_at BETWEEN ? AND ? ORDER BY sold_at, id'),
-    unpaid: db.prepare('SELECT * FROM sales WHERE paid_at IS NULL ORDER BY sold_at, id'),
+    // ---- Data integrity ---- a voided line counts in no figure (between, unpaid, cropLines); the page's list reads betweenAll
+    between: db.prepare('SELECT * FROM sales WHERE sold_at BETWEEN ? AND ? AND voided_at IS NULL ORDER BY sold_at, id'),
+    betweenAll: db.prepare('SELECT * FROM sales WHERE sold_at BETWEEN ? AND ? ORDER BY sold_at, id'),
+    unpaid: db.prepare('SELECT * FROM sales WHERE paid_at IS NULL AND voided_at IS NULL ORDER BY sold_at, id'),
+    cropLines: db.prepare('SELECT * FROM sales WHERE crop = ? AND voided_at IS NULL ORDER BY sold_at, id'),
     clearRoom: db.prepare('UPDATE sales SET room_id = NULL, run_id = NULL WHERE room_id = ?'),
     buyers: db.prepare('SELECT * FROM buyers ORDER BY name COLLATE NOCASE, id'),
     buyer: db.prepare('SELECT * FROM buyers WHERE id = ?'),
@@ -397,7 +401,7 @@ function salesQ(db) {
 const saleOf = (r) => ({
   id: r.id, deliveryId: r.delivery_id, soldAt: r.sold_at, crop: r.crop, kg: r.kg, priceKg: r.price_kg, total: r.total,
   buyer: r.buyer, buyerId: r.buyer_id, invoiceNo: r.invoice_no, roomId: r.room_id, runId: r.run_id, note: r.note,
-  paidAt: r.paid_at, createdAt: r.created_at,
+  paidAt: r.paid_at, createdAt: r.created_at, voidedAt: r.voided_at ?? null, voidedBy: r.voided_by ?? null, voidReason: r.void_reason ?? null,
 });
 
 const buyerOf = (r) => {
@@ -520,8 +524,95 @@ const MONEY_TRUTH_COLUMNS = [
 const equipmentOf = (r) => ({
   id: r.id, name: r.name, roomId: r.room_id, part: r.part, boughtOn: r.bought_on, amount: r.amount, lifeMonths: r.life_months,
   resale: r.resale, note: r.note, createdAt: r.created_at,
+  voidedAt: r.voided_at ?? null, voidedBy: r.voided_by ?? null, voidReason: r.void_reason ?? null, // ---- Data integrity ----
 });
 // ---- end Money truth ----
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 2): the change log of every money record (kept as written:
+// two triggers refuse an update or a delete), what was not sold, the dated electricity tariff and the closed months' figures.
+// Five tables gain void columns (DATA_INTEGRITY_VOIDED); a deleted room's Not sold records keep their kg without it.
+export const CHANGE_KINDS = ['sale', 'cost', 'equipment', 'harvest', 'move', 'not-sold', 'tariff', 'month', 'room'];
+export const CHANGE_ACTIONS = ['add', 'edit', 'paid', 'unpaid', 'void', 'restore', 'undo', 'change', 'stop', 'keep', 'delete'];
+export const NOT_SOLD_REASONS = ['spoiled', 'rejected', 'sample', 'staff', 'dried', 'given'];
+const quoted = (list) => list.map((x) => `'${x}'`).join(', ');
+const DATA_INTEGRITY = `
+CREATE TABLE IF NOT EXISTS changes (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  at      INTEGER NOT NULL,
+  by      TEXT    NOT NULL,
+  role    TEXT    NOT NULL CHECK (role IN ('owner', 'worker', 'app')),
+  kind    TEXT    NOT NULL CHECK (kind IN (${quoted(CHANGE_KINDS)})),
+  row_id  INTEGER NOT NULL,
+  action  TEXT    NOT NULL CHECK (action IN (${quoted(CHANGE_ACTIONS)})),
+  before  TEXT,
+  after   TEXT,
+  reason  TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS changes_by_row ON changes (kind, row_id, id);
+CREATE INDEX IF NOT EXISTS changes_by_time ON changes (at);
+CREATE TRIGGER IF NOT EXISTS changes_kept_update BEFORE UPDATE ON changes BEGIN
+  SELECT RAISE(ABORT, 'The change log is kept as written');
+END;
+CREATE TRIGGER IF NOT EXISTS changes_kept_delete BEFORE DELETE ON changes BEGIN
+  SELECT RAISE(ABORT, 'The change log is kept as written');
+END;
+CREATE TABLE IF NOT EXISTS not_sold (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  at          INTEGER NOT NULL,
+  crop        TEXT    NOT NULL,
+  kg          REAL    NOT NULL CHECK (kg > 0 AND kg <= 10000),
+  reason      TEXT    NOT NULL CHECK (reason IN (${quoted(NOT_SOLD_REASONS)})),
+  room_id     INTEGER,
+  run_id      INTEGER,
+  buyer_id    INTEGER,
+  note        TEXT,
+  worker      TEXT,
+  created_at  INTEGER NOT NULL,
+  voided_at   INTEGER,
+  voided_by   TEXT,
+  void_reason TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS not_sold_by_time ON not_sold (at);
+CREATE INDEX IF NOT EXISTS not_sold_by_crop ON not_sold (crop, at);
+CREATE TRIGGER IF NOT EXISTS not_sold_room_gone AFTER DELETE ON rooms BEGIN
+  UPDATE not_sold SET room_id = NULL, run_id = NULL WHERE room_id = OLD.id;
+END;
+CREATE TABLE IF NOT EXISTS tariffs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_date   TEXT    NOT NULL,
+  rate        REAL    NOT NULL CHECK (rate >= 0 AND rate <= 10),
+  afa         REAL    NOT NULL DEFAULT 0 CHECK (afa >= -1 AND afa <= 1),
+  note        TEXT    NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL,
+  voided_at   INTEGER,
+  voided_by   TEXT,
+  void_reason TEXT
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS tariffs_from ON tariffs (from_date) WHERE voided_at IS NULL;
+CREATE TABLE IF NOT EXISTS month_closes (
+  month     TEXT    PRIMARY KEY,
+  closed_at INTEGER NOT NULL,
+  figures   TEXT    NOT NULL
+) STRICT;`;
+// The tables whose rows are voided, not deleted (section 4); each gains the three columns where it lacks them.
+export const VOIDED_TABLES = ['sales', 'costs', 'equipment', 'harvests', 'stock_moves'];
+const VOID_COLUMNS = [['voided_at', 'INTEGER'], ['voided_by', 'TEXT'], ['void_reason', 'TEXT']];
+// The first tariff rate (section 2.3): Settings' price of before from 1 Jan 2020, so no past day moves at the upgrade.
+export const FIRST_TARIFF_DATE = '2020-01-01';
+function addDataIntegrity(db, at) {
+  for (const table of VOIDED_TABLES) {
+    const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+    for (const [column, type] of VOID_COLUMNS) if (!have.has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+  db.exec(DATA_INTEGRITY);
+  if (!db.prepare('SELECT 1 FROM tariffs LIMIT 1').get()) {
+    const stored = Number(db.prepare("SELECT value FROM settings WHERE key = 'electricityPrice'").get()?.value ?? NaN);
+    const rate = Number.isFinite(stored) && stored >= 0 && stored <= 10 ? stored : 0.55;
+    db.prepare("INSERT INTO tariffs (from_date, rate, afa, note, created_at) VALUES (?, ?, 0, 'Settings'' price before the tariff', ?)")
+      .run(FIRST_TARIFF_DATE, rate, at);
+  }
+}
+// ---- end Data integrity ----
 
 const accountRow = (r) => ({
   id: r.id, name: r.name, active: r.active === 1, role: r.role, secretHash: r.secret_hash, failedTries: r.failed_tries,
@@ -912,6 +1003,7 @@ function migrate(db) {
       }
       db.exec(MONEY_TRUTH);
     }
+    if (version < 29) addDataIntegrity(db, Date.now()); // ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 2)
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -942,6 +1034,7 @@ const runOf = (r) => ({
 const harvestOf = (r) => ({
   id: r.id, roomId: r.room_id, runId: r.run_id, crop: r.crop, stage: r.stage, flush: r.flush, blocks: r.blocks, kg: r.kg,
   pickedAt: r.picked_at, worker: r.worker, taskId: r.task_id, createdAt: r.created_at,
+  voidedAt: r.voided_at ?? null, voidedBy: r.voided_by ?? null, voidReason: r.void_reason ?? null,
 });
 
 // ---- Inventory ---- A stock_items row and a stock_moves row as the inventory module shows them.
@@ -953,12 +1046,14 @@ const stockMoveOf = (r) => ({
   id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refKind: r.ref_kind, refId: r.ref_id, note: r.note,
   total: r.total, supplier: r.supplier, useBy: r.use_by, roomId: r.room_id, reason: r.reason, worker: r.worker,
   counted: r.counted, lotId: r.lot_id, useBySentAt: r.use_by_sent_at,
+  voidedAt: r.voided_at ?? null, voidedBy: r.voided_by ?? null, voidReason: r.void_reason ?? null, // ---- Data integrity ----
 });
 // ---- Costs ---- A costs row as the costs module shows it, and a cost's fields in the insert's and update's column order.
 const costOf = (r) => ({
   id: r.id, date: r.date, category: r.category, amount: r.amount, roomId: r.room_id, runId: r.run_id, note: r.note,
   sourceKind: r.source_kind, sourceId: r.source_id, repeat: r.repeat, repeatUntil: r.repeat_until, worker: r.worker,
   utility: r.utility, periodFrom: r.period_from, periodTo: r.period_to, createdAt: r.created_at,
+  voidedAt: r.voided_at ?? null, voidedBy: r.voided_by ?? null, voidReason: r.void_reason ?? null,
 });
 const costValues = (f) => [f.date, f.category, f.amount, f.roomId ?? null, f.runId ?? null, f.note ?? '', f.repeat ?? null,
   f.repeatUntil ?? null, f.worker ?? null, f.utility ?? null, f.periodFrom ?? null, f.periodTo ?? null];
@@ -1272,7 +1367,7 @@ export function openDb(path, { log = console.error } = {}) {
     deleteCustomRule: db.prepare('DELETE FROM custom_task_rules WHERE id = ?'),
     customRuleRooms: db.prepare('UPDATE custom_task_rules SET rooms = ? WHERE id = ?'),
     // A check's amount: the total of its harvests (rounded as the kg are), null when none are left.
-    sumTaskAmount: db.prepare('UPDATE tasks SET amount = (SELECT ROUND(SUM(kg), 3) FROM harvests WHERE task_id = ?1) WHERE id = ?1'),
+    sumTaskAmount: db.prepare('UPDATE tasks SET amount = (SELECT ROUND(SUM(kg), 3) FROM harvests WHERE task_id = ?1 AND voided_at IS NULL) WHERE id = ?1'),
     // Runs of blocks and harvests (spec 2026-11-04-harvest-design.md 2).
     openRun: db.prepare('SELECT * FROM runs WHERE room_id = ? AND ended_at IS NULL'),
     cropRun: db.prepare('SELECT * FROM runs WHERE id = ?'),
@@ -1284,8 +1379,11 @@ export function openDb(path, { log = console.error } = {}) {
     insertHarvest: db.prepare(`INSERT INTO harvests (room_id, run_id, crop, stage, flush, blocks, kg, picked_at, worker, task_id, created_at)
                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     harvest: db.prepare('SELECT * FROM harvests WHERE id = ?'),
-    runHarvests: db.prepare('SELECT * FROM harvests WHERE run_id = ? ORDER BY picked_at, id'),
-    harvestsBetween: db.prepare('SELECT * FROM harvests WHERE picked_at BETWEEN ? AND ? ORDER BY picked_at, id'),
+    // ---- Data integrity ---- a voided harvest counts in no figure; the lists read the All statements
+    runHarvests: db.prepare('SELECT * FROM harvests WHERE run_id = ? AND voided_at IS NULL ORDER BY picked_at, id'),
+    runHarvestsAll: db.prepare('SELECT * FROM harvests WHERE run_id = ? ORDER BY picked_at, id'),
+    harvestsBetween: db.prepare('SELECT * FROM harvests WHERE picked_at BETWEEN ? AND ? AND voided_at IS NULL ORDER BY picked_at, id'),
+    harvestsBetweenAll: db.prepare('SELECT * FROM harvests WHERE picked_at BETWEEN ? AND ? ORDER BY picked_at, id'),
     updateHarvest: db.prepare('UPDATE harvests SET kg = ?, picked_at = ? WHERE id = ?'),
     deleteHarvest: db.prepare('DELETE FROM harvests WHERE id = ?'),
     deleteHarvests: db.prepare('DELETE FROM harvests WHERE room_id = ?'),
@@ -1297,8 +1395,10 @@ export function openDb(path, { log = console.error } = {}) {
     updateStockItem: db.prepare('UPDATE stock_items SET name = ?, kind = ?, unit = ?, reorder_at = ?, ingredient = ?, lrmp_no = ?, archived = ? WHERE id = ?'),
     deleteStockItem: db.prepare('DELETE FROM stock_items WHERE id = ?'),
     setStockLowSent: db.prepare('UPDATE stock_items SET low_sent_at = ? WHERE id = ?'),
-    stockMoves: db.prepare('SELECT * FROM stock_moves ORDER BY at, id'),
-    itemStockMoves: db.prepare('SELECT * FROM stock_moves WHERE item_id = ? ORDER BY at, id'),
+    // ---- Data integrity ---- a voided move counts in no figure (stock, lots, costs, the sheet); an item's page lists them all
+    stockMoves: db.prepare('SELECT * FROM stock_moves WHERE voided_at IS NULL ORDER BY at, id'),
+    itemStockMoves: db.prepare('SELECT * FROM stock_moves WHERE item_id = ? AND voided_at IS NULL ORDER BY at, id'),
+    itemStockMovesAll: db.prepare('SELECT * FROM stock_moves WHERE item_id = ? ORDER BY at, id'),
     stockMove: db.prepare('SELECT * FROM stock_moves WHERE id = ?'),
     insertStockMove: db.prepare(`INSERT INTO stock_moves (item_id, at, qty, unit_cost, ref_kind, ref_id, note, total, supplier, use_by,
                                                           room_id, reason, worker, counted, lot_id)
@@ -1309,11 +1409,12 @@ export function openDb(path, { log = console.error } = {}) {
     setStockUseBySent: db.prepare('UPDATE stock_moves SET use_by_sent_at = ? WHERE id = ? AND use_by IS ?'),
     stockPurchasesBetween: db.prepare(`SELECT m.*, i.name AS item_name, i.kind AS item_kind FROM stock_moves m
                                        JOIN stock_items i ON i.id = m.item_id
-                                       WHERE m.ref_kind = 'purchase' AND m.at BETWEEN ? AND ? ORDER BY m.at, m.id`),
+                                       WHERE m.ref_kind = 'purchase' AND m.at BETWEEN ? AND ? AND m.voided_at IS NULL ORDER BY m.at, m.id`),
     hasBatches: db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'batches'"),
   };
   let cropPicks = null; // ---- Money truth ---- cropHarvestsBetween's statement, made on first use
   const batchStore = createBatchStore(db); // ---- Batches ---- (spec 2026-11-05-batches-design.md 2)
+  const integrity = createIntegrityStore(db, inTransaction); // ---- Data integrity ----
 
   function checkName(name, id) {
     if (q.nameUsed.get(name, id)) throw new NameTakenError(name);
@@ -1345,7 +1446,8 @@ export function openDb(path, { log = console.error } = {}) {
     insert: db.prepare(`INSERT INTO costs (date, category, amount, room_id, run_id, note, repeat, repeat_until, worker, utility,
                                            period_from, period_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     get: db.prepare('SELECT * FROM costs WHERE id = ?'),
-    list: db.prepare('SELECT * FROM costs ORDER BY date, id'),
+    list: db.prepare('SELECT * FROM costs WHERE voided_at IS NULL ORDER BY date, id'), // ---- Data integrity ---- the figures'
+    listAll: db.prepare('SELECT * FROM costs ORDER BY date, id'),
     update: db.prepare(`UPDATE costs SET date = ?, category = ?, amount = ?, room_id = ?, run_id = ?, note = ?, repeat = ?,
                                repeat_until = ?, worker = ?, utility = ?, period_from = ?, period_to = ? WHERE id = ?`),
     until: db.prepare('UPDATE costs SET repeat_until = ? WHERE id = ?'),
@@ -1370,13 +1472,20 @@ export function openDb(path, { log = console.error } = {}) {
   };
   // ---- end Economics ----
 
-  // Runs fn in one transaction: all of its writes or none.
+  // Runs fn in one transaction: all of its writes or none. Inside another (a store's write and its change log entry, Data
+  // integrity), fn joins it. → fn's value.
+  let depth = 0;
   function inTransaction(fn) {
+    if (depth > 0) return fn();
     db.exec('BEGIN');
+    depth++;
     try {
-      fn();
+      const value = fn();
+      depth--;
       db.exec('COMMIT');
+      return value;
     } catch (err) {
+      depth--;
       db.exec('ROLLBACK');
       throw err;
     }
@@ -1472,6 +1581,12 @@ export function openDb(path, { log = console.error } = {}) {
   // The completed days of the usage replies (see usage.js), by room and "start/end" of the day; the entries are the usage
   // module's. A change of the room, a row written inside a day that was worked out, and a room delete drop them.
   const usageCache = new Map();
+  // ---- Data integrity ---- a good reading before where a day's seen time was read to: that day is worked out again (in
+  // order, as the poller writes them, readings come after it and drop nothing)
+  const dropSeen = (roomId, at) => {
+    const days = usageCache.get(roomId);
+    if (days) for (const [k, e] of days) if (e.seen && at < e.seen.upto) days.delete(k);
+  };
   const OUTDOOR = 0; // the pseudo room
 
   function computeBuckets(roomId, kind, b, fromIdx, toIdx) {
@@ -1518,6 +1633,8 @@ export function openDb(path, { log = console.error } = {}) {
   }
 
   return {
+    ...integrity, // ---- Data integrity ---- the change log, voids, Not sold, the tariff, closed months (server/integrity-db.js)
+
     listRooms() {
       return q.list.all().map(toRoom);
     },
@@ -1846,9 +1963,20 @@ export function openDb(path, { log = console.error } = {}) {
     },
 
     // Returns true when a room was deleted.
-    deleteRoom(id) {
+    // ---- Data integrity ---- by: who deleted it ({ name, role }, else the app); one change entry says what went with it.
+    deleteRoom(id, { by = null, at = Date.now() } = {}) {
       db.exec('BEGIN');
       try {
+        const gone = q.get.get(id);
+        if (gone) {
+          const counts = db.prepare(`SELECT (SELECT COUNT(*) FROM runs WHERE room_id = ?1) AS runs,
+            (SELECT COUNT(*) FROM harvests WHERE room_id = ?1 AND voided_at IS NULL) AS harvests,
+            (SELECT ROUND(COALESCE(SUM(kg), 0), 3) FROM harvests WHERE room_id = ?1 AND voided_at IS NULL) AS kg`).get(id);
+          integrity.logChange({
+            at, by: by?.name ?? 'app', role: by?.role ?? 'app', kind: 'room', rowId: id, action: 'delete',
+            before: { name: gone.name, runs: counts.runs, harvests: counts.harvests, kg: counts.kg },
+          });
+        }
         q.deleteReadings.run(id);
         q.deleteCommands.run(id);
         q.deleteControl.run(id);
@@ -1896,6 +2024,7 @@ export function openDb(path, { log = console.error } = {}) {
     addReading({ roomId, kind, address, at, ok, t = null, rh = null, co2 = null, error = null }) {
       q.addReading.run(roomId, kind, address, at, ok ? 1 : 0, t, rh, co2, error, roomId, kind, address);
       dropStaleBuckets(roomId, kind, at);
+      if (ok) dropSeen(roomId, at); // ---- Data integrity ---- a late good reading changes when the room was seen
     },
 
     // [trhSensor, co2Sensor] for the room, or null when there is no such room.
@@ -1915,6 +2044,7 @@ export function openDb(path, { log = console.error } = {}) {
     addMeterReading({ roomId, address, at, ok, powerW = null, energyKwh = null, error = null }) {
       q.addMeterReading.run(roomId, address, at, ok ? 1 : 0, powerW, energyKwh, error, roomId, address);
       if (ok) for (const [k, e] of usageCache.get(roomId) ?? []) if (e.meter && at < e.meter.upto) usageCache.get(roomId).delete(k);
+      if (ok) dropSeen(roomId, at); // ---- Data integrity ----
     },
 
     // The room's meter like a sensor of getSensors: { kind: 'meter', address, status, failuresInRow, lastOk, readings },
@@ -1970,6 +2100,47 @@ export function openDb(path, { log = console.error } = {}) {
       };
     },
 
+    // ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 7.1) When the app could see a room: the good readings
+    // of its T/RH and CO2 sensors, energy meter and filter sensor (meter only: the meter's) in [from, to), as the times where a
+    // gap over `gap` ms begins and ends: [{ prev, at }] (prev null: the first reading; the last row { prev: last, at: null }).
+    // Nothing read into JS but those (the window function sorts the day's times inside SQLite).
+    seenBoundaries(roomId, from, to, gap, { meterOnly = false } = {}) {
+      const room = q.get.get(roomId);
+      if (!room) return [];
+      const parts = [];
+      const args = [];
+      if (!meterOnly) {
+        for (const kind of ['trh', 'co2']) {
+          parts.push("SELECT at FROM readings WHERE room_id = ? AND kind = ? AND at >= ? AND at < ? AND ok = 1");
+          args.push(roomId, kind, from, to);
+        }
+        if (room.dp_address != null) {
+          parts.push('SELECT at FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1 AND at >= ? AND at < ?');
+          args.push(roomId, room.dp_address, from, to);
+        }
+      }
+      if (room.meter_address != null) {
+        parts.push('SELECT at FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1 AND energy_kwh IS NOT NULL AND at >= ? AND at < ?');
+        args.push(roomId, room.meter_address, from, to);
+      }
+      if (!parts.length) return [];
+      return db.prepare(`WITH t(at) AS (${parts.join(' UNION ALL ')}), g AS (SELECT at, LAG(at) OVER (ORDER BY at) AS prev FROM t)
+        SELECT prev, at FROM g WHERE prev IS NULL OR at - prev > ? UNION ALL SELECT MAX(at) AS prev, NULL AS at FROM t`)
+        .all(...args, gap).filter((r) => r.prev !== null || r.at !== null);
+    },
+
+    // The time of the room's first good reading of any of its devices, or null when it has none yet.
+    firstReadingAt(roomId) {
+      const room = q.get.get(roomId);
+      if (!room) return null;
+      const times = [
+        ...['trh', 'co2'].map((kind) => db.prepare('SELECT MIN(at) AS at FROM readings WHERE room_id = ? AND kind = ? AND ok = 1').get(roomId, kind).at),
+        room.meter_address == null ? null : db.prepare('SELECT MIN(at) AS at FROM meter_readings WHERE room_id = ? AND address = ? AND ok = 1').get(roomId, room.meter_address).at,
+        room.dp_address == null ? null : db.prepare('SELECT MIN(at) AS at FROM filter_readings WHERE room_id = ? AND address = ? AND ok = 1').get(roomId, room.dp_address).at,
+      ].filter((x) => x !== null && x !== undefined);
+      return times.length ? Math.min(...times) : null;
+    },
+
     // The completed-day cache of one room (a Map the usage module fills).
     usageDays(roomId) {
       let days = usageCache.get(roomId);
@@ -1999,6 +2170,7 @@ export function openDb(path, { log = console.error } = {}) {
     addFilterReading({ roomId, address, at, ok, pa = null, error = null }) {
       q.addFilterReading.run(roomId, address, at, ok ? 1 : 0, pa, error, roomId, address);
       for (const [k, e] of usageCache.get(roomId) ?? []) if (e.ms && e.end > at) usageCache.get(roomId).delete(k);
+      if (ok) dropSeen(roomId, at); // ---- Data integrity ----
     },
 
     // The room's sensor like the energy meter of getMeter: { kind: 'dp', address, status, failuresInRow, lastOk, readings },
@@ -2265,18 +2437,20 @@ export function openDb(path, { log = console.error } = {}) {
     // (insertUpkeepTask's fields); harvests: the harvests the close records (insertHarvest's fields), made in it too.
     // → false when the row is not open (nothing changes then). Throws, closing nothing, when the next row is not made (its
     // rule already has an open row) or a harvest is refused (its kg out of range).
-    closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null, harvests = []) {
-      db.exec('BEGIN');
-      try {
+    // onHarvest(id): told each harvest's id inside the transaction (Data integrity: its change entry is written with it).
+    closeTask(id, { status, at, worker = null, amount = null, reason = null }, next = null, harvests = [], onHarvest = null) {
+      return inTransaction(() => {
         const closed = q.closeTask.run(status, at, worker, amount, reason, id).changes > 0;
         if (closed && next && !this.insertUpkeepTask(next)) throw new Error('The next upkeep row was not made');
-        if (closed) for (const h of harvests) writeHarvest(h);
-        db.exec('COMMIT');
+        if (closed) for (const h of harvests) { const made = writeHarvest(h); onHarvest?.(made); }
         return closed;
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
+      });
+    },
+
+    // ---- Data integrity ---- the harvests a check's Done made, not voided (voided too with { voided: true }: its Undo deletes
+    // them all).
+    taskHarvests(taskId, { voided = false } = {}) {
+      return db.prepare(`SELECT * FROM harvests WHERE task_id = ? ${voided ? '' : 'AND voided_at IS NULL'} ORDER BY id`).all(taskId).map(harvestOf);
     },
 
     // Opens again a daily row the server cancelled because its stage or rule changed (wanted again the same day). → false
@@ -2505,6 +2679,39 @@ export function openDb(path, { log = console.error } = {}) {
       return q.harvestsBetween.all(from, to).map(harvestOf);
     },
 
+    // ---- Data integrity ---- whether any harvest not voided is recorded (a farm that records none is not asked about its
+    // balances).
+    anyHarvest() {
+      return db.prepare('SELECT 1 FROM harvests WHERE voided_at IS NULL LIMIT 1').get() !== undefined;
+    },
+
+    // ---- Data integrity ---- the lists' reads: voided harvests too (shown struck).
+    runHarvestsAll(runId) {
+      return q.runHarvestsAll.all(runId).map(harvestOf);
+    },
+    harvestsBetweenAll(from, to) {
+      return q.harvestsBetweenAll.all(from, to).map(harvestOf);
+    },
+
+    // ---- Data integrity ---- a harvest voided or restored; one from a check sets the check's amount to the total not voided,
+    // in the same transaction. → true when it changed.
+    voidHarvest(id, { at, by, reason }) {
+      return inTransaction(() => {
+        const done = integrity.voidRow('harvests', id, { at, by, reason });
+        const taskId = done ? q.harvest.get(id).task_id : null;
+        if (taskId !== null) q.sumTaskAmount.run(taskId);
+        return done;
+      });
+    },
+    restoreHarvest(id) {
+      return inTransaction(() => {
+        const done = integrity.restoreRow('harvests', id);
+        const taskId = done ? q.harvest.get(id).task_id : null;
+        if (taskId !== null) q.sumTaskAmount.run(taskId);
+        return done;
+      });
+    },
+
     // A new kg and pick time; a harvest from a check sets the check's amount to the new total in the same transaction.
     // → the harvest, or null when there is no such harvest (nothing changes then).
     updateHarvest(id, { kg, pickedAt }) {
@@ -2616,6 +2823,15 @@ export function openDb(path, { log = console.error } = {}) {
       return Number(q.deleteStockMove.run(id).changes);
     },
 
+    // ---- Data integrity ---- an item's moves, voided ones too (its page lists them, struck).
+    itemStockMovesAll(itemId) {
+      return q.itemStockMovesAll.all(itemId).map(stockMoveOf);
+    },
+    // The moves a purchase's Undo or void takes with it: itself and the throw-outs of its lot (any state).
+    stockMoveFamily(id) {
+      return db.prepare('SELECT * FROM stock_moves WHERE id = ?1 OR lot_id = ?1 ORDER BY id').all(id).map(stockMoveOf);
+    },
+
     // When the purchase's use-by message went (ms), or null.
     // Only while the purchase's use-by is still `useBy` (the one told); a clear (at null) passes the use-by it has.
     setStockUseBySent(id, at, useBy) {
@@ -2703,9 +2919,19 @@ export function openDb(path, { log = console.error } = {}) {
       return salesQ(db).setPaid.run(paidAt, id).changes > 0;
     },
 
-    // The sale lines sold in [from, to] (ms), oldest first.
+    // The sale lines sold in [from, to] (ms), oldest first; voided ones left out (every figure reads these).
     salesBetween(from, to) {
       return salesQ(db).between.all(from, to).map(saleOf);
+    },
+
+    // ---- Data integrity ---- the lines of [from, to] voided ones too (the Sales card lists them, struck).
+    salesBetweenAll(from, to) {
+      return salesQ(db).betweenAll.all(from, to).map(saleOf);
+    },
+
+    // ---- Data integrity ---- every line of a crop not voided, oldest first (the crop's balance, spec 5.3).
+    cropSales(crop) {
+      return salesQ(db).cropLines.all(crop).map(saleOf);
     },
 
     // Every unpaid sale line, oldest first.
@@ -2773,9 +2999,14 @@ export function openDb(path, { log = console.error } = {}) {
       return r ? costOf(r) : null;
     },
 
-    // Every cost, oldest date first.
+    // Every cost not voided, oldest date first (the figures read these).
     listCosts() {
       return costQ.list.all().map(costOf);
+    },
+
+    // ---- Data integrity ---- every cost, voided ones too (the edit dialogs and the entries list them, struck).
+    listCostsAll() {
+      return costQ.listAll.all().map(costOf);
     },
 
     // → the cost with its new fields, or null when there is no such cost.
@@ -2867,14 +3098,20 @@ export function openDb(path, { log = console.error } = {}) {
     // ---- Money truth ---- one crop's harvests picked in [from, to] (ms), oldest first: the sales' 14-day windows read them.
     // → [{ roomId, runId, crop, kg, pickedAt }] only (a few thousand rows a call).
     cropHarvestsBetween(crop, from, to) {
-      cropPicks ??= db.prepare('SELECT room_id, run_id, kg, picked_at FROM harvests WHERE crop = ? AND picked_at BETWEEN ? AND ? ORDER BY picked_at, id');
+      cropPicks ??= db.prepare(`SELECT room_id, run_id, kg, picked_at FROM harvests WHERE crop = ? AND picked_at BETWEEN ? AND ?
+                                AND voided_at IS NULL ORDER BY picked_at, id`);
       return cropPicks.all(crop, from, to).map((r) => ({ roomId: r.room_id, runId: r.run_id, crop, kg: r.kg, pickedAt: r.picked_at }));
     },
 
     // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 6) Costs' equipment register. An item is equipmentOf's
     // object; its fields { name, roomId, part, boughtOn, amount, lifeMonths, resale, note } are checked by
     // server/costs-equipment.js.
+    // the items not voided (the write-off and Economics read these; Data integrity)
     listEquipment() {
+      return db.prepare('SELECT * FROM equipment WHERE voided_at IS NULL ORDER BY bought_on, id').all().map(equipmentOf);
+    },
+    // ---- Data integrity ---- every item, voided ones too (the Equipment card lists them, struck)
+    listEquipmentAll() {
       return db.prepare('SELECT * FROM equipment ORDER BY bought_on, id').all().map(equipmentOf);
     },
     getEquipment(id) {

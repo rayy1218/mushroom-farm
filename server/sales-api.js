@@ -1,12 +1,16 @@
 // The Sales routes (spec 2026-11-05-sales-design.md 5), called from api.js: /api/sales (GET ?days, POST), /api/sales/range,
 // /api/sales/summary, /api/sales.csv, /api/sales/deliveries/:id (PUT, DELETE) and its /paid (PUT), /api/buyers (GET, POST)
-// and /api/buyers/:id (PUT, DELETE). server/sales.js records and works out; every write publishes 'sales' {}.
+// and /api/buyers/:id (PUT, DELETE); Data integrity's /void and /restore of a delivery (its DELETE answers 409).
+// server/sales.js records and works out; every write publishes 'sales' {}.
 
 import { attachment } from './tasks-api.js';
 import { createSales } from './sales.js';
+import { whoOf } from './changes.js';
+import { createNotSold } from './not-sold.js';
 
-const DELIVERY = /^\/api\/sales\/deliveries\/([1-9][0-9]{0,14})(\/paid)?$/;
+const DELIVERY = /^\/api\/sales\/deliveries\/([1-9][0-9]{0,14})(\/paid|\/void|\/restore)?$/;
 const BUYER = /^\/api\/buyers\/([1-9][0-9]{0,14})$/;
+const NOT_SOLD = /^\/api\/not-sold\/([1-9][0-9]{0,14})(\/void|\/restore)?$/; // ---- Data integrity ----
 const BOM = '\ufeff'; // Excel on Windows reads the CSV as UTF-8
 
 // db: the farm database; events: the bus (null in some tests). → async (req, res, path, { send, readJson, HttpError, url })
@@ -15,6 +19,9 @@ export function createSalesRoutes({ db, events = null, now = Date.now }) {
   const sales = createSales({ db, now });
   // These routes' store is the only writer of sales; another writer must share this store or publish 'sales' itself.
   sales.onChange(() => events?.publish('sales', {}));
+  // ---- Data integrity ---- Not sold (spec 2026-11-12-data-integrity-design.md 6): Sales' event too
+  const notSold = createNotSold({ db, now });
+  notSold.onChange(() => events?.publish('sales', {}));
 
   async function route(req, res, path, { send, readJson, HttpError, url }) {
     const notFound = () => new HttpError(404, 'Not found');
@@ -29,7 +36,7 @@ export function createSalesRoutes({ db, events = null, now = Date.now }) {
 
     if (path === '/api/sales') {
       if (req.method === 'GET') send(res, 200, sales.view({ days: daysOf() }));
-      else if (req.method === 'POST') send(res, 201, sales.record(await readJson(req)));
+      else if (req.method === 'POST') send(res, 201, sales.record(await readJson(req), whoOf(req)));
       else throw notFound();
       return true;
     }
@@ -55,9 +62,31 @@ export function createSalesRoutes({ db, events = null, now = Date.now }) {
     const one = DELIVERY.exec(path);
     if (one) {
       const id = Number(one[1]);
-      if (one[2] && req.method === 'PUT') send(res, 200, sales.setPaid(id, await readJson(req)));
-      else if (!one[2] && req.method === 'PUT') send(res, 200, sales.edit(id, await readJson(req)));
-      else if (!one[2] && req.method === 'DELETE') { sales.remove(id); noContent(); }
+      const who = whoOf(req);
+      if (one[2] === '/paid' && req.method === 'PUT') send(res, 200, sales.setPaid(id, await readJson(req), who));
+      else if (one[2] === '/void' && req.method === 'POST') send(res, 200, sales.voidSale(id, await readJson(req), who));
+      else if (one[2] === '/restore' && req.method === 'POST') send(res, 200, sales.restoreSale(id, await readJson(req), who));
+      else if (!one[2] && req.method === 'PUT') send(res, 200, sales.edit(id, await readJson(req), who));
+      else if (!one[2] && req.method === 'DELETE') { sales.remove(id); noContent(); } // 409: void it instead
+      else throw notFound();
+      return true;
+    }
+    // ---- Data integrity ---- Not sold: GET ?days, POST; PUT and DELETE (the Undo) /:id; POST /:id/void and /restore
+    if (path === '/api/not-sold') {
+      if (req.method === 'GET') send(res, 200, notSold.list({ days: daysOf() }));
+      else if (req.method === 'POST') send(res, 201, notSold.record(await readJson(req), whoOf(req)));
+      else throw notFound();
+      return true;
+    }
+    const ns = NOT_SOLD.exec(path);
+    if (ns) {
+      const id = Number(ns[1]);
+      const who = whoOf(req);
+      if (ns[2] && req.method === 'POST') {
+        const body = await readJson(req);
+        send(res, 200, ns[2] === '/void' ? notSold.voidNotSold(id, body, who) : notSold.restoreNotSold(id, body, who));
+      } else if (!ns[2] && req.method === 'PUT') send(res, 200, notSold.edit(id, await readJson(req), who));
+      else if (!ns[2] && req.method === 'DELETE') { notSold.remove(id, who); noContent(); }
       else throw notFound();
       return true;
     }

@@ -16,6 +16,7 @@ import * as costs from './costs-page.js'; // ---- Costs ----
 import * as runs from './runs-page.js'; // ---- Runs ----
 import * as summary from './business-page.js'; // ---- Summary ----
 import * as economics from './economics-page.js'; // ---- Economics ----
+import * as changes from './changes-page.js'; // ---- Data integrity ----
 import * as taskSheet from './task-sheet.js';
 import * as batches from './batches-page.js';
 import * as batchSheet from './batches-sheet.js';
@@ -101,6 +102,7 @@ function show(before = '') {
     : route.name === 'run' ? runs.mountRun(view, { id: route.id })
     : route.name === 'summary' ? summary.mount(page, {}) // ---- Summary ----
     : route.name === 'economics' ? economics.mount(page, { room: route.room, crop: route.crop }) // ---- Economics ----
+    : route.name === 'changes' ? changes.mount(view, { days: route.days, kind: route.kind, by: route.by, id: route.id }) // ---- Data integrity ----
     : route.name === 'taskSheet' ? taskSheet.mountSheet(view, { roomId: route.id, month: route.month, from: parseRoute(before) })
     : route.name === 'batches' ? batches.mount(page, { run: route.run })
     : route.name === 'batch' ? batches.mountBatch(view, { id: route.id })

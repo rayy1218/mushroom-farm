@@ -70,6 +70,9 @@ export function yourRuns({ db, harvests, batches, days, room, crop, today, zone,
   if (roomRuns) {
     const price = read('sales', () => salesPrice(db, { crop, ids, span, today, zone }));
     if (price) figures.price = price;
+    // ---- Data integrity ---- the shrink: Not sold over picked, once every counted run's kg is sold or recorded (spec 6.3)
+    const shrink = read('sales', () => shrinkOf(db, { crop, counted, ids, span, today, zone, room }));
+    if (shrink) figures.shrink = shrink;
   }
   const blockPrice = own ? batchPrice(own, { count: span.count }) : null;
   if (blockPrice) figures.blockPrice = blockPrice;
@@ -136,6 +139,45 @@ function salesPrice(db, { crop, ids, span, today, zone }) {
   return { value: round(sum / kg, 2), runs: { ...span, kg: round(kg, 2), total: round(sum, 2) } };
 }
 
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.3) The shrink of the counted runs: Σ Not sold kg
+// reaching them by Costs' sale steps ÷ Σ kg of the crop they picked × 100, to 0.1, when every one is closed (what it picked
+// less what was sold and not sold of it is at most CLOSED_SHARE of its picked). One not closed: { value: null, runs: { open:
+// { kg, room, startedAt } } } (the first such run: the page asks for its record). None with a Not sold record: null.
+export const CLOSED_SHARE = 0.05;
+function shrinkOf(db, { crop, counted, ids, span, today, zone, room }) {
+  const [from, to] = [span.from - (SALE_DAYS_TIED + 1) * DAY_MS, span.to + (SALE_DAYS_TIED + 1) * DAY_MS];
+  const data = {
+    today,
+    runs: db.listRooms().flatMap((rm) => db.cropRuns(rm.id).map((r) => ({
+      id: r.id, roomId: rm.id, startDate: zone.label(r.startedAt), endDate: r.endedAt === null ? null : zone.label(r.endedAt), crops: r.crops,
+      blocks: total(r.crops, (c) => c.blocks),
+    }))),
+    harvests: db.cropHarvestsBetween(crop, from, to).map((h) => ({ roomId: h.roomId, runId: h.runId, date: zone.label(h.pickedAt), kg: h.kg, crop: h.crop })),
+  };
+  const took = (list, at) => {
+    const by = new Map();
+    for (const x of list) {
+      if (x.crop !== crop || x[at] < span.from - DAY_MS || x[at] > to) continue;
+      for (const p of saleParts({ ...x, total: 0, date: zone.label(x[at]) }, data)) {
+        if (ids.has(p.runId)) by.set(p.runId, (by.get(p.runId) ?? 0) + p.kg);
+      }
+    }
+    return by;
+  };
+  const sold = took(db.salesBetween(span.from - DAY_MS, to), 'soldAt');
+  const notSold = took(db.liveNotSold(), 'at');
+  let picked = 0;
+  let lost = 0;
+  for (const r of counted) {
+    const left = r.own.kg - (sold.get(r.id) ?? 0) - (notSold.get(r.id) ?? 0);
+    if (left > r.own.kg * CLOSED_SHARE + 0.005) return { value: null, runs: { open: { kg: round(left, 1), room: room.name, startedAt: r.from } } };
+    picked += r.own.kg;
+    lost += notSold.get(r.id) ?? 0;
+  }
+  if (!(picked > 0)) return null;
+  return { value: round((lost / picked) * 100, 1), runs: { count: counted.length, notSold: round(lost, 1), picked: round(picked, 1), ...partials(counted) } };
+}
+
 // Your sales (Money truth 8.1): Σ total ÷ Σ kg of the crop's sale lines of the last SALES_DAYS days (today included),
 // farm-wide. → { value, runs: { kg, total, count, from, to } } or null with none.
 export function yourSales({ db, crop, today, zone }) {
@@ -170,6 +212,8 @@ function energy({ days, room, counted, roomRuns, today, zone }) {
   const count = daysBetween(zone.label(kept[0].from), today) + 1;
   const byDate = new Map(days(room, count).map((d) => [d.date, d]));
   let kWh = 0;
+  let estimated = 0; // ---- Data integrity ---- (7.2) the kWh estimated from machine run time, the days not seen
+  let unseenDays = 0;
   let blocks = 0;
   let dayCount = 0;
   let runs = 0;
@@ -187,10 +231,16 @@ function energy({ days, room, counted, roomRuns, today, zone }) {
     const sum = total(own, (d) => d.kWh);
     if (!(sum > 0)) continue;
     kWh += sum;
+    estimated += total(own, (d) => d.kWhEstimated ?? 0);
+    unseenDays += own.filter((d) => (d.unseenMs ?? 0) > 0).length;
     blocks += total(r.crops, (c) => c.blocks);
     dayCount += own.length;
     runs += 1;
   }
   if (!(blocks > 0)) return null;
-  return { value: round(kWh / blocks, 3), runs: { count: runs, kWh: round(kWh, 1), days: dayCount, blocks } };
+  const pct = Math.round((estimated / kWh) * 100);
+  return {
+    value: round(kWh / blocks, 3),
+    runs: { count: runs, kWh: round(kWh, 1), days: dayCount, blocks, ...(pct > 0 ? { estimatedPct: pct } : {}), ...(unseenDays ? { unseenDays } : {}) },
+  };
 }

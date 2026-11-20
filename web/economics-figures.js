@@ -73,11 +73,17 @@ function runsNote(f, { room, crop }) {
       return `Your runs: ${grouped(r.lost, 0)} of ${plural(r.put, 'block', 'blocks')} lost (Batches’ checks).`;
     case 'price':
       return `Your runs: ${kgText(r.kg)} sold for ${moneyText(r.total)}.`;
+    case 'shrink': // ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.3)
+      return `Your runs: ${grouped(r.notSold, 1)} of ${kgText(r.picked)} not sold (${grouped(f.value, 1)}${NB}%), ${plural(r.count, 'run', 'runs')}${partial}.`;
     case 'blockPrice':
       return `Your runs: ${plural(r.blocks, 'block', 'blocks')} in ${plural(r.batches, 'batch', 'batches')}.`
         + (r.batchesLeftOut ? `${DOT}${plural(r.batchesLeftOut, 'batch', 'batches')} without a price left out.` : '');
     case 'yours.kwhBlock':
-      return `Your runs: ${grouped(r.kWh, 1)}${NB}kWh measured over ${plural(r.days, 'day', 'days')} for ${plural(r.blocks, 'block', 'blocks')}.`;
+    {
+      // Data integrity (7.2): "of which 34 % estimated, 2 days not seen" when so
+      const part = [r.estimatedPct ? `${r.estimatedPct}${NB}% estimated` : null, r.unseenDays ? `${plural(r.unseenDays, 'day', 'days')} not seen` : null].filter(Boolean);
+      return `Your runs: ${grouped(r.kWh, 1)}${NB}kWh${part.length ? '' : ' measured'} over ${plural(r.days, 'day', 'days')} for ${plural(r.blocks, 'block', 'blocks')}${part.length ? `, of which ${part.join(', ')}` : ''}.`;
+    }
     case 'yours.blocks':
       return r.from === 'crop' ? `${room}'s blocks now (its Crop tab).` : `${room}'s last run, ${dateText(r.at)}.`;
     default:
@@ -117,7 +123,12 @@ export function noteParts(f, ctx) {
     out.push({ text: 'Your expected price in Settings → Yield.', link: { text: 'Settings', href: SETTINGS_HASH } });
   } else if (f.source === 'settings') {
     out.push({ text: 'Settings → Electricity price; Costs uses it too.' });
-  } else if (f.source === 'research') {
+  } else if (f.source === 'research' && f.key === 'shrink' && f.runs?.open) {
+    // ---- Data integrity ---- a counted run not closed: what to record to measure the shrink
+    const o = f.runs.open;
+    out.push({ text: `Your runs: ${kgText(o.kg)} of ${o.room}’s run of ${dateText(o.startedAt)} is neither sold nor recorded as Not sold: record it to measure shrink.` });
+  }
+  if (f.source === 'research') {
     const r = f.research;
     const sources = r.sources.map((id) => SOURCES[id]).filter(Boolean);
     out.push({

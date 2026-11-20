@@ -15,7 +15,7 @@ import { roomHash } from './route.js';
 import { keepLines } from './text-math.js';
 import { picture } from './pictures.js';
 import { recordsAmount, amountFields, doneBody, checkReason, checkLongterm, setupUpdate, beforeText, setupBody, taskParts } from './tasks-math.js';
-import { pickWarnings, donePicks } from './harvest-math.js';
+import { askingSend } from './asks.js'; // ---- Data integrity ---- the server's asks (a heavy pick, a duplicate)
 
 const COMMAND_TIMEOUT = 15000;
 
@@ -318,32 +318,6 @@ export function openForm({ title, lead = [], fields = [], buttons = [], closeLab
   return handle;
 }
 
-// A pick over PICK_MAX_PER_BLOCK kg a block (harvest-math.js) asks once rather than being refused: the first submit says so
-// under each such kg box and the primary button (value, label) reads "Record anyway"; a submit with the same kg over the same
-// blocks then sends it (the label plain again, so a failed send does not still say "anyway"), and a change to one of the
-// fields (the kg boxes, Record's crop) asks again. → check(form, picks [{ field, kg, blocks }]): the checks to show, or null
-// to send.
-export function pickGuard({ value, label, fields }) {
-  let asked = null; // the kg and blocks the question was asked for
-  let watching = false;
-  return (form, picks) => {
-    const warnings = pickWarnings(picks);
-    const key = picks.map((p) => `${p.field}=${p.kg}/${p.blocks}`).join();
-    const b = form.button(value);
-    if (!warnings.length || key === asked) {
-      b.textContent = label;
-      return null;
-    }
-    asked = key;
-    b.textContent = `${label} anyway`;
-    if (!watching) {
-      watching = true;
-      for (const name of fields) form.input(name)?.addEventListener('input', () => { asked = null; b.textContent = label; });
-    }
-    return warnings.map((w) => ({ ...w, warn: true }));
-  };
-}
-
 // ---- Done, Skip, Cancel, Add ----
 
 // The Done form's amount boxes: a mixed room's kg one per crop (its picture and name, "kg" in a narrow box, two a row) under
@@ -426,14 +400,19 @@ export function createTaskActions({ onChanged, onError }) {
   }
 
   // A command (form: its dialog, if any). After it the list is asked again, and after a 409 or 404 too (someone else closed
-  // it, or it is gone).
-  async function send(path, body, form = null) {
+  // it, or it is gone). Data integrity (5.1): with asking (askingSend's) it goes through the server's asks, shown under their
+  // boxes, the same values sent again confirmed.
+  async function send(path, body, form = null, asking = null) {
     try {
-      const row = await request('POST', path, body, COMMAND_TIMEOUT);
+      let row = null;
+      if (asking) {
+        const out = await asking(form, body, async (b) => { row = await request('POST', path, b, COMMAND_TIMEOUT); });
+        if (out !== true) return out;
+      } else row = await request('POST', path, body, COMMAND_TIMEOUT);
       if (alive) changed(row);
       return true;
     } catch (err) {
-      if (alive && (err.status === 409 || err.status === 404)) changed(null);
+      if (alive && ((err.status === 409 && !err.asks) || err.status === 404)) changed(null);
       if (alive && err.status === 400 && err.field === 'worker') await refusedName(form);
       return err.status === 400 && err.field ? { field: err.field, message: err.message } : { message: errorText(err) };
     }
@@ -451,7 +430,7 @@ export function createTaskActions({ onChanged, onError }) {
       return;
     }
     const amounts = amountFields(row);
-    const implausible = pickGuard({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) });
+    const asking = askingSend({ value: 'done', label: 'Done', fields: amounts.map((f) => f.name) }); // a heavy pick: the server asks
     const form = ask({
       title: 'Mark done',
       lead: leadOf(row, list),
@@ -462,9 +441,7 @@ export function createTaskActions({ onChanged, onError }) {
         if (!w) return { field: 'worker', message: 'Pick who did it' };
         const body = doneBody(row, w, v);
         if (body.error) return { field: body.field, message: body.error };
-        const asked = implausible(form, donePicks(row, body));
-        if (asked) return asked;
-        const r = await send(`/api/tasks/${row.id}/done`, body, form);
+        const r = await send(`/api/tasks/${row.id}/done`, body, form, asking);
         return r !== true && r.field === 'amounts' && amounts[0] ? { ...r, field: amounts[0].name } : r;
       },
     });
