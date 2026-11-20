@@ -91,7 +91,7 @@ test('no rooms: no room, no figures', (t) => {
   const s = setup(t, { rooms: 0 });
   assert.deepEqual(s.econ.view(), {
     rooms: [], room: null, crop: 'lionsmane', ways: ['yours', 'highland', 'import', 'warm'], left: [{ way: 'shed', reason: 'warm-strain' }],
-    figures: [], context: { otherBlocks: 0, register: null }, sim: null, machinesNote: null, errors: {},
+    figures: [], context: { otherBlocks: 0, register: null }, limit: null, sim: null, machinesNote: null, errors: {},
   });
   // a room asked for that is not there is a 404 (spec 7.1), with no rooms too: the page then asks without it
   assert.throws(() => s.econ.view({ room: 1 }), (e) => e instanceof EconomicsError && e.status === 404 && e.message === 'Room not found');
@@ -366,7 +366,7 @@ test('close stops listening to the events', (t) => {
   const s = setup(t);
   const n = s.events.listeners();
   s.econ.close();
-  assert.equal(s.events.listeners(), n - 1);
+  assert.equal(s.events.listeners(), n - 2, 'the simulations\' and (stage 2) the rooms\' crop events');
 });
 
 // ---- Money truth (spec 2026-11-12-money-truth-design.md 6.3, 8.1, 9 and 10) ----
@@ -436,4 +436,29 @@ test('the room type: Economics prices a built room\'s building and cooling, the 
   assert.deepEqual([v.room.type, v.room.size], ['built', null]);
   assert.equal(fig(v, 'yours.container').value, 25056, '156.6 m² of panel');
   assert.equal(fig(v, 'yours.cooling').value, 13560, '3 units for 113 m³');
+});
+
+// ---- Economics stage 2 (spec 2026-11-12-economics-stage-2-design.md 6.3): what you can sell a week ----
+test('the sales limit: only yours caps; Your sales a week (from the window\'s first sale, at least 7 days) beside it as a suggestion; never a figure row', async (t) => {
+  const s = setup(t);
+  const { createSales } = await import('../server/sales.js');
+  const sales = createSales({ db: s.db, now: () => NOW });
+  assert.deepEqual(s.econ.view().limit, { value: null, source: null, at: null, sales: null });
+  const buyer = sales.addBuyer({ name: 'Example Buyer' });
+  sales.record({ soldAt: at('2026-10-21'), buyerId: buyer.id, lines: [{ crop: 'lionsmane', kg: 14, priceKg: 50 }] });
+  sales.record({ soldAt: at('2026-11-05'), buyerId: buyer.id, lines: [{ crop: 'lionsmane', kg: 10, priceKg: 50 }] });
+  assert.deepEqual(s.econ.view().limit, { value: null, source: null, at: null, sales: { kg: 24, days: 21, from: '2026-10-21' } }, 'nothing typed: no limit; 24 kg over 21 days beside it (the owner, 2026-11-13)');
+  assert.equal(s.econ.view({ crop: 'oyster' }).limit.source, null, 'per crop');
+  s.econ.setFigure({ room: s.room, crop: 'lionsmane', key: 'market.kgWeek', value: 30 });
+  assert.deepEqual(s.econ.view().limit, { value: 30, source: 'owner', at: NOW, sales: { kg: 24, days: 21, from: '2026-10-21' } });
+  assert.equal(s.econ.view().figures.some((f) => f.key === 'market.kgWeek'), false, 'not a Figures row, not swung');
+  assert.equal(s.db.economicsFigures(s.room, 'lionsmane').find((r) => r.key === 'market.kgWeek').roomId, 0, 'the crop\'s market, every room');
+  s.econ.clearFigure({ room: s.room, crop: 'lionsmane', key: 'market.kgWeek' });
+  assert.deepEqual([s.econ.view().limit.value, s.econ.view().limit.source], [null, null]);
+  assert.throws(() => s.econ.setFigure({ room: s.room, crop: 'oyster', key: 'market.kgWeek', value: 100_001 }), (e) => e.status === 400 && e.field === 'value');
+  // one sale today: over 7 days
+  const fresh = setup(t);
+  const sales2 = createSales({ db: fresh.db, now: () => NOW });
+  sales2.record({ soldAt: NOW, buyerId: sales2.addBuyer({ name: 'Example Buyer' }).id, lines: [{ crop: 'oyster', kg: 7, priceKg: 9 }] });
+  assert.deepEqual(fresh.econ.view({ crop: 'oyster' }).limit, { value: null, source: null, at: null, sales: { kg: 7, days: 7, from: '2026-11-10' } });
 });

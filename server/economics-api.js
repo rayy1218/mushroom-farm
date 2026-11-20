@@ -1,5 +1,5 @@
 // The Economics page's routes (spec 2026-11-06-economics-design.md 7.1), called from api.js: GET /api/economics?room=&crop=,
-// PUT and DELETE /api/economics/figures, POST /api/economics/work-out. server/economics.js does the work; this reads the
+// PUT and DELETE /api/economics/figures, POST /api/economics/work-out, GET /api/economics/plans (stage 2). server/economics.js does the work; this reads the
 // requests and turns its refusals into the API's. The owner's only: server/roles.js lets no worker in (a route not on its
 // worker list is 403), and the live stream keeps the 'economics' event from workers (server/live.js).
 
@@ -7,7 +7,7 @@ import { createEconomics, EconomicsError } from './economics.js';
 import { localZone } from './usage.js';
 
 const ID = /^[1-9][0-9]{0,14}$/;
-const ROUTE = /^\/api\/economics(?:\/figures|\/work-out)?$/; // its three paths; another under /api/economics is the API's 404
+const ROUTE = /^\/api\/economics(?:\/figures|\/work-out|\/plans)?$/; // its four paths; another under /api/economics is the API's 404
 
 // The room of a query: none (null: the first room), else an id; text that is not an id is no room (404).
 const roomQuery = (text) => (text === null || text === '' ? null : ID.test(text) ? Number(text) : 0);
@@ -26,6 +26,8 @@ export function createEconomicsRoutes({ db, events = null, harvests, batches, si
       send(res, 200, economics.setFigure(await readJson(req)));
     } else if (path === '/api/economics/figures' && req.method === 'DELETE') {
       send(res, 200, economics.clearFigure({ room: roomQuery(q('room')) ?? 0, crop: q('crop'), key: q('key') }));
+    } else if (path === '/api/economics/plans' && req.method === 'GET') { // ---- Economics stage 2 ---- (spec 7.4)
+      send(res, 200, economics.plans({ room: roomQuery(q('room')) ?? 0, crop: q('crop') }));
     } else if (path === '/api/economics/work-out' && req.method === 'POST') {
       const { status, view } = economics.workOut(await readJson(req));
       send(res, status, view);

@@ -3069,10 +3069,6 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 .ec-line { margin: 4px 0 0; font-size: var(--fs-sm); }
 .ec-phone { display: none; }
 /* the figures: folds as Setup's parts; a row is its label, box and tag, then its note and where it applies */
-/* the result while typing (the audit, #1): the headline's sentence, sticky under the top bar while the card scrolls, as
-   History's head */
-.ec-now { position: sticky; top: var(--topbar-h); z-index: 2; margin: 0 -20px 8px; padding: 8px 20px; background: var(--surface); border-bottom: 1px solid var(--border);
-  font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
 .ec-intro { margin: 0 0 8px; font-size: var(--fs-sm); }
 .ec-parts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0 0 8px; color: var(--warning-text); font-size: var(--fs-sm); }
 .ec-fold { border-top: 1px solid var(--border); }
@@ -3104,19 +3100,165 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
 .ec-sim { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .ec-sim [data-sim-line]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 .ec-foot { margin: 10px 0 0; font-size: var(--fs-sm); }
+/* ---- Economics stage 2 (spec 2026-11-12-economics-stage-2-design.md) ---- */
+/* your runs against the plan (7.8): the run in progress, its bar, then a fold a finished run with its table and lines */
+.ec-runs-body { max-width: 760px; }
+.ec-current { margin: 0 0 12px; }
+.ec-progress { margin: 0; font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ec-progress-bar { height: 6px; margin: 8px 0 6px; border-radius: 3px; background: var(--band); overflow: hidden; }
+.ec-progress-bar { position: relative; }
+.ec-progress-bar > span:first-child { display: block; height: 100%; background: var(--muted); }
+.ec-progress-due { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); }
+.ec-runs-line { margin: 6px 0 0; font-size: var(--fs-sm); }
+.ec-run-table { width: 100%; margin-top: 4px; }
+.ec-run-table thead th:first-child { width: 44%; }
+.ec-run-table tr[data-row="profit"] :is(th, td) { font-weight: 700; border-top: 1px solid var(--border-strong); }
+.ec-run, .ec-older { padding-bottom: 8px; }
+.ec-older > .ec-run { margin-left: 0; }
+/* the month (4.1): Costs' tiles; the fourth a button to its bar; the meter under them */
+.ec-tiles { margin-top: 0; }
+.ec-tile-best { font: inherit; color: inherit; text-align: left; background: none; border: 0; border-left: 1px solid var(--border-strong); border-radius: 0; cursor: pointer; }
+.ec-tile-best:hover { background: var(--band); border-color: var(--border-strong); }
+.ec-tile-best:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ec-tile-best > span { display: block; } /* a button's spans laid out as the other tiles' paragraphs */
+.ec-tile-way { display: block; font-size: var(--fs-sm); font-weight: 600; line-height: 1.3; }
+.ec-tile-caption { text-transform: none; }
+.ec-meter { margin: 0; color: var(--ink-2); font-size: var(--fs-sm); }
+/* Figures folded (the owner, 2026-11-12): its title a 44 px toggle with the Folds' drawn chevron */
+.ec-figures-head { margin: 0; font-size: var(--fs-md); }
+.ec-figures-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.ec-figures-toggle:hover { background: none; }
+.ec-figures-toggle::after { content: ""; width: 8px; height: 8px; margin-right: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); }
+.ec-figures-toggle[aria-expanded="true"]::after { transform: rotate(-135deg); }
+.ec-figures-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ec-inline { font: inherit; color: inherit; background: none; border: 0; padding: 0; min-height: 0; text-decoration: underline; cursor: pointer; }
+.ec-inline:hover { background: none; color: var(--ink); }
+/* the sections under the month in a column, so the sticky line rides to the page's end (a grid area would hold it) */
+.ec-rest { display: flex; flex-direction: column; gap: 16px; }
+.ec-rest :is(button, summary, a, select) { scroll-margin-top: calc(var(--topbar-h) + 56px); } /* clear of the top bar and the sticky line (the review) */
+.ec-sticky { position: sticky; top: var(--topbar-h); z-index: 3; display: flex; align-items: center; min-height: 44px; margin: 0; padding: 0 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ec-sticky[hidden] { display: none; }
+/* profit per way (4.2): a row a way, its label then a track with the zero line; the value just past the bar's end */
+.ec-bars { max-width: 760px; margin: 0 0 16px; padding: 0; list-style: none; }
+.ec-bar-button, .ec-bar-left { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: center; width: 100%; min-height: 34px; padding: 0 4px; }
+.ec-bar-button { font: inherit; color: inherit; text-align: left; background: none; border: 0; border-radius: 4px; cursor: pointer; }
+.ec-bar-button:hover, .ec-bar-button[aria-pressed="true"] { background: var(--band); border-color: transparent; }
+.ec-bar-button[aria-pressed="true"] .ec-bar-name::after { content: " · shown"; color: var(--muted); font-weight: 400; }
+.ec-bar-yours .ec-bar-name { font-weight: 700; }
+.ec-bar-track { position: relative; height: 18px; margin: 0 7.5em; }
+.ec-bar-left .ec-bar-track { height: auto; margin: 0; }
+.ec-bar-zero { position: absolute; top: -4px; bottom: -4px; width: 1px; background: var(--axis); }
+.ec-bar-fill { position: absolute; top: 3px; height: 12px; border-radius: 2px; background: var(--good); opacity: .7; }
+.ec-bar-loss { background: var(--critical); opacity: 1; } /* 3 : 1 in the dark too (the UI check) */
+.ec-bar-yours .ec-bar-fill { opacity: 1; outline: 2px solid var(--accent); outline-offset: 1px; }
+.ec-bar-short .ec-bar-fill { outline: 0; }
+.ec-bar-value { position: absolute; top: 50%; transform: translateY(-50%); white-space: nowrap; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ec-bar-value[data-side="right"] { margin-left: 6px; }
+.ec-bar-value[data-side="left"] { margin-right: 6px; }
+.ec-bar-reason, .ec-bar-left { color: var(--muted); font-size: var(--fs-sm); }
+/* the table (4.4): at most 760 px, the label column 240 px, a row under the pointer and a marked way's column tinted */
+.ec-table { max-width: 760px; }
+.ec-desk:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ec-table thead th:first-child { width: 240px; }
+.ec-table .ec-on { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+@media (hover: hover) { .ec-table tbody tr:hover > * { background: var(--band); } }
+.ec-pair { display: none; max-width: 360px; margin: 0 0 12px; } /* a phone's only (4.4) */
+/* the source labels (4.3): labels, not buttons (4 px corners, no hover); yours typed accent, yours recorded green, the app's neutral, research quiet with its dots; the row ruled at its left by yours */
+.ec-tag { border-radius: 4px; cursor: default; }
+.ec-tag[data-tier="typed"] { display: inline-flex; align-items: center; gap: 4px; border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
+.ec-tag[data-tier="recorded"] { border-color: transparent; background: var(--good-soft); color: var(--good-text); }
+.ec-tag[data-tier="research"] { border-color: transparent; color: var(--muted); font-weight: 500; }
+.ec-tag[data-tier="app"] { border-color: transparent; background: var(--band); } /* a label, not a button (the UI check) */
+.ec-dots { margin-left: 6px; color: var(--ink-2); letter-spacing: -1px; font-size: var(--fs-xs); }
+.ec-pencil { display: inline-flex; }
+.ec-fig { border-left: 3px solid transparent; padding-left: 10px; }
+.ec-fig[data-tier="typed"] { border-left-color: var(--accent); }
+.ec-fig[data-tier="recorded"] { border-left-color: var(--good); }
+.ec-fig[data-tier="typed"] .ec-box:not([aria-invalid="true"]):not([data-warn]) { border-color: var(--accent); }
+/* price × yield (6.5): what you can sell first, as a Figures row; then the grid, equal cells, a 1 px seam */
+.ec-limit { max-width: 1040px; margin-bottom: 8px; }
+.ec-limit .ec-fig { border-top: 0; }
+.ec-map { border-collapse: separate; border-spacing: 1px; table-layout: fixed; }
+.ec-map-corner, .ec-map-head, .ec-map-yield { padding: 2px 4px; color: var(--ink-2); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.ec-map-head { text-align: center; }
+.ec-map-yield { text-align: right; }
+.ec-map-axis { font-weight: 400; color: var(--muted); }
+.ec-cell { position: relative; width: 64px; height: 40px; padding: 0; }
+.ec-cell-profit { background: var(--good-soft); color: var(--good-text); }
+:root[data-theme="light"] :is(.ec-cell-profit, .ec-tag[data-tier="recorded"]) { color: color-mix(in srgb, var(--good-text) 80%, var(--ink)); } /* 4.5 : 1 on the soft fill (the UI check) */
+.ec-cell-button > span:not(.ec-now-dot) { text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface); } /* legible over the break-even mark */
+.ec-cell-loss { background: var(--critical-bg); color: var(--critical-text); }
+.ec-cell-even { background: var(--band); color: var(--ink-2); }
+.ec-capped { background-image: repeating-linear-gradient(45deg, transparent 0 6px, color-mix(in srgb, var(--border-strong) 60%, transparent) 6px 7px); }
+.ec-cell-button { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 3px; width: 100%; height: 40px; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; cursor: pointer; }
+.ec-cell-button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); border-color: transparent; }
+.ec-cell-now { box-shadow: inset 0 0 0 2px var(--ink); }
+.ec-cell-button[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.ec-cell-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ec-cell-now[aria-current="true"] { box-shadow: inset 0 0 0 2px var(--accent), inset 0 0 0 4px var(--ink); }
+.ec-now-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+.ec-map-wrap { position: relative; padding: 0 9px; }
+.ec-be-line { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
+.ec-be-path { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; opacity: .7; }
+.ec-be-arrow { fill: var(--ink); }
+.ec-cell { background-clip: padding-box; }
+.ec-map-side { margin-top: 8px; }
+.ec-map-picked { margin: 8px 0 0; font-size: var(--fs-sm); font-weight: 600; }
+.ec-map-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; font-size: var(--fs-xs); }
+.ec-key { display: inline-flex; align-items: center; gap: 5px; }
+.ec-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; }
+.ec-swatch.ec-capped { background-color: var(--band); }
+.ec-swatch-now { width: 8px; height: 8px; border-radius: 50%; background: var(--ink); }
+.ec-swatch-be { width: 2px; background: var(--ink); border-radius: 0; }
+.ec-phone-only { display: none; }
+@media (min-width: 1200px) { .ec-map-body { display: grid; grid-template-columns: auto minmax(220px, 360px); gap: 24px; align-items: start; } .ec-cell { width: 84px; height: 46px; } .ec-cell-button { height: 46px; font-size: var(--fs-sm); } .ec-map-side { margin-top: 30px; } }
+/* what moves profit most (5.5): a row's words, then a 12 px bar on one scale around now (a centre line) */
+.ec-swing-body { max-width: 760px; }
+.ec-swing-now { margin: 0 0 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.ec-swing { margin: 0; padding: 0; list-style: none; }
+.ec-swing-row { padding: 6px 0; border-top: 1px solid var(--border); }
+.ec-swing-words { margin: 0 0 4px; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ec-swing-label { font-weight: 600; }
+.ec-go { font: inherit; color: inherit; background: none; border: 0; padding: 0; min-height: 0; text-align: left; text-decoration: underline; text-decoration-color: var(--muted); text-underline-offset: 3px; cursor: pointer; }
+.ec-go:hover { background: none; color: var(--ink); text-decoration-color: currentColor; }
+.ec-swing-range { color: var(--ink-2); }
+.ec-swing-line { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) 9.5em; align-items: center; gap: 8px; }
+.ec-swing-end { display: flex; flex-direction: column; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.ec-swing-left { align-items: flex-end; text-align: right; }
+.ec-swing-amount { font-weight: 600; }
+.ec-swing-at { color: var(--muted); }
+.ec-first { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.ec-first-title { margin: 0; font-size: var(--fs-md); }
+.ec-first-list { margin: 8px 0 0; padding: 0; list-style: none; }
+.ec-first-row { padding: 6px 0; border-top: 1px solid var(--border); }
+.ec-first-what, .ec-first-moves { margin: 0; font-size: var(--fs-sm); }
+.ec-first-what .ec-go { font-weight: 600; }
+.ec-swing-source { color: var(--muted); }
+.ec-swing-bar { position: relative; display: block; height: 12px; }
+.ec-swing-down, .ec-swing-up { position: absolute; top: 0; bottom: 0; }
+.ec-swing-down { background: var(--critical); border-radius: 2px 0 0 2px; }
+.ec-swing-up { background: var(--good); border-radius: 0 2px 2px 0; }
+.ec-swing-zero { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--axis); }
+.ec-swing-all { margin-top: 8px; }
+/* ---- end Economics stage 2 (the phone's rules are in the media block below) ---- */
 @media (max-width: 600px) {
   .ec-picks { flex: 1 1 100%; margin-left: 0; }
   .ec-pick { flex: 1 1 100%; }
-  /* the comparison: a block a way, Your container first, its head the way's name with its profit */
+  /* the comparison (stage 2, 4.4): Your container beside one other way, narrow numeric columns */
   .ec-desk { display: none; }
-  .ec-phone { display: grid; gap: 16px; }
-  .ec-block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .ec-block-name { margin: 0; font-size: var(--fs-md); }
-  .ec-block-profit { margin: 0; font-weight: 700; text-align: right; }
-  .ec-block-label { display: block; color: var(--muted); font-size: var(--fs-xs); font-weight: 400; }
-  .ec-now { margin: 0 -16px 8px; padding: 8px 16px; font-size: var(--fs-sm); }
+  .ec-phone { display: block; }
+  .ec-phone .ec-table { width: 100%; table-layout: fixed; font-size: var(--fs-sm); }
+  .ec-phone .ec-table thead th:first-child { width: 31%; }
+  .ec-phone .ec-table :is(th, td) { padding-left: 3px; padding-right: 3px; }
+  .ec-phone .ec-table td { padding-left: 8px; }
+  .ec-phone .ec-table .ec-sub { white-space: normal; } /* "of 228.6 kg grown" wraps in its own column */
+  .ec-phone .ec-table thead th { white-space: normal; }
+  .ec-pair:not([hidden]) { display: block; max-width: none; }
+  .ec-bar-button, .ec-bar-left { min-height: 44px; }
+  /* a figure's name in Set these first and the chart: a 44 px target, its line kept (the review) */
+  .ec-go { padding: 12px 0; margin: -12px 0; }
+  .ec-sticky { padding: 0 14px; font-size: var(--fs-sm); }
   .ec-box { scroll-margin-top: 112px; }
-  .ec-block-table tbody th { font-weight: 400; color: var(--ink-2); }
   /* a figure: its label with its tag beside it, then the box and its unit a row of their own (at 360 px "a kg" fell under
      a box sharing its row with the tag) */
   .ec-fig { grid-template-columns: minmax(0, 1fr) auto; }
@@ -3130,6 +3272,30 @@ html[data-role="worker"] [data-owner-only] { display: none !important; }
   /* a link inside a sentence of several links keeps its line, without padding: padding would overlap the next line's link
      (WCAG 2.5.8's inline exception); 1.75 lines give each link 24 px with no overlap (the audit, #15) */
   .ec-note-line { line-height: 1.75; }
+  /* stage 2: a link that stands alone is a 44 px row; the runs' table keeps its three columns */
+  .ec-alone { display: inline-flex; align-items: center; min-height: 44px; }
+  .ec-fig { padding-left: 8px; }
+  /* the map at 360 px: 40 px cells and their heads fit; a sign in each cell, its words on a tap (the 44 px Rule's exception) */
+  .ec-desk-only { display: none; }
+  .ec-phone-only { display: inline; }
+  .ec-map-wrap { max-width: none; }
+  .ec-cell { width: 40px; }
+  .ec-map-yield, .ec-map-head { padding: 2px; }
+  .ec-map-axis { display: none; }
+  .ec-run-table thead th:first-child { width: 44%; }
+  .ec-run-table :is(th, td) { padding-left: 4px; padding-right: 4px; }
+  .ec-swing-line { grid-template-columns: 6.5em minmax(0, 1fr) 6.5em; gap: 6px; }
+  /* under 380 px the map's cells are 36 px and its card's sides 12 px: seven and their heads fit 360 px (the UI check) */
+  @media (max-width: 380px) {
+    .ec-cell { width: 35px; }
+    .ec-map-card { padding-left: 12px; padding-right: 12px; } }
+  /* under 480 px a way's name over its bar */
+  @media (max-width: 480px) {
+    .ec-bar-button, .ec-bar-left { grid-template-columns: minmax(0, 1fr); padding: 4px; }
+    .ec-bar-track { margin: 4px 6.5em 2px; }
+    .ec-bar-value { font-size: var(--fs-xs); }
+    .ec-bar-left .ec-bar-track { margin: 0; }
+  }
 }
 /* ---- end Economics ---- */
 

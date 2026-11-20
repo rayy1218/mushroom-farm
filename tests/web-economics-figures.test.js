@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, valuesOf, typed, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems,
+  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems, tierOf, labelOf, meterOf, meterText, limitFigure, limitWeekOf,
 } from '../web/economics-figures.js';
 import { figuresFor, researchOf, SOURCES } from '../web/economics-defaults.js';
 import { rangeText } from '../web/economics-math.js';
@@ -50,9 +50,9 @@ test('the tags, and where a figure applies', () => {
     ['Every room and crop', "Every room, Lion's mane", 'Container 1, every crop', "Container 1, Lion's mane"]);
 });
 
-test('the research note: confidence, range, its note and its sources (each a link)', () => {
+test('the research note: range, its note and its sources (each a link); its confidence is the label\'s meter (stage 2)', () => {
   const [note] = noteParts(one('yours.yieldG'), ctx);
-  assert.equal(plain(note.text), "Low confidence: 150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g.", "the tag says Research: the note does not repeat it");
+  assert.equal(plain(note.text), "150–400 g. Malaysian 150 g in a warm room; Shandong factory 400 g.", "the label says Research and its confidence: the note does not repeat them");
   assert.deepEqual(note.sources.map((s) => `${s.title} ${s.year}`), ['October defaults 2026', 'Malaysiaaktif 2025', 'Nongji 2023', 'Europe PMC 2023', 'Stamets (archive.org) 1993']);
   assert.equal(note.sources[1].url, 'https://malaysiaaktif.my/2025/04/cendawan-kobis-bunga-tarik-perhatian-penduduk-seberang-perak');
   assert.equal(noteParts(one('import.buyHours'), ctx)[0].sources, undefined, 'a placeholder with no source');
@@ -85,7 +85,7 @@ test('the owner\'s, Settings\', a pending day, a part not read and a loss counte
   assert.deepEqual(notes(one('tariff', { source: 'settings', value: 0.55 })), [{ text: 'Settings → Electricity price; Costs uses it too.' }]);
   const pending = notes(one('yours.kwhBlock', { notes: ['pending'] }));
   assert.deepEqual(pending[0], { text: 'Your runs: working out the energy…' });
-  assert.match(pending[1].text, /^Medium confidence/);
+  assert.match(plain(pending[1].text), /^0\.40–1\.63 kWh\./);
   assert.deepEqual(notes(one('price', { notes: ['not-read:harvest', 'not-read:sales'] })).slice(0, 2), [
     { text: "Couldn't read Harvest just now; using research.", tone: 'warn' }, { text: "Couldn't read Sales just now; using research.", tone: 'warn' },
   ]);
@@ -365,4 +365,58 @@ test('the building\'s research note points to the room type on Setup', () => {
 
 test('an equipment part the register has no item for says where its figure comes from', () => {
   assert.equal(plain(noteParts(one('yours.humidifier', { notes: ['not-in-register'] }), ctx).at(-1).text), 'Not in your equipment register: research.');
+});
+
+// ---- Economics stage 2 (spec 2026-11-12-economics-stage-2-design.md 4.3) ----
+test('the labels in tiers: yours typed, yours recorded, the app\'s, research with its confidence meter', () => {
+  const tier = (source, more = {}) => tierOf(one('price', { source, ...more }));
+  assert.deepEqual(['owner', 'runs', 'sales', 'costs', 'register', 'simulator', 'settings', 'research'].map((s) => tier(s, { runs: { count: 2 } })),
+    ['typed', 'recorded', 'recorded', 'recorded', 'recorded', 'app', 'app', 'research']);
+  assert.equal(tierOf(one('yours.blocks', { source: 'runs', runs: { from: 'crop' } })), 'app', 'the planted blocks: the Crop tab\'s');
+  assert.deepEqual(plain(labelOf(one('yours.yieldG'))), { text: 'Research', tier: 'research', dots: 1, reader: 'Research, low confidence' });
+  assert.deepEqual(labelOf(one('yours.first')).dots, 2);
+  assert.deepEqual(labelOf(one('price', { research: { ...one('price').research, confidence: 'high' } })).dots, 3);
+  assert.deepEqual(plain(labelOf(one('price', { source: 'runs', runs: { count: 3 } }))), { text: 'Your runs · 3 runs', tier: 'recorded', dots: 0, reader: 'Your runs · 3 runs' });
+  assert.deepEqual(labelOf(one('price', { source: 'owner', at: 1 })), { text: 'You set', tier: 'typed', dots: 0, reader: 'You set' });
+});
+
+test('the page meter: Your container\'s and the shared figures, by tier; none yours says where to set them', () => {
+  const all = figures();
+  const m = meterOf(all);
+  const mine = all.filter((f) => f.way === 'shared' || f.way === 'yours').length;
+  assert.deepEqual(m, { yours: 0, of: mine, research: mine, app: 0 }, 'every figure research in this fixture');
+  assert.deepEqual(plain(meterText(m)), { text: `Your figures 0 of ${mine} · Research ${mine} · Settings and app 0`, setYours: true });
+  const some = all.map((f) => (f.key === 'price' ? { ...f, source: 'sales' } : f.key === 'yours.yieldG' ? { ...f, source: 'owner' } : f.key === 'yours.blocks' ? { ...f, source: 'runs', runs: { from: 'crop' } } : f));
+  assert.deepEqual(meterOf(some), { yours: 2, of: mine, research: mine - 3, app: 1 });
+  assert.equal(meterText(meterOf(some)).setYours, false);
+  assert.equal(meterOf(all.filter((f) => f.way === 'highland')).of, 0, 'the other ways\' figures are not counted');
+});
+
+test('what you can sell as a Figures row (stage 2, 6.3): its label, its notes, Back to default', () => {
+  const sales = { kg: 24, days: 21, from: '2026-10-21' };
+  const none = limitFigure({ value: null, source: null, at: null, sales: null });
+  assert.deepEqual([none.key, none.scope, none.value, none.source, labelOf(none).text, labelOf(none).tier], ['market.kgWeek', 'crop', null, 'none', 'No limit', 'app']);
+  assert.deepEqual(plain(noteParts(none, ctx)), [{ text: "No limit: you sold no Lion's mane in the last 90 days. Set what you can sell a week." }]);
+  // the owner, 2026-11-13: nothing typed caps nothing; Your sales' week is a suggestion with Use this
+  const fromSales = limitFigure({ value: null, source: null, at: null, sales });
+  assert.deepEqual([fromSales.value, labelOf(fromSales).text, labelOf(fromSales).tier], [null, 'No limit', 'app']);
+  assert.deepEqual(plain(noteParts(fromSales, ctx)), [
+    { text: "No limit set: nothing is capped. You've sold about 8.0 kg a week of Lion's mane (24.0 kg over 21 days).", use: 8 },
+    { text: "A limit caps Container 1's month as if it alone sold Lion's mane; the other rooms' Lion's mane is not taken off it." },
+  ]);
+  const set = limitFigure({ value: 30, source: 'owner', at: at('2026-11-06'), sales });
+  assert.deepEqual(plain(noteParts(set, ctx)), [
+    { text: "You set this on 6 Nov · You've sold about 8.0 kg a week.", back: true },
+    { text: "It caps Container 1's month as if it alone sold Lion's mane; the other rooms' Lion's mane is not taken off it." },
+  ]);
+  assert.deepEqual(plain(noteParts(limitFigure({ value: 30, source: 'owner', at: at('2026-11-06'), sales: null }), ctx))[0], { text: 'You set this on 6 Nov.', back: true });
+  // what caps the month: the box as typed, else yours; never Your sales
+  assert.equal(limitWeekOf(fromSales.value === null ? { value: null, source: null, at: null, sales } : null), null);
+  assert.equal(limitWeekOf({ value: 8, source: 'sales', at: null, sales }), null, 'a suggestion never caps');
+  assert.equal(limitWeekOf({ value: 30, source: 'owner', at: 0, sales }), 30);
+  assert.equal(limitWeekOf({ value: 30, source: 'owner', at: 0, sales }, 12), 12, 'typed, not yet saved');
+  assert.equal(limitWeekOf(null), null);
+  assert.equal(appliesText(set, 'Container 1', 'lionsmane'), "Every room, Lion's mane");
+  assert.deepEqual(noteParts(limitFigure({ value: null, source: null, at: null, sales: null }, { sales: 'x' }), ctx),
+    [{ text: "Couldn't read Sales just now; no limit used. Set what you can sell a week.", tone: 'warn' }], 'Sales not read: not "you sold none"');
 });

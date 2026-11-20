@@ -12,7 +12,7 @@ import { createHarvests } from '../server/harvests.js';
 import { createBatches } from '../server/batches.js';
 import { createSales } from '../server/sales.js';
 import { fixedZone } from '../server/usage.js';
-import { yourRuns, yourSales, PART_FAILED } from '../server/economics-runs.js';
+import { yourRuns, yourSales, eachRun, countedRuns, PART_FAILED } from '../server/economics-runs.js';
 
 mkdirSync('/tmp/economics', { recursive: true });
 const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)), h - 8); // a farm day and hour
@@ -144,7 +144,7 @@ test('the price: the crop\'s lines reaching a counted run by Costs\' sale steps,
   f.sell(at('2026-11-30'), [{ crop: 'oyster', kg: 20, priceKg: 90 }]);
   assert.equal(read(f, 'oyster').figures.price.value, 10);
   assert.deepEqual(yourSales({ db: f.db, crop: 'oyster', today: TODAY, zone }), {
-    value: 50, runs: { kg: 40, total: 2000, count: 2, from: '2026-09-03', to: TODAY },
+    value: 50, runs: { kg: 40, total: 2000, count: 2, from: '2026-09-03', to: TODAY, first: '2026-11-10' },
   }, 'every oyster sale of the last 90 days, farm-wide');
   assert.deepEqual(yourSales({ db: f.db, crop: 'lionsmane', today: TODAY, zone }).value, 52.82, '(5,000 + 2,000 + 990 + 990) ÷ 170 kg');
   assert.equal(yourSales({ db: f.db, crop: 'pink', today: TODAY, zone }), null);
@@ -218,4 +218,77 @@ test('the room\'s runs that cannot be read: named under harvest, the price and e
   assert.equal(out.figures.blockPrice.value, 5.63);
   assert.equal(out.figures.price, undefined);
   assert.equal(out.figures['yours.kwhBlock'], undefined);
+});
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.3): each counted run's own figures.
+const each = (f, crop = 'lionsmane', more = {}) => eachRun({
+  db: f.db, harvests: f.harvests, batches: f.batches, days: daysOf(10), room: f.room(), crop, today: TODAY, zone, ...more,
+});
+
+test('countedRuns: the runs Your runs counts, oldest first, a partial run from its block-in day', (t) => {
+  const f = farm(t);
+  assert.deepEqual(countedRuns(f.harvests, f.one, 'lionsmane').map((r) => r.id), [f.r1, f.r2]);
+  const partial = f.db.cropRuns(f.one).find((r) => r.partial);
+  f.db.setRunBlocksIn(partial.id, at('2026-06-20'));
+  const runs = countedRuns(f.harvests, f.one, 'lionsmane');
+  assert.deepEqual(runs.map((r) => [r.id, r.from]), [[partial.id, at('2026-06-20')], [f.r1, at('2026-08-12', 9)], [f.r2, at('2026-09-24', 9)]]);
+});
+
+test('eachRun: every counted run newest first with its own blocks, loss, kg, sales, block price, kWh and days; the open run; the left out', (t) => {
+  const f = farm(t);
+  const [b2] = f.batches.list({ run: f.r2 }).batches.filter((b) => b.blocks === 600);
+  f.batches.addCheck(b2.id, { lost: 50, cause: 'green', worker: 'Ali', at: at('2026-10-01') });
+  f.sell(at('2026-09-05'), [{ crop: 'lionsmane', kg: 100, priceKg: 50, roomId: f.one }]); // run 1
+  f.sell(at('2026-10-01'), [{ crop: 'lionsmane', kg: 10, priceKg: 60 }]); // no room: run 2, the only one growing it then
+  const out = each(f);
+  assert.deepEqual(out.errors, {});
+  assert.deepEqual(out.past.map((r) => r.runId), [f.r2, f.r1]);
+  assert.deepEqual(out.past[0], {
+    runId: f.r2, from: at('2026-09-24', 9), to: at('2026-11-03', 9), days: 40, partial: false, mixed: [],
+    blocks: 1000, roomBlocks: 1000, lost: 50, measured: true, kg: 250, sold: { kg: 10, total: 600 }, price: 60,
+    blockPrice: 5, batchesLeftOut: 1, kwhBlock: 0.41, kwhPending: false,
+  });
+  assert.deepEqual(out.past[1], {
+    runId: f.r1, from: at('2026-08-12', 9), to: at('2026-09-23', 9), days: 42, partial: false, mixed: ['oyster'],
+    blocks: 1000, roomBlocks: 1500, lost: 0, measured: true, kg: 200, sold: { kg: 100, total: 5000 }, price: 50,
+    blockPrice: 6, batchesLeftOut: 0, kwhBlock: 0.287, kwhPending: false,
+  }, 'its 43 days of 10 kWh over all its 1,500 blocks');
+  assert.deepEqual(out.current, { runId: f.db.openRun(f.one).id, from: at('2026-11-05', 9), partial: false, blocksInAt: null, day: 26, kg: 30, blocks: 800 });
+  assert.deepEqual(out.leftOut, { partial: 1 });
+  // grey oyster: run 1 has no oyster batch (not measured), the oyster-only run neither; no open oyster run
+  const oyster = each(f, 'oyster');
+  assert.deepEqual(oyster.past.map((r) => [r.blocks, r.lost, r.measured, r.kg, r.mixed]), [[300, null, false, 5, []], [500, null, false, 50, ['lionsmane']]]);
+  assert.equal(oyster.current, null);
+  assert.deepEqual(oyster.leftOut, { partial: 0 });
+});
+
+test('eachRun: a pending day, a part that throws, a partial run open without its block-in day', (t) => {
+  const f = farm(t);
+  const pending = each(f, 'lionsmane', { days: daysOf(10, ['2026-10-01']) });
+  assert.deepEqual([pending.past[0].kwhBlock, pending.past[0].kwhPending, pending.past[1].kwhPending], [null, true, false]);
+  const broken = each(f, 'lionsmane', { batches: { list() { throw new Error('boom'); } }, log: () => {} });
+  assert.deepEqual(broken.errors, { batches: PART_FAILED });
+  assert.deepEqual([broken.past[0].blockPrice, broken.past[0].measured, broken.past[0].blocks], [null, false, 1000]);
+  const none = each(f, 'lionsmane', { harvests: { roomView() { throw new Error('x'); } }, log: () => {} });
+  assert.deepEqual([none.past, none.current, none.errors], [[], null, { harvest: PART_FAILED }]);
+  // an open partial run: no day until its block-in day is given, then counted from that day
+  const view = (blocksInAt) => ({ roomView: () => ({ past: [], current: {
+    id: 9, startedAt: at('2026-11-04', 9), endedAt: null, partial: true, blocksInAt, byCrop: [{ crop: 'lionsmane', kg: 5, blocks: 100 }],
+  } }) });
+  assert.deepEqual(each(f, 'lionsmane', { harvests: view(null) }).current, { runId: 9, from: at('2026-11-04', 9), partial: true, blocksInAt: null, day: null, kg: 5, blocks: 100 });
+  assert.equal(each(f, 'lionsmane', { harvests: view(at('2026-10-20')) }).current.day, 42);
+});
+
+test('eachRun reads the room view, the farm\'s runs and the sales once, however many past runs (the review)', (t) => {
+  const f = farm(t);
+  f.sell(at('2026-09-05'), [{ crop: 'lionsmane', kg: 100, priceKg: 50, roomId: f.one }]);
+  f.sell(at('2026-10-01'), [{ crop: 'lionsmane', kg: 10, priceKg: 60 }]);
+  const calls = { roomView: 0, listRooms: 0, salesBetween: 0, cropHarvestsBetween: 0 };
+  const counted = (obj, names) => Object.create(obj, Object.fromEntries(names.map((n) => [n, { value: (...a) => { calls[n] += 1; return obj[n](...a); } }])));
+  const harvests = counted(f.harvests, ['roomView']);
+  const db = counted(f.db, ['listRooms', 'salesBetween', 'cropHarvestsBetween']);
+  const out = each(f, 'lionsmane', { harvests, db });
+  assert.equal(out.past.length, 2);
+  assert.deepEqual(out.past.map((r) => r.price), [60, 50], 'the same prices as each run read on its own');
+  assert.deepEqual(calls, { roomView: 1, listRooms: 1, salesBetween: 1, cropHarvestsBetween: 1 });
 });

@@ -39,7 +39,7 @@ test('a version 28 database is upgraded to 29: the change log, the void columns,
   const { file, room } = version28({ price: '0.515' });
   openDb(file).close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 29);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 30);
   const sql = (name) => raw.prepare('SELECT type, sql FROM sqlite_master WHERE name = ?').get(name);
   for (const t of ['changes', 'not_sold', 'tariffs', 'month_closes']) assert.match(sql(t).sql, /STRICT/, t);
   for (const t of VOIDED_TABLES) {

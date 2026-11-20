@@ -7,8 +7,10 @@
 
 import { readSettings, readCropYield } from './settings.js';
 import { roomDays, localZone } from './usage.js';
+import { daysBetween } from './task-rules.js';
 import { yourRuns, yourSales } from './economics-runs.js';
 import { simBody, simFigure, DELETED_TEXT } from './economics-sim.js';
+import { createPlans } from './economics-plans.js'; // ---- Economics stage 2 ----
 import { SIM_KEY } from './db.js';
 import {
   ECONOMICS_CROPS, WAYS, LEFT, figureOf, figuresFor, placeOf, checkFigure, researchOf, sizeOf, PART_KEYS, EQUIPMENT_KEYS,
@@ -27,6 +29,7 @@ export class EconomicsError extends Error {
 }
 
 export const DEFAULT_CROP = 'lionsmane'; // the farm's main target (PRODUCT.md)
+export const LIMIT_KEY = 'market.kgWeek'; // ---- Economics stage 2 ---- what you can sell a week (6.3)
 // The parts each figure's Your runs read (a part not read: its note, the figure from the next source).
 const PARTS_OF = {
   'yours.yieldG': ['harvest', 'batches'], 'yours.loss': ['harvest', 'batches'], 'yours.blocks': ['harvest'],
@@ -167,7 +170,7 @@ export function createEconomics({
   }
   function keyCheck(key, crop) {
     const f = figureOf(key);
-    if (!f || !figuresFor(crop).includes(f)) throw new EconomicsError(400, 'Unknown figure', 'key');
+    if (!f || (!figuresFor(crop).includes(f) && f.way !== 'market')) throw new EconomicsError(400, 'Unknown figure', 'key'); // stage 2: every crop's market
     if (f.settings) throw new EconomicsError(400, `${f.label} is set in Settings`, 'key');
     return f;
   }
@@ -234,7 +237,12 @@ export function createEconomics({
     const context = {
       otherBlocks, register: register ? { total: register.total, writeOffMonth: register.writeOffMonth, count: register.count, parts: register.parts } : null,
     };
-    return { figures, errors, values: Object.fromEntries(figures.map((f) => [f.key, f.value])), sim, context };
+    // ---- Economics stage 2 ---- (6.3) what you can sell a week: only yours caps (the owner, 2026-11-13); Your sales' kg over
+    // the days from the window's first sale (at least 7) beside it, the page's suggestion
+    const own = owner.get(LIMIT_KEY);
+    const week = sales ? { kg: sales.runs.kg, days: Math.max(7, daysBetween(sales.runs.first, today) + 1), from: sales.runs.first } : null;
+    const limit = own ? { value: own.value, source: 'owner', at: own.at, sales: week } : { value: null, source: null, at: null, sales: week };
+    return { figures, errors, values: Object.fromEntries(figures.map((f) => [f.key, f.value])), sim, context, limit };
   }
 
   // The simulator row as the page shows it: waiting while its run is queued, the run's progress while it works.
@@ -247,6 +255,10 @@ export function createEconomics({
     };
   }
 
+  // ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.1) a run's plan saved when it starts
+  // a plan saved tells the page with plan: true, so it reads the runs again (a figure saved does not: the review)
+  const plans = createPlans({ db, harvests, batches, days, zone, now, figuresOf, events, publish: (roomId, crop) => events?.publish('economics', { roomId, crop, plan: true }), log });
+
   // GET /api/economics: room and crop null for the first room and its main crop.
   function view({ room = null, crop = null } = {}) {
     if (crop !== null) cropCheck(crop);
@@ -254,18 +266,18 @@ export function createEconomics({
     if (!rooms.length) {
       if (room !== null) throw new EconomicsError(404, 'Room not found'); // spec 7.1, with no rooms too: the page asks again without it
       const c = crop ?? DEFAULT_CROP;
-      return { rooms: [], room: null, crop: c, ways: WAYS[c], left: LEFT[c], figures: [], context: { otherBlocks: 0, register: null }, sim: null, machinesNote: null, errors: {} };
+      return { rooms: [], room: null, crop: c, ways: WAYS[c], left: LEFT[c], figures: [], context: { otherBlocks: 0, register: null }, limit: null, sim: null, machinesNote: null, errors: {} };
     }
     const r = room === null ? rooms[0] : rooms.find((x) => x.id === room);
     if (!r) throw new EconomicsError(404, 'Room not found');
     const c = crop ?? cropOf(db, r.id);
     settleWorking((row) => row.roomId === r.id && row.crop === c); // a run deleted meanwhile, or an event missed
-    const { figures, errors, sim, context } = figuresOf(r, c);
+    const { figures, errors, sim, context, limit } = figuresOf(r, c);
     const lastRun = db.listRuns(r.id, 1)[0] ?? null;
     return {
       rooms: rooms.map(({ id, name }) => ({ id, name })),
       room: { id: r.id, name: r.name, volume: r.volume, size: sizeOf(r), humidifierLH: r.humidifierLH, type: r.roomType ?? 'container' },
-      crop: c, ways: WAYS[c], left: LEFT[c], figures, context, sim: simView(sim),
+      crop: c, ways: WAYS[c], left: LEFT[c], figures, context, limit, sim: simView(sim),
       machinesNote: simBody({ room: r, lastRun, crop: c, blocks: 1, life: 1 }).machinesNote,
       errors,
     };
@@ -273,6 +285,12 @@ export function createEconomics({
 
   return {
     view,
+
+    // ---- Economics stage 2 ---- GET /api/economics/plans { room, crop }: the room and crop's runs with their plans (7.4).
+    plans({ room, crop } = {}) {
+      const r = roomOf(room);
+      return plans.plansView(r, cropCheck(crop));
+    },
 
     // PUT /api/economics/figures { room, crop, key, value }: the owner's figure, saved where its scope says. → the view.
     setFigure(body) {
@@ -330,6 +348,7 @@ export function createEconomics({
 
     close() {
       stopListening();
+      plans.close(); // ---- Economics stage 2 ----
     },
   };
 }

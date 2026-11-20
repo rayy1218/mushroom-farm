@@ -2,6 +2,7 @@
 // of "A month, each way", the lines under it, the months and a figure with its unit. Pure: the results are the model's
 // (web/economics-model.js compare), every RM through Costs' formatter and every kg through Harvest's (the One Format Rule).
 //   monthsText · figureText · rangeText · wayName · headline · ROWS · rows · fillLine · sizedLine · neverLine · leftLine
+//   · tilesOf · stickyText · barsOf · SHORT_LEFT · compareChoices · phoneCaption · arrowText (Economics stage 2)
 //   · labourLine (Money truth)
 
 import { moneyText, perKgText } from './costs-math.js';
@@ -18,7 +19,15 @@ const BREAK_EVEN = 'break\u2011even'; // a non-breaking hyphen: a narrow phone n
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const cents = (v) => Math.sign(v) * Math.round(Math.abs(v) * 100); // a figure as it shows, its sign decided as moneyText decides it
 const beText = (v) => `${perKgText(v)} a${NB}kg`;
-const upTo = (v, places) => v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: places });
+// up to so many places, one Intl.NumberFormat a shape kept (toLocaleString makes one a call: the review)
+const FORMATS = new Map();
+const numberText = (v, min, max) => {
+  const key = `${min}/${max}`;
+  let f = FORMATS.get(key);
+  if (!f) FORMATS.set(key, (f = new Intl.NumberFormat('en-US', { minimumFractionDigits: min, maximumFractionDigits: max })));
+  return f.format(v);
+};
+const upTo = (v, places) => numberText(v, 0, places);
 
 // A payback: "under 1 month", "1 month", one decimal under 9.95 ("6.2 months"), else whole ("13 months"), "never".
 export function monthsText(v) {
@@ -42,7 +51,7 @@ function parts(key, v) {
     case 'RM a month': return money(`${NB}a${NB}month`);
     case 'RM an hour': return money(`${NB}an${NB}hour`);
     case 'RM': return money('');
-    case 'RM/kWh': return [`RM${NB}`, v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }), `${NB}a${NB}kWh`];
+    case 'RM/kWh': return [`RM${NB}`, numberText(v, 2, 4), `${NB}a${NB}kWh`];
     case 'g': return ['', grouped(Math.round(v), 0), `${NB}g`];
     case 'kWh': return ['', grouped(v, 2), `${NB}kWh`];
     case 'kWh a month': return ['', upTo(v, 1), `${NB}kWh a${NB}month`];
@@ -52,6 +61,7 @@ function parts(key, v) {
     case 'hours a day': return ['', upTo(v, 1), `${NB}${plural('hour', 'hours')} a${NB}day`];
     case 'months': return ['', grouped(v, 0), `${NB}${plural('month', 'months')}`];
     case 'blocks': return ['', grouped(v, 0), `${NB}${plural('block', 'blocks')}`];
+    case 'kg a week': return ['', grouped(v, 1), `${NB}kg a${NB}week`]; // Economics stage 2: what you can sell
     case 'workers': return ['', upTo(v, 1), `${NB}${plural('worker', 'workers')}`]; // Money truth: part-time is 0.5
     default: return ['', grouped(v, 0), `${NB}${plural('flush', 'flushes')}`]; // flushes per block
   }
@@ -64,8 +74,16 @@ export function figureText(key, v) {
 // A research range: "150–400 g", "RM 8.00–13.00 a kg"; word joiners keep it whole at its dash.
 export function rangeText(key, low, high) {
   if (!finite(low) || !finite(high)) return DASH;
-  const [before, a, after] = parts(key, low);
-  return `${before}${a}${RANGE_DASH}${parts(key, high)[1]}${after}`;
+  const [before, a] = parts(key, low);
+  const [, b, after] = parts(key, high); // the unit as the high figure takes it: "1–3 flushes" (the UI check)
+  return `${before}${a}${RANGE_DASH}${b}${after}`;
+}
+
+// ---- Economics stage 2 ---- (5.4) a swing's low → high: "RM 40.00 → 60.00 a kg", "12 → 20 days"; unit: false leaves it out.
+export function arrowText(key, low, high, { unit = true } = {}) {
+  if (!finite(low) || !finite(high)) return DASH;
+  const [before, a, after] = parts(key, high);
+  return `${before}${parts(key, low)[1]}${NB}→ ${a}${unit ? after : ''}`;
 }
 
 // A way's name: as a column head, or in a sentence ("A highland grower", lower-cased after a comma).
@@ -129,8 +147,8 @@ const money = (v) => ({ text: moneyText(v) });
 const cellMonths = (v) => (v === Infinity ? 'Never' : monthsText(v)); // a cell starts with a capital, as "No equipment" (the audit, #23)
 const growOr = (grow, trade) => (r) => (r.kind === 'trade' ? trade(r) : grow(r));
 export const ROWS = [
-  { key: 'blocks', label: 'Blocks started, or kg bought, a month', cell: growOr((r) => ({ text: grouped(Math.round(r.blocksM), 0) }), (r) => ({ text: `${kgText(r.kgBought)} bought` })) },
-  { key: 'kg', label: 'kg sold a month', cell: (r) => ({ text: kgText(r.kgSold) }) },
+  { key: 'blocks', label: 'Blocks a month', cell: growOr((r) => ({ text: grouped(Math.round(r.blocksM), 0) }), (r) => ({ text: `${kgText(r.kgBought)} bought` })) },
+  { key: 'kg', label: 'kg sold a month', cell: (r) => ({ text: kgText(r.kgSold), ...(r.capped ? { sub: `of ${kgText(r.kgGrown)} grown` } : {}) }) }, // stage 2: capped
   { key: 'income', label: 'Income', cell: (r) => money(r.income) },
   { key: 'bought', label: 'Blocks, or mushrooms bought', cell: (r) => money(r.cost.blocks) },
   { key: 'electricity', label: 'Electricity', cell: (r) => money(r.cost.electricity) },
@@ -143,14 +161,14 @@ export const ROWS = [
   { key: 'profit', label: 'Profit a month', cell: (r) => (cents(r.profit) < 0 ? { text: moneyText(r.profit), tone: 'loss', sub: 'Loss' } : money(r.profit)) },
   { key: 'be', label: 'Break-even', cell: (r) => ({ text: !finite(r.be) ? DASH : beText(r.be) }) },
   { key: 'equipment', label: 'Equipment', cell: growOr((r) => money(r.equipment), () => ({ text: 'None' })) },
-  { key: 'payback', label: 'Pays back, equipment only', cell: growOr((r) => ({ text: cellMonths(r.payback) }), () => ({ text: 'No equipment' })) },
-  { key: 'paybackAll', label: 'Pays back, with the first fill', cell: growOr((r) => ({ text: cellMonths(r.paybackAll) }), () => ({ text: 'No equipment' })) },
+  { key: 'payback', label: 'Payback (equipment)', cell: growOr((r) => ({ text: cellMonths(r.payback) }), () => ({ text: 'No equipment' })) },
+  { key: 'paybackAll', label: 'Payback (incl. first batch)', cell: growOr((r) => ({ text: cellMonths(r.paybackAll) }), () => ({ text: 'No equipment' })) },
 ];
 // Every row with its cells, a column per result: [{ key, label, cells }].
 export const rows = (results) => ROWS.map(({ key, label, cell }) => ({ key, label, cells: results.map(cell) }));
 
 // The lines under the table.
-export const fillLine = (yours, { room, blocks, first }) => `With the first fill: ${room}'s equipment, its first ${grouped(blocks, 0)}${NB}blocks `
+export const fillLine = (yours, { room, blocks, first }) => `First batch: ${room}'s equipment, its first ${grouped(blocks, 0)}${NB}blocks `
   + `(${moneyText(yours.fill)}) and the costs until the first harvest, ${first}${NB}${first === 1 ? 'day' : 'days'} in (${moneyText(yours.rampCost)}).`;
 export const sizedLine = (room, blocks) => `Every way is sized to ${room}'s ${grouped(blocks, 0)}${NB}blocks; a shed or a highland house holds up to ${grouped(HOUSE_BLOCKS, 0)}.`;
 // When any growing way never pays back.
@@ -180,3 +198,110 @@ export function labourLine(yours, room) {
     ? { text: `${lead} Handling its blocks takes ${needed} a${NB}month, more than the ${there} that share gives.`, tone: 'warn' }
     : { text: `${lead} Handling its blocks takes ${needed} a${NB}month of the ${there} that share gives.` };
 }
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 4.1) The month's tiles and the sticky line.
+const capital = (t) => t[0].toUpperCase() + t.slice(1);
+const sells = (r) => r.kgSold >= 0.05; // shows as more than 0.0 kg
+const lossTone = (v) => (cents(v) < 0 ? 'loss' : null);
+
+// The month's sentence for a reader (4.1): the headline and, when the month is capped by what you can sell, what it would make
+// if all it grows sold (the review: the tiles are hidden from a reader, so the cap is said here, in words). uncapped: Your
+// container's month with no cap; kgWeek: the limit in use.
+export function readerSentence(h, results, { uncapped = null, kgWeek = null } = {}) {
+  const head = [h.first.map((x) => (typeof x === 'string' ? x : x.text)).join(''), h.second];
+  const yours = results[0];
+  const cap = yours?.capped && uncapped
+    ? keepTogether(`At what you can sell (${figureText('market.kgWeek', kgWeek)}); ${moneyText(uncapped.profit)} a${NB}month if all ${kgText(yours.kgGrown)} sold.`)
+    : null;
+  return [...head, cap].filter(Boolean).join(' ');
+}
+
+// results: compare's, Your container first; room: its name; crop: its key; type: the room's (its way's name); price: the
+// selling price used; life: the months the equipment is written off over. → four tiles: [{ key, label, figure, tone,
+// caption, captionTone, way?, wayKey? }] (tone 'loss': the critical text; the words always say it).
+// uncapped: Your container's month with no sales cap (the owner, 2026-11-12: a capped month leads, the uncapped one its caption).
+export function tilesOf(results, { room, crop, type = 'container', price, life, uncapped = null }) {
+  const [yours, ...others] = results;
+  const tile = (key, label, figure, caption, more = {}) => ({ key, label, figure, tone: null, caption, captionTone: null, ...more });
+  const word = cents(yours.profit) < 0 ? 'Loss' : 'Profit';
+  const profit = tile('profit', 'Profit a month', moneyText(yours.profit), yours.capped && uncapped
+    ? `${word} at what you can sell · ${moneyText(uncapped.profit)} if all ${kgText(yours.kgGrown)} sold`
+    : `${word} · ${room}, ${cropShortName(crop)}`, { tone: lossTone(yours.profit) });
+  let be;
+  if (!sells(yours) || !finite(yours.be)) be = tile('be', 'Break-even', DASH, 'Nothing sells at these figures.');
+  else {
+    const gap = cents(price - yours.be);
+    const at = `You sell at ${perKgText(price)}`;
+    be = tile('be', 'Break-even', beText(yours.be), gap === 0 ? `${at}, just at it.`
+      : gap > 0 ? `${at}, ${perKgText(price - yours.be)} over it.` : `${at}, ${perKgText(yours.be - price)} short.`, { captionTone: gap < 0 ? 'loss' : null });
+  }
+  const never = yours.paybackAll === Infinity || !finite(yours.paybackAll);
+  const payback = never
+    ? tile('payback', 'Payback', 'Never', `Not within the ${life}${NB}months it is written off over`, { tone: 'loss' })
+    : tile('payback', 'Payback', capital(monthsText(yours.paybackAll)), `With the first batch · equipment ${moneyText(yours.equipment)}`);
+  const tiles = [profit, be, payback];
+  if (others.length) {
+    const best = others.reduce((a, b) => (cents(b.profit) > cents(a.profit) ? b : a));
+    const diff = cents(best.profit) - cents(yours.profit);
+    const caption = diff === 0 ? 'The same as yours'
+      : `${moneyText(Math.abs(best.profit - yours.profit))} a${NB}month ${diff > 0 ? 'more' : 'less'} than yours`;
+    tiles.push(tile('best', 'Best other way', moneyText(best.profit), caption, { tone: lossTone(best.profit), way: wayName(best.way, { type }), wayKey: best.way }));
+  }
+  return tiles;
+}
+
+// The sticky line (4.1): [text or { text, tone: 'loss' }], as headline's first.
+export function stickyText(yours) {
+  const figure = (v) => (cents(v) < 0 ? { text: moneyText(v), tone: 'loss' } : moneyText(v));
+  if (!sells(yours)) return ['Nothing sells · ', figure(yours.profit), ` a${NB}month`];
+  const be = ` a${NB}month · ${capital(BREAK_EVEN)} ${beText(yours.be)}`;
+  return cents(yours.profit) < 0 ? ['Loss ', figure(yours.profit), be] : [`Profit ${moneyText(yours.profit)}${be}`];
+}
+
+// ---- Economics stage 2 ---- (4.2) Profit per way as diverging bars, in a fixed order; a way not compared keeps its row.
+export const BAR_ORDER = ['yours', 'shed', 'highland', 'import', 'warm'];
+export const SHORT_LEFT = {
+  oyster: { highland: `it fruits best at 25${NB}°C`, import: `fresh grey oyster keeps 3${RANGE_DASH}4${NB}days` },
+  pink: { highland: 'too cool to pin there', import: `it keeps 1${RANGE_DASH}4${NB}days; none is imported` },
+  woodear: { highland: `growth slows below 18${NB}°C` },
+  lionsmane: { shed: 'the warm strain is its lowland shed' },
+};
+// results: compare's; left: the view's ways not compared; crop: its key; type: the room's. → { zero, rows: [{ way, name,
+// yours, compared, profit, text, tone, kind ('profit' | 'loss' | 'even'; null not compared), start, length, words, reason }] }:
+// start and length as shares of the track, zero the share where zero sits.
+export function barsOf(results, left, crop, type = 'container') {
+  const shown = new Map(results.map((r) => [r.way, r]));
+  const notCompared = new Set(left.map((l) => l.way));
+  const loss = Math.max(0, ...results.map((r) => -r.profit));
+  const gain = Math.max(0, ...results.map((r) => r.profit));
+  const span = loss + gain;
+  const zero = span > 0 ? loss / span : 0;
+  const rows = BAR_ORDER.filter((w) => shown.has(w) || notCompared.has(w)).map((way) => {
+    const name = wayName(way, { type });
+    const base = { way, name, yours: way === 'yours' };
+    if (!shown.has(way)) {
+      const why = SHORT_LEFT[crop]?.[way] ?? 'not grown this way';
+      return { ...base, compared: false, kind: null, reason: `Not compared: ${why}`, words: `${name}: not compared, ${why}` };
+    }
+    const { profit } = shown.get(way);
+    const c = cents(profit);
+    const kind = c > 0 ? 'profit' : c < 0 ? 'loss' : 'even';
+    const length = kind === 'even' || span === 0 ? 0 : Math.abs(profit) / span;
+    return {
+      ...base, compared: true, profit, text: moneyText(profit), tone: kind === 'loss' ? 'loss' : null, kind,
+      start: kind === 'loss' ? zero - length : zero, length,
+      words: kind === 'even' ? `${name} breaks even` : `${name}, ${moneyText(profit)} a${NB}month ${kind}`,
+    };
+  });
+  return { zero, rows };
+}
+
+// ---- Economics stage 2 ---- (4.4) On a phone: Your container beside one other way, picked with Compare with.
+// → [{ way, name }]: the other shown ways, the best (as tile 4 says) first, then in their order.
+export function compareChoices(results, type = 'container') {
+  const others = results.slice(1);
+  if (!others.length) return [];
+  const best = others.reduce((a, b) => (cents(b.profit) > cents(a.profit) ? b : a));
+  return [best, ...others.filter((r) => r !== best)].map((r) => ({ way: r.way, name: wayName(r.way, { type }) }));
+}
+export const phoneCaption = (a, b, type = 'container') => `A month: ${wayName(a, { type })} and ${wayName(b, { type })}`;

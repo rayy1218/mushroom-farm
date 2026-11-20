@@ -131,3 +131,47 @@ test('the register: the parts it has written off as it has them, the rest over t
   assert.equal(changed.writeOffMonth, undefined, 'a register part set over it: equipment ÷ the months, as before');
   assert.equal(r2(grow(changed).cost.writeOff), r2(37610 / 60));
 });
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.7 and 5.3)
+test('a block life given (a run\'s own days + its turnaround) sets the blocks and the kWh a month; none given: as before', () => {
+  assert.equal(blockLife({ first: 12, interval: 14, flushes: 2, turn: 16, life: 44 }), 44);
+  assert.equal(blockLife({ first: 12, interval: 14, flushes: 2, turn: 16, life: undefined }), 42);
+  const x = inputsOf(VALUES, 'yours', { life: 44 });
+  assert.equal(x.life, 44);
+  assert.equal(r2(x.kwhMonth), r2((0.4 * 1740 * 30.4) / 44));
+  const g = grow(x);
+  assert.deepEqual([g.life, r2(g.blocksM)], [44, 1202.18]);
+  assert.equal(inputsOf(VALUES, 'yours').life, undefined, 'no life in the context: the figures\' own');
+  assert.equal(inputsOf(VALUES, 'highland', { life: 44 }).life, undefined, 'only Your container\'s');
+});
+
+test('the register scaled (the swing\'s seam): its write-off moves with its parts\' share; at its own figures as before', () => {
+  const v = { ...VALUES, 'yours.cooling': 8340, 'yours.other': 1200 };
+  const reg = { total: 9540, writeOffMonth: 189, parts: { 'yours.cooling': 8340, 'yours.other': 1200 }, scale: true };
+  assert.equal(r2(inputsOf(v, 'yours', { register: reg }).writeOffMonth), r2(189 + (36950 - 9540) / 60), 'at its own figures');
+  const up = inputsOf({ ...v, 'yours.cooling': 8340 * 1.2 }, 'yours', { register: reg });
+  const parts = 8340 * 1.2 + 1200;
+  assert.equal(r2(up.writeOffMonth), r2(189 * (parts / 9540) + (up.equipment - parts) / 60), 'the register\'s month × its parts now ÷ its total');
+  const life = inputsOf({ ...v, life: 72 }, 'yours', { register: reg });
+  assert.equal(r2(life.writeOffMonth), r2(189 + (36950 - 9540) / 72), 'only the parts not in the register follow the months');
+});
+
+// ---- Economics stage 2, the owner's decision (2026-11-12): what you can sell caps the month, every way ----
+test('a sales cap: kg sold at most the cap, income and the per-kg costs on what sells, every other cost kept; the payback follows', () => {
+  const cap = (60 * 30.4) / 7; // 60 kg a week
+  const full = grow(inputsOf({ ...VALUES, 'yours.yieldG': 300.018, price: 60 }, 'yours'));
+  const g = grow(inputsOf({ ...VALUES, 'yours.yieldG': 300.018, price: 60 }, 'yours', { sellCap: cap }));
+  assert.equal(r2(g.kgSold), 260.57);
+  assert.equal(r2(g.kgGrown), r2(full.kgSold));
+  assert.equal(g.capped, true);
+  assert.equal(r2(g.cost.blocks), r2(full.cost.blocks), 'the blocks are grown and paid for');
+  assert.equal(r2(g.cost.packing), r2(260.57 * 3));
+  assert.equal(r2(g.be), r2(g.costs / g.kgSold));
+  assert.ok(g.paybackAll > full.paybackAll, 'less sold: a longer payback');
+  const under = grow(inputsOf(VALUES, 'yours', { sellCap: 1000 }));
+  assert.deepEqual([under.capped, r2(under.profit)], [false, r2(grow(inputsOf(VALUES, 'yours')).profit)]);
+  assert.equal(grow(inputsOf(VALUES, 'yours')).capped, false);
+  // compare: every growing way capped by the same market; import sells your capped kg
+  const out = compare(VALUES, ['yours', 'highland', 'import'], { sellCap: 100 });
+  assert.deepEqual(out.map((r) => r2(r.kgSold)), [100, 100, 100]);
+});

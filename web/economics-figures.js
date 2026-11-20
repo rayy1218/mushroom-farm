@@ -3,9 +3,9 @@
 // before it is sent. Pure: the figures are the server's view (server/economics.js), the words follow the One Format Rule.
 //   foldsOf · foldHead · tagText · appliesText · noteParts · simText · sourcesLine · valuesOf · typed · boxText · savedText
 //   · partsLine · createDraft · fitsWant · createReplies · keepsBox · simMoved · noteLinkKey · focusAfterRepaint · likely
-//   · sourceItems
+//   · sourceItems · tierOf · labelOf · meterOf · meterText · limitFigure · limitWeekOf (Economics stage 2)
 
-import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts, MAX_SIM_DAYS, yoursName, figureLabel, EQUIPMENT_KEYS, SALES_DAYS } from './economics-defaults.js';
+import { checkFigure, figureOf, SOURCES, WAY_NAMES, unitParts, MAX_SIM_DAYS, yoursName, figureLabel, EQUIPMENT_KEYS, SALES_DAYS, keepTogether } from './economics-defaults.js';
 import { compare } from './economics-model.js';
 import { figureText, rangeText } from './economics-math.js';
 import { moneyText, perKgText, amountBox, amountOf } from './costs-math.js';
@@ -41,7 +41,7 @@ export function tagText(f) {
   if (f.source === 'runs' && f.runs?.from === 'crop') return 'Crop tab'; // the planted blocks: no run gave them (the audit, #24)
   if (f.source === 'runs') return f.runs?.count ? `Your runs${DOT}${plural(f.runs.count, 'run', 'runs')}` : 'Your runs';
   // Money truth: the crop's sales of the last SALES_DAYS, Costs' labour items, the equipment register
-  return { simulator: 'Simulator', settings: 'Settings', research: 'Research', sales: 'Your sales', costs: 'Your costs', register: 'Your equipment' }[f.source];
+  return { simulator: 'Simulator', settings: 'Settings', research: 'Research', sales: 'Your sales', costs: 'Your costs', register: 'Your equipment', none: 'No limit' }[f.source]; // none: stage 2's sales limit unset
 }
 
 // Where a figure applies (its scope): "Every room and crop", "Every room, Lion's mane", "Container 1, every crop",
@@ -94,6 +94,7 @@ function runsNote(f, { room, crop }) {
 // The note under a figure's row (spec 8.6): [{ text, tone?, link?: { text, href }, sources?: [{ title, url, year }] }].
 // ctx: { room, crop }.
 export function noteParts(f, ctx) {
+  if (f.key === LIMIT_KEY) return limitNotes(f, ctx); // ---- Economics stage 2 ---- what you can sell a week
   const out = [];
   for (const n of f.notes) {
     if (n.startsWith('not-read:')) {
@@ -132,7 +133,7 @@ export function noteParts(f, ctx) {
     const r = f.research;
     const sources = r.sources.map((id) => SOURCES[id]).filter(Boolean);
     out.push({
-      text: `${r.confidence[0].toUpperCase()}${r.confidence.slice(1)} confidence: ${rangeText(f.key, r.low, r.high)}.${r.note ? ` ${r.note}.` : ''}`, // the tag says Research
+      text: `${rangeText(f.key, r.low, r.high)}.${r.note ? ` ${r.note}.` : ''}`, // the label says Research and its confidence (stage 2, 4.3)
       ...(sources.length ? { sources } : {}),
     });
   }
@@ -328,8 +329,10 @@ export function createDraft() {
     error: (key) => errors[key] ?? null,
     unsaved: (key) => key in typedValues,
     values: () => valuesOf(figures, typedValues),
-    results() {
-      return figures.length ? compare(valuesOf(figures, typedValues), ways, context) : [];
+    context: () => context, // ---- Economics stage 2 ---- the model's context, for the runs, the map and the swing
+    // more: a context for this sum only (stage 2: { sellCap }, what you can sell a month)
+    results(more = {}) {
+      return figures.length ? compare(valuesOf(figures, typedValues), ways, { ...context, ...more }) : [];
     },
   };
 }
@@ -383,3 +386,58 @@ export const noteLinkKey = (key, line, i) => `note:${key}:${line}:${i}`;
 // keyboard would open on a phone), 'back' (the row's Back to default) or 'box'. Never the page's title.
 export const focusAfterRepaint = ({ inRow, rowKept, stillInRow, hasBack, inSim = false }) => (
   !inRow || !rowKept || stillInRow ? null : inSim ? 'sim' : hasBack ? 'back' : 'box');
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 4.3) A figure's source in four tiers: yours as
+// typed, yours as recorded (your runs, sales, costs, equipment), the app's (the simulator, Settings, the Crop tab), research.
+const RECORDED = new Set(['runs', 'sales', 'costs', 'register']);
+export function tierOf(f) {
+  if (f.source === 'owner') return 'typed';
+  if (f.source === 'runs' && f.runs?.from === 'crop') return 'app';
+  if (RECORDED.has(f.source)) return 'recorded';
+  if (f.source === 'research') return 'research';
+  return 'app';
+}
+const DOTS = { high: 3, medium: 2, low: 1 };
+// The label: its words, its tier, research's confidence as dots (0 for the rest) and the words a reader hears.
+export function labelOf(f) {
+  const tier = tierOf(f);
+  const text = tagText(f);
+  const confidence = tier === 'research' ? f.research?.confidence : null;
+  return { text, tier, dots: confidence ? DOTS[confidence] ?? 0 : 0, reader: confidence ? `${text}, ${confidence} confidence` : text };
+}
+// The page meter: the figures that make Your container's month (the shared and its own), by tier.
+export function meterOf(figures) {
+  const mine = figures.filter((f) => f.way === 'shared' || f.way === 'yours');
+  const count = (tiers) => mine.filter((f) => tiers.includes(tierOf(f))).length;
+  return { yours: count(['typed', 'recorded']), of: mine.length, research: count(['research']), app: count(['app']) };
+}
+// "Your figures 5 of 27 · Research 18 · Settings and app 4"; setYours: none yours (the page adds "set yours in Figures below").
+export const meterText = (m) => ({
+  // each part whole on a phone: it wraps only at its middots (the UI check)
+  text: [`Your figures ${m.yours} of ${m.of}`, `Research ${m.research}`, `Settings and app ${m.app}`].map((t) => t.replaceAll(' ', NB)).join(DOT), setYours: m.yours === 0,
+});
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 6.3) What you can sell a week, as a Figures row of
+// the map's card: the view's limit as a figure (source 'none' with no limit), and its notes. Only a limit the owner typed caps
+// the month (the owner, 2026-11-13); Your sales' week is a suggestion in the note, with Use this.
+const LIMIT_KEY = 'market.kgWeek';
+// errors: the view's (Sales not read: the note says so, not "you sold none": the review).
+export const limitFigure = (limit, errors = {}) => ({
+  key: LIMIT_KEY, way: 'market', scope: 'crop', value: limit?.value ?? null, source: limit?.source ?? 'none', at: limit?.at ?? null,
+  real: null, research: null, runs: limit?.sales ?? null, notes: errors.sales ? ['not-read:sales'] : [],
+});
+// What caps the month, kg a week: typed (not yet saved) in the box, else the owner's; null for no limit (never Your sales').
+export const limitWeekOf = (limit, typed = null) => (typeof typed === 'number' ? typed : limit?.source === 'owner' && typeof limit.value === 'number' ? limit.value : null);
+// Your sales' week to 0.1 kg (the suggestion).
+const salesWeek = (s) => Math.round((s.kg / s.days) * 7 * 10) / 10;
+function limitNotes(f, ctx) {
+  const week = (s) => `You've sold about ${figureText(LIMIT_KEY, salesWeek(s))}`;
+  // a market's limit caps this room's month as if it sold alone (the review): "It" under a set limit, "A limit" with none
+  const alone = (who) => ({ text: keepTogether(`${who} caps ${ctx.room}'s month as if it alone sold ${cropShortName(ctx.crop)}; the other rooms' ${cropShortName(ctx.crop)} is not taken off it.`) });
+  if (f.source === 'owner') return [{ text: `You set this on ${dateText(f.at)}${f.runs ? `${DOT}${week(f.runs)}` : ''}.`, back: true }, alone('It')];
+  if (f.notes.includes('not-read:sales')) return [{ text: "Couldn't read Sales just now; no limit used. Set what you can sell a week.", tone: 'warn' }];
+  if (f.runs) {
+    return [{ text: `No limit set: nothing is capped. ${week(f.runs)} of ${cropShortName(ctx.crop)} (${kgText(f.runs.kg)} over ${plural(f.runs.days, 'day', 'days')}).`, use: salesWeek(f.runs) }, alone('A limit')];
+  }
+  return [{ text: `No limit: you sold no ${cropShortName(ctx.crop)} in the last ${SALES_DAYS}${NB}days. Set what you can sell a week.` }];
+}

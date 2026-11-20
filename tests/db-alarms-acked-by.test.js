@@ -60,7 +60,7 @@ test('a version 26 database is upgraded through 27 to 28: alarms gain acked_by (
   assert.deepEqual([again.getAlarm(old).ackedAt, again.getAlarm(old).ackedBy], [2000, null]);
   again.close();
   const check = new DatabaseSync(file);
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 29); // Money truth's 28 after the alarms' 27
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 30); // Money truth's 28 after the alarms' 27
   assert.ok(check.prepare('PRAGMA table_info(alarms)').all().some((c) => c.name === 'acked_by' && c.type === 'TEXT'));
   assert.ok(check.prepare('PRAGMA table_info(alarms)').all().some((c) => c.name === 'gateway' && c.type === 'TEXT'));
   check.close();
@@ -87,7 +87,7 @@ test('a real version 26 farm file opens at 28 with its alarms and rooms, and the
     assert.equal(db.roomAlarms(db.listRooms()[0].id).history.every((a) => a.ackedBy === null), true);
     db.close();
     const after = new DatabaseSync(file, { readOnly: true });
-    assert.equal(after.prepare('PRAGMA user_version').get().user_version, 29);
+    assert.equal(after.prepare('PRAGMA user_version').get().user_version, 30);
     assert.equal(after.prepare('SELECT COUNT(*) AS n FROM alarms').get().n, alarms);
     assert.equal(after.prepare('SELECT COUNT(*) AS n FROM alarms WHERE acked_by IS NOT NULL').get().n, 0);
     assert.ok(after.prepare('PRAGMA table_info(rooms)').all().some((c) => c.name === 'room_type'));
@@ -110,6 +110,6 @@ test('a file Money truth brought to 28 before the alarms\' 27 merged gains their
   const check = new DatabaseSync(file);
   const cols = check.prepare('PRAGMA table_info(alarms)').all().map((c) => c.name);
   assert.ok(cols.includes('acked_by') && cols.includes('gateway'));
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 29);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 30);
   check.close();
 });
