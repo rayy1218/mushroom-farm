@@ -221,7 +221,7 @@ test('Done and Skip need a worker name of up to 40 characters; the amount is a n
   }
   assert.deepEqual(await call('POST', `/api/tasks/${am.id}/done`, []), { status: 400, body: { error: 'Body must be a JSON object' } });
   assert.equal((await call('POST', `/api/tasks/${am.id}/done`, { worker: 'Ali', amount: 0 })).body.amount, 0);
-  assert.equal((await call('POST', `/api/tasks/${pm.id}/done`, { worker: 'A'.repeat(40), amount: 10_000 })).body.amount, 10_000);
+  assert.equal((await call('POST', `/api/tasks/${pm.id}/done`, { worker: 'A'.repeat(40), amount: 10_000, confirmed: ['pick'] })).body.amount, 10_000);
   assert.deepEqual(await call('POST', '/api/tasks/99999/done', { worker: 'Ali' }), { status: 404, body: { error: 'Task not found' } });
   assert.deepEqual(await call('GET', `/api/tasks/${am.id}/done`), { status: 404, body: { error: 'Not found' } });
 });

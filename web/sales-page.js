@@ -11,10 +11,11 @@ import { tileNodes } from './harvest-card.js';
 import { picture } from './pictures.js';
 import { rangeText, periodWords, rmText } from './harvest-math.js';
 import {
-  pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS, emptyText, ageText, lineParts, roomsOf,
+  pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS, emptyText, ageText, lineParts, roomsOf, unsoldRows, notSoldRow,
 } from './sales-math.js';
 import { DOT } from './text-math.js';
 import { openSale, openPaid, openBuyers } from './sales-dialogs.js';
+import { openNotSold, undoNotSold, notSoldWords } from './not-sold-dialog.js'; // ---- Data integrity ----
 
 const REFRESH_MS = 60_000;
 const DAYS = [7, 30, 90, 365];
@@ -31,6 +32,7 @@ const TEMPLATE = `
     <div class="sl-tools">
       <div class="range-bar" role="group" aria-label="Period" data-range></div>
       <button type="button" class="primary" data-record>Record a sale</button>
+      <button type="button" data-not-sold>Record not sold</button>
       <button type="button" data-buyers>Buyers</button>
       <a class="button" data-csv download>Export CSV</a>
       <a class="button" data-sheet>myGAP 4-6 sheet</a>
@@ -45,6 +47,14 @@ const TEMPLATE = `
       <h2 id="sl-totals-title" data-totals-title>Loading…</h2>
       <div class="us-tiles sl-tiles" data-tiles></div>
     </section>
+    <section class="card sl-unsold" data-unsold hidden aria-labelledby="sl-unsold-title">
+      <h2 id="sl-unsold-title">Unsold</h2>
+      <p class="sl-unsold-sub muted">Picked and not yet sold; fresh produce keeps a few days.</p>
+      <ul class="sl-unsold-list" data-unsold-list></ul>
+      <h3 class="sl-ns-title" data-ns-title hidden>Not sold</h3>
+      <ul class="sl-list sl-ns-list" data-ns-list></ul>
+    </section>
+    <p class="sl-status" role="status" data-ns-status></p>
     <section class="card sl-owed" data-owed hidden aria-labelledby="sl-owed-title">
       <h2 id="sl-owed-title">Owed</h2>
       <ul class="sl-owed-list" data-owed-list></ul>
@@ -146,11 +156,14 @@ export function mount(container, { days = 30 } = {}) {
     owed: q('[data-owed]'), owedList: q('[data-owed-list]'), list: q('[data-list]'), more: q('[data-more]'), empty: q('[data-empty]'),
     emptyRecord: q('[data-empty-record]'),
     crops: q('[data-crops]'), buyersTable: q('[data-buyers-table]'),
+    notSold: q('[data-not-sold]'), unsold: q('[data-unsold]'), unsoldList: q('[data-unsold-list]'), nsTitle: q('[data-ns-title]'),
+    nsList: q('[data-ns-list]'), nsStatus: q('[data-ns-status]'),
   };
   document.title = 'Sales · Mushroom farm';
 
   let period = days;
   let sales = null; // GET /api/sales of the period on show
+  let notSold = null; // ---- Data integrity ---- GET /api/not-sold of the period
   let seq = 0;
   let timer = null;
   let outdated = false;
@@ -198,20 +211,94 @@ export function mount(container, { days = 30 } = {}) {
   }
 
   // One delivery in the Sales list, flat so the list's columns (each delivery a subgrid of them) lay it as a block on a
-  // phone and as one row on a desk: day, buyer, the lines, the total, the paid mark, the reference; Edit opens it.
+  // phone and as one row on a desk: day, buyer, the lines, the total, the paid mark, the reference; Edit opens it. A voided
+  // one (Data integrity): in ink-2, its figures struck, "Voided" before them and who and why under them.
   function deliveryItem(d) {
     const r = deliveryRow(d);
-    const li = el('li', 'sl-item');
-    const edit = el('button', 'tk-quiet bz-quiet sl-edit', 'Edit');
+    const li = el('li', `sl-item${r.voided ? ' dx-voided' : ''}`);
+    const edit = el('button', 'tk-quiet bz-quiet sl-edit', r.voided ? 'Open' : 'Edit'); // a voided one opens read only (Restore)
     edit.type = 'button';
     edit.dataset.focusKey = `edit-${d.id}`;
-    edit.setAttribute('aria-label', `Edit the sale of ${r.day} to ${r.buyer}`);
+    edit.setAttribute('aria-label', `${r.voided ? 'Open' : 'Edit'} the sale of ${r.day} to ${r.buyer}${r.voided ? ', voided' : ''}`);
     edit.addEventListener('click', () => openSale({ ...ctx(), delivery: d }));
     const lines = linesNode('sl-lines', d.lines);
+    if (r.voided) lines.classList.add('dx-figure');
     lines.append(roomsNode(d.lines));
-    li.append(el('span', 'sl-day', r.day), el('span', 'sl-buyer', r.buyer), lines,
-      el('span', 'sl-total num', r.total), el('span', `sl-mark${r.paid.unpaid ? ' sl-unpaid' : ''}`, r.paid.text));
+    const day = el('span', 'sl-day', r.day);
+    if (r.edited) day.append(el('span', 'dx-edited', 'edited'));
+    const total = el('span', `sl-total num${r.voided ? ' dx-figure' : ''}`, r.total);
+    const mark = r.voided ? el('span', 'sl-mark', '') : el('span', `sl-mark${r.paid.unpaid ? ' sl-unpaid' : ''}`, r.paid.text);
+    if (r.voided) mark.append(el('span', 'dx-chip', 'Voided'));
+    li.append(day, el('span', 'sl-buyer', r.buyer), lines, total, mark);
     if (r.reference) li.append(el('span', 'muted sl-ref', r.reference));
+    if (r.voided) li.append(el('span', 'dx-void-line sl-void-line', r.voided));
+    li.append(edit);
+    return li;
+  }
+
+  // ---- Data integrity ---- (spec 6.2, 11) the Unsold card: a crop's still to sell and past its keeping days, Record not sold
+  // on a past row (its crop and kg filled in); then the period's Not sold records (voided ones struck), a quiet Edit each.
+  async function recordNotSold(prefill = {}) {
+    let rooms = [];
+    try {
+      const r = await request('GET', '/api/rooms');
+      rooms = (Array.isArray(r) ? r : r.rooms ?? []).map(({ id, name }) => ({ id, name }));
+    } catch { /* the dialog still opens: no room to pick */ }
+    openNotSold({ ...ctx(), rooms, prefill, onRecorded: said });
+  }
+  // "Recorded 12.00 kg of Grey oyster, spoiled, not sold. Undo" for 60 s (the Undo: its minute, its person).
+  let saidTimer = null;
+  function said(made) {
+    clearTimeout(saidTimer);
+    const undo = el('button', 'tk-quiet bz-quiet', 'Undo');
+    undo.type = 'button';
+    undo.addEventListener('click', async () => {
+      undo.disabled = true;
+      const r = await undoNotSold(made.id);
+      els.nsStatus.textContent = r === true ? 'Undone' : r;
+      changed();
+    });
+    els.nsStatus.replaceChildren(`Recorded ${notSoldWords(made)}, not sold. `, undo);
+    saidTimer = setTimeout(() => { if (alive()) els.nsStatus.replaceChildren(); }, 58_000); // 2 s inside the server's minute
+  }
+  function unsoldItem(u) {
+    const li = el('li', 'sl-unsold-item');
+    const name = el('span', 'sl-unsold-crop');
+    name.append(picture('crop', u.crop, { size: 24 }), el('span', '', u.name));
+    const words = el('span', 'sl-unsold-words');
+    if (u.fresh) words.append(el('span', 'sl-unsold-fresh', u.fresh));
+    if (u.past) words.append(el('span', 'sl-unsold-past', u.past));
+    li.append(name, words);
+    if (u.pastKg > 0) {
+      const b = el('button', 'sl-unsold-record', 'Record not sold');
+      b.type = 'button';
+      b.dataset.focusKey = `unsold-${u.crop}`;
+      b.setAttribute('aria-label', `Record ${u.name} not sold`);
+      b.addEventListener('click', () => recordNotSold({ crop: u.crop, kg: u.pastKg }));
+      li.append(b);
+    }
+    return li;
+  }
+  function notSoldItem(rec) {
+    const r = notSoldRow(rec);
+    const li = el('li', `sl-item sl-ns-item${r.voided ? ' dx-voided' : ''}`);
+    const day = el('span', 'sl-day', r.day);
+    if (r.edited) day.append(el('span', 'dx-edited', 'edited'));
+    const what = el('span', `sl-lines${r.voided ? ' dx-figure' : ''}`, r.what);
+    const why = el('span', 'sl-ns-why', '');
+    if (r.voided) why.append(el('span', 'dx-chip', 'Voided'));
+    why.append(r.why);
+    const edit = el('button', 'tk-quiet bz-quiet sl-edit', r.voided ? 'Open' : 'Edit');
+    edit.type = 'button';
+    edit.dataset.focusKey = `ns-${rec.id}`;
+    edit.setAttribute('aria-label', `${r.voided ? 'Open' : 'Edit'} the record of ${r.what} on ${r.day}${r.voided ? ', voided' : ''}`);
+    edit.addEventListener('click', async () => {
+      let rooms = [];
+      try { const x = await request('GET', '/api/rooms'); rooms = (Array.isArray(x) ? x : x.rooms ?? []).map(({ id, name }) => ({ id, name })); } catch { /* none */ }
+      openNotSold({ ...ctx(), record: rec, rooms });
+    });
+    li.append(day, what, why, el('span', 'muted sl-ns-who', r.who));
+    if (r.voided) li.append(el('span', 'dx-void-line sl-void-line', r.voided));
     li.append(edit);
     return li;
   }
@@ -255,7 +342,7 @@ export function mount(container, { days = 30 } = {}) {
   function paint() {
     const list = sales.deliveries;
     const limit = showAll ? list.length : phone() ? SHOWN_PHONE : SHOWN;
-    const key = JSON.stringify([sales, showAll, limit]);
+    const key = JSON.stringify([sales, notSold, showAll, limit]);
     if (key === painted) return;
     painted = key;
     // the cursor on an Edit, a Mark paid or an Owed name comes back to the same one after the repaint
@@ -263,6 +350,14 @@ export function mount(container, { days = 30 } = {}) {
     els.body.hidden = false;
     els.totalsTitle.textContent = rangeText(sales);
     els.tiles.replaceChildren(...tileNodes(pageTiles(sales, Date.now())));
+
+    // ---- Data integrity ---- the Unsold card
+    const unsold = unsoldRows(sales);
+    const records = notSold?.records ?? [];
+    els.unsold.hidden = unsold.length === 0 && records.length === 0;
+    els.unsoldList.replaceChildren(...unsold.map(unsoldItem));
+    els.nsTitle.hidden = records.length === 0;
+    els.nsList.replaceChildren(...records.map(notSoldItem));
 
     els.owed.hidden = sales.owed.count === 0;
     els.owedList.replaceChildren(...sales.owed.buyers.map(owedItem));
@@ -293,9 +388,10 @@ export function mount(container, { days = 30 } = {}) {
     clearTimeout(timer);
     const mine = ++seq;
     try {
-      const data = await request('GET', `/api/sales?days=${period}`);
+      const [data, ns] = await Promise.all([request('GET', `/api/sales?days=${period}`), request('GET', `/api/not-sold?days=${period}`).catch(() => null)]);
       if (!alive() || mine !== seq) return;
       sales = data;
+      notSold = ns;
       els.banner.hidden = true;
       paint();
     } catch (err) {
@@ -322,6 +418,7 @@ export function mount(container, { days = 30 } = {}) {
   els.record.addEventListener('click', () => openSale({ ...ctx(), delivery: null }));
   els.emptyRecord.firstElementChild.addEventListener('click', () => openSale({ ...ctx(), delivery: null }));
   els.buyers.addEventListener('click', () => openBuyers(ctx()));
+  els.notSold.addEventListener('click', () => recordNotSold());
   els.more.addEventListener('click', () => {
     const at = els.list.children.length;
     showAll = true;
@@ -336,6 +433,7 @@ export function mount(container, { days = 30 } = {}) {
   return function unmount() {
     mountSeq++;
     clearTimeout(timer);
+    clearTimeout(saidTimer);
     reload.cancel();
     for (const off of offLive) off();
     media.removeEventListener('change', onMedia);

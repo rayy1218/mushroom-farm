@@ -19,7 +19,7 @@ test('a new database is at the current version with a STRICT costs table', () =>
   const file = fileOf();
   openDb(file).close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 28);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 29);
   const { sql } = raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'costs'").get();
   assert.match(sql, /STRICT/);
   const triggers = raw.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'costs_%' ORDER BY name").all().map((r) => r.name);
@@ -47,7 +47,7 @@ test('add, read, list, edit and delete a cost', () => {
   assert.deepEqual(made, {
     id: made.id, date: '2026-11-03', category: 'repairs', amount: 120.5, roomId: null, runId: null, note: 'Fan belt',
     sourceKind: 'manual', sourceId: null, repeat: null, repeatUntil: null, worker: null, utility: null, periodFrom: null,
-    periodTo: null, createdAt: 1000,
+    periodTo: null, createdAt: 1000, voidedAt: null, voidedBy: null, voidReason: null,
   });
   assert.deepEqual(db.getCost(made.id), made);
   assert.equal(db.getCost(999), null);
@@ -118,6 +118,6 @@ test('a file at the current version re-opens unchanged with its rows', () => {
   assert.equal(again.listCosts().length, 1);
   again.close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 28);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 29);
   raw.close();
 });

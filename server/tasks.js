@@ -8,6 +8,9 @@ import {
 } from './task-rules.js';
 import { projectRoom, isRoutine, HORIZON_DAYS } from './calendar.js';
 import { cell } from './csv.js';
+import { askOrThrow, confirmedOf } from './asks.js'; // ---- Data integrity ----
+import { record as logChange, APP } from './changes.js';
+import { roomPickAsks, harvestSnapshot } from './harvest-asks.js';
 
 // A refused request: status 400, 404 or 409, field the input it is about (tasks-api.js replies { error, field }).
 export class TaskError extends Error {
@@ -266,11 +269,18 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
   // Closes the open row; a row closed by someone else meanwhile is a 409 too, one deleted with its room a 404. An upkeep
   // row makes its next row with it; a harvest check's kg (amounts: { crop: kg }) make harvests with it.
   // Tells the room's listeners, and the harvest listeners too when harvests changed.
-  function close(row, fields, amounts = null) {
+  // Data integrity: a check's harvests are asked about as a pick is (body's confirmed; fieldOf(crop): the Done box) and each
+  // logged with who.
+  function close(row, fields, amounts = null, { who = APP, body = null, fieldOf = (crop) => `kg:${crop}` } = {}) {
     const at = now();
     const next = row.kind === 'upkeep' ? nextUpkeep(row, localDate(at), at) : null;
     const harvests = amounts ? stampHarvests(db, { roomId: row.roomId, amounts, at, worker: fields.worker, taskId: row.id }) : [];
-    if (!db.closeTask(row.id, { ...fields, at }, next, harvests)) {
+    if (harvests.length) {
+      askOrThrow(harvests.flatMap((h) => roomPickAsks(db, row.roomId, { crop: h.crop, kg: h.kg, pickedAt: at, field: fieldOf(h.crop) }, { blocks: h.blocks })),
+        confirmedOf(body));
+    }
+    const logged = (id) => logChange(db, who, at, { kind: 'harvest', rowId: id, action: 'add', after: harvestSnapshot(db, db.getHarvest(id)) });
+    if (!db.closeTask(row.id, { ...fields, at }, next, harvests, logged)) {
       const after = db.getTask(row.id);
       if (!after) throw new TaskError(404, 'Task not found');
       throw new TaskError(409, closedText(after, localDate(at)));
@@ -343,7 +353,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
     // an amount given (empty: none) is a number from 0 to 10,000, kept only on a row that records one. A check for two or
     // more of the room's crops takes amounts only (the task's amount their sum, null when all are empty); one for one crop
     // either. Each kg over 0 makes a harvest of its crop. A null body is an empty one.
-    done(id, body) {
+    done(id, body, who = APP) {
       const { worker, amount, amounts } = body ?? {};
       const row = openRow(id);
       const name = workerOf(worker);
@@ -357,7 +367,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       if (amounts === undefined || amounts === null) {
         if (crops?.length === 1 && given(amount)) {
           const one = kg3(amount); // a harvest's kg, to 3 places as Record a harvest keeps them
-          return close(row, { status: 'done', worker: name, amount: one }, { [crops[0].crop]: one });
+          return close(row, { status: 'done', worker: name, amount: one }, { [crops[0].crop]: one }, { who, body, fieldOf: () => 'amount' });
         }
         return close(row, { status: 'done', worker: name, amount: given(amount) && row.unit !== null ? amount : null });
       }
@@ -374,7 +384,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       }
       const values = Object.values(kg);
       const total = values.length ? kg3(values.reduce((s, v) => s + v, 0)) : null;
-      return close(row, { status: 'done', worker: name, amount: total }, kg);
+      return close(row, { status: 'done', worker: name, amount: total }, kg, { who, body });
     },
 
     // { worker, reason }; not for a long-term row (that is done or cancelled).
@@ -387,7 +397,7 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
 
     // A daily row of today done or skipped at most UNDO_WINDOW_MS ago opens again, its harvests deleted (spec
     // 2026-11-04-task-grid-design.md 3). A row of a day that has ended stays as it is, though within the minute.
-    undo(id) {
+    undo(id, who = APP) {
       const row = db.getTask(id);
       if (!row) throw new TaskError(404, 'Task not found');
       if (row.kind !== 'daily') throw new TaskError(409, 'Only a daily task can be undone');
@@ -396,7 +406,13 @@ export function createTasks({ db, now = Date.now, log = console.error }) {
       const since = now() - UNDO_WINDOW_MS;
       if (row.closedAt < since) throw late();
       if (row.date !== today()) throw new TaskError(409, 'Too late to undo: its day has ended');
-      const went = db.undoTask(id, since);
+      // Data integrity: each harvest its Done made goes with an 'undo' entry (4.3)
+      const made = db.taskHarvests(id, { voided: true }); // a voided one goes too
+      const went = db.transaction(() => {
+        const n = db.undoTask(id, since);
+        if (n !== null) for (const h of made) logChange(db, who, now(), { kind: 'harvest', rowId: h.id, action: 'undo', before: harvestSnapshot(db, h) });
+        return n;
+      });
       if (went === null) throw late();
       tell(row.roomId);
       if (went > 0) tellHarvests(row.roomId);

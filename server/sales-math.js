@@ -148,6 +148,8 @@ export function deliveriesOf(rows, { rooms = new Map(), runs = new Map(), buyers
     return {
       id, soldAt: h.soldAt, buyerId: h.buyerId, buyer: h.buyer, buyerArchived: buyers.get(h.buyerId)?.archived ?? false,
       invoiceNo: h.invoiceNo, note: h.note, paidAt: h.paidAt, kg: sum(own, 'kg'), total: sum(own, 'total'), lines,
+      // ---- Data integrity ---- a voided delivery: { at, by, reason } (every line carries the same)
+      voided: h.voidedAt === null || h.voidedAt === undefined ? null : { at: h.voidedAt, by: h.voidedBy, reason: h.voidReason },
     };
   }).sort((a, b) => b.soldAt - a.soldAt || b.id - a.id);
 }

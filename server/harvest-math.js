@@ -60,6 +60,8 @@ export function runFigures(run, harvests, cropYield, usage) {
     ? {
       costPerKg: total.kg > 0 && !usage.none ? costPerKgOf(usage.cost, total.kg) : null, cost: usage.cost, days: usage.days, water: usage.water,
       ...(usage.none ? { none: usage.none } : {}),
+      // Data integrity (7.2): the RM of it estimated from machine run time, the time the room was not seen; when any
+      ...(usage.estimated > 0 ? { estimated: usage.estimated } : {}), ...(usage.unseenMs > 0 ? { unseenMs: usage.unseenMs } : {}),
     }
     : null;
   const byCrop = crops.map((c) => {
@@ -132,7 +134,8 @@ export function buckets(harvests, { days, to }) {
 }
 
 // One record per farm date, room, crop and run, in date, room name, crop order.
-export function recordRows(harvests, rooms, runs) {
+// Data integrity (11): voided, the range's voided harvests, each its own row (struck on the page) after its day's kept ones.
+export function recordRows(harvests, rooms, runs, voided = []) {
   const groups = new Map();
   for (const h of harvests) {
     const date = localDate(h.pickedAt);
@@ -144,8 +147,13 @@ export function recordRows(harvests, rooms, runs) {
     }
     g.kg = round(g.kg + h.kg, 3);
   }
+  const struck = voided.map((h) => ({
+    date: localDate(h.pickedAt), roomId: h.roomId, roomName: rooms.get(h.roomId)?.name ?? '', crop: h.crop, runStartedAt: runs.get(h.runId)?.startedAt ?? null,
+    kg: round(h.kg, 3), voided: h.voided,
+  }));
   const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
-  return [...groups.values()].sort((a, b) => cmp(a.date, b.date) || cmp(a.roomName, b.roomName) || cmp(a.crop, b.crop) || a.runStartedAt - b.runStartedAt);
+  return [...groups.values(), ...struck].sort((a, b) => cmp(a.date, b.date) || Boolean(a.voided) - Boolean(b.voided) || cmp(a.roomName, b.roomName)
+    || cmp(a.crop, b.crop) || a.runStartedAt - b.runStartedAt);
 }
 
 export const CSV_HEADER = 'date,time,room,crop,run started,stage,flush,blocks,kg,worker,from';

@@ -38,8 +38,9 @@ export function dateLabel(date) {
 
 // ---------------- the tiles ----------------
 
-// One period of the reply ({ kWh, cost, waterL, waterCost, metered }) → the texts of a tile.
-// waterCost is null without a water price: the line is then left out (null).
+// One period of the reply ({ kWh, cost, estimated, waterL, waterCost, metered }) → the texts of a tile.
+// waterCost is null without a water price: the line is then left out (null). Data integrity (7.2): "part estimated" when some
+// of its RM is the meter's and some machine run time's (estimated: the RM of the estimated kWh).
 export function periodTile(label, p) {
   const ok = p && typeof p === 'object';
   return {
@@ -48,9 +49,27 @@ export function periodTile(label, p) {
     cost: formatRM(ok ? p.cost : null),
     water: formatLitres(ok ? p.waterL : null),
     waterCost: ok && finite(p.waterCost) ? formatRM(p.waterCost) : null,
-    basis: !ok ? '' : p.metered === true ? 'metered' : 'estimated',
+    basis: !ok ? '' : p.metered === true ? 'metered' : finite(p.estimated) && p.estimated > 0 && p.estimated < p.cost ? 'part estimated' : 'estimated',
   };
 }
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 7.1 and 7.2)
+
+// The time the app could not see a room, to 5 minutes as Costs' note says it: "7 h 5 min", "24 h", "40 min"; null under
+// 5 minutes (or none).
+export function unseenText(ms) {
+  if (!finite(ms)) return null;
+  const mins = Math.round(ms / 300_000) * 5;
+  if (mins <= 0) return null;
+  const [h, m] = [Math.floor(mins / 60), mins % 60];
+  return [h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ');
+}
+
+// A room with none of the devices that see it (T and RH, CO₂, the meter, the filter's pressure): always seen, its electricity
+// all estimated from what the app switched. room: the room's settings (null while not read).
+export const NO_SENSOR = 'No sensor: estimated from what the app switched';
+export const noSensorLine = (room) => (room && ['trhAddress', 'co2Address', 'meterAddress', 'dpAddress'].every((k) => room[k] === null || room[k] === undefined) ? NO_SENSOR : null);
+// ---- end Data integrity ----
 
 // The three tiles of the room card, or the two of the farm card (withWeek false).
 export function usageTiles(usage, withWeek = true) {
@@ -69,6 +88,7 @@ export function barSeries(days, key) {
     date: d?.date ?? '',
     v: finite(d?.[key]) ? d[key] : null,
     metered: d?.metered === true,
+    unseenMs: finite(d?.unseenMs) ? d.unseenMs : 0, // Data integrity: the time the app could not see the room
   }));
 }
 
@@ -164,15 +184,19 @@ export function barsSummary(series, kind) {
   if (kind === 'energy') {
     const metered = series.filter((s) => s.metered).length;
     parts.push(metered === 0 ? 'all estimated' : metered === series.length ? 'all metered' : `${metered} ${metered === 1 ? 'day' : 'days'} metered, the rest estimated`);
+    const unseen = series.filter((s) => unseenText(s.unseenMs)).length; // Data integrity
+    if (unseen) parts.push(`not seen on ${unseen} ${unseen === 1 ? 'day' : 'days'}`);
   }
   return parts.join(', ');
 }
 
-// The tooltip of a bar.
+// The tooltip of a bar; an energy day the room was not seen for a while says so (Data integrity): "3 Nov  3.4 kWh (estimated)
+// · not seen 7 h 5 min".
 export function barTip(bar, kind) {
   const fmt = kind === 'water' || kind === 'run-water' ? formatLitres : formatKWh;
   const basis = kind !== 'energy' ? '' : bar.metered ? ' (metered)' : ' (estimated)';
-  return `${dateLabel(bar.date)}  ${fmt(bar.v)}${basis}`;
+  const unseen = kind === 'energy' ? unseenText(bar.unseenMs) : null;
+  return `${dateLabel(bar.date)}  ${fmt(bar.v)}${basis}${unseen ? ` · not seen ${unseen}` : ''}`;
 }
 
 // ---------------- the breakdown table ----------------
@@ -190,11 +214,13 @@ export const MACHINE_ROWS = [
 ];
 
 // The per machine breakdown of the days: [{ key, label, kWh, share (0..1), cost }] and the total.
+// Data integrity (9, G17): cost, the server's RM for these days (each room-day priced at its tariff and rounded), gives each
+// row its share of it and the total as it is; without it (an older reply) the kWh at electricityPrice.
 // The aircon row is left out when the days are all metered (its share is in "rest"); "rest" only when there is some, and
 // beside an Aircon row (the estimated days') it says it is the metered days' (critique 2026-10-29c: "Not split by machine
 // (mostly the aircon)" at 71 % with no Aircon row).
 // The dehumidifier and lights rows show when the room has them (options.dehumidifier, options.lights) or when they used energy.
-export function breakdown(days, electricityPrice, { dehumidifier = false, lights = false } = {}) {
+export function breakdown(days, electricityPrice, { dehumidifier = false, lights = false, cost } = {}) {
   const list = Array.isArray(days) ? days : [];
   const sums = Object.fromEntries(MACHINE_ROWS.map((r) => [r.key, 0]));
   for (const d of list) for (const r of MACHINE_ROWS) if (finite(d?.byMachine?.[r.key])) sums[r.key] += d.byMachine[r.key];
@@ -202,15 +228,18 @@ export function breakdown(days, electricityPrice, { dehumidifier = false, lights
     : r.key === 'dehumidifier' ? dehumidifier || sums.dehumidifier > 0 : r.key === 'lights' ? lights || sums.lights > 0 : true));
   const total = rows.reduce((a, r) => a + sums[r.key], 0);
   const both = rows.some((r) => r.key === 'ac') && rows.some((r) => r.key === 'rest');
+  const priced = cost !== undefined;
+  const rowCost = (kWh) => (priced ? (finite(cost) ? (total > 0 ? Math.round((kWh / total) * cost * 100) / 100 : 0) : null)
+    : finite(electricityPrice) ? kWh * electricityPrice : null);
   return {
     rows: rows.map((r) => ({
       key: r.key,
       label: both && r.key === 'rest' ? 'Aircon and the rest on metered days (not split by machine)' : r.label,
       kWh: sums[r.key],
       share: total > 0 ? sums[r.key] / total : null,
-      cost: finite(electricityPrice) ? sums[r.key] * electricityPrice : null,
+      cost: rowCost(sums[r.key]),
     })),
-    total: { kWh: total, cost: finite(electricityPrice) ? total * electricityPrice : null },
+    total: { kWh: total, cost: priced ? cost : finite(electricityPrice) ? total * electricityPrice : null },
   };
 }
 

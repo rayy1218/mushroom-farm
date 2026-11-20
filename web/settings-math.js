@@ -66,14 +66,14 @@ export function parseWaterPrice(text) {
   return n >= 0 && n <= 100 ? { value: n } : { error: WATER_MESSAGE };
 }
 
-// The three added fields: how to read the input's text, and the server's value → the input's text.
+// The added fields: how to read the input's text, and the server's value → the input's text. Data integrity (8.1): the
+// electricity price left Settings' form for the tariff card (web/tariff-card.js); parseElectricityPrice stays for its rule.
 export const EXTRA_FIELDS = [
   { name: 'outdoorAddress', parse: parseOutdoorAddress, show: (v) => (v == null ? '' : String(v)) },
-  { name: 'electricityPrice', parse: parseElectricityPrice, show: (v) => (Number.isFinite(v) ? String(v) : String(DEFAULT_ELECTRICITY)) },
   { name: 'waterPrice', parse: parseWaterPrice, show: (v) => (v == null || !Number.isFinite(v) ? '' : String(v)) },
 ];
 
-// All three inputs ({ name: text }) → { body } for PUT /api/settings, or { errors: { name: message } }.
+// The inputs ({ name: text }) → { body } for PUT /api/settings, or { errors: { name: message } }.
 export function parseExtraSettings(texts) {
   const body = {};
   const errors = {};
@@ -187,15 +187,17 @@ export function idAfter(ids, id) {
 
 export const YIELD_DRY = [0.05, 20];
 export const YIELD_PRICE = [0, 1000];
+export const YIELD_KEEP = [1, 60]; // Data integrity: keeps fresh, days (server/settings.js)
 export const YIELD_NOTE = "Biological efficiency is fresh kg over the dry substrate's kg. A 2.27 kg block at 60 % water holds about 0.9 kg dry. A change here changes the figures of past runs too. The prices you get are recorded in Sales.";
 
 const YIELD_NUMBER = /^[0-9]+(\.[0-9]+)?$/;
 
-// The rows of the card ([{ crop, dryKg: text, priceKg: text }]) → { cropYield } (empty text is null, a crop with both empty is left
-// out), or { error, field } for the first bad input; field is 'dryKg:<crop>' or 'priceKg:<crop>'.
+// The rows of the card ([{ crop, dryKg: text, priceKg: text, keepDays: text }]) → { cropYield } (empty text is null, keepDays
+// only when set, a crop with all empty is left out), or { error, field } for the first bad input; field is 'dryKg:<crop>',
+// 'priceKg:<crop>' or 'keepDays:<crop>'.
 export function yieldBody(rows) {
   const cropYield = {};
-  for (const { crop, dryKg, priceKg } of rows) {
+  for (const { crop, dryKg, priceKg, keepDays } of rows) {
     const one = (text, [min, max], field, what, unit) => {
       const s = String(text ?? '').trim();
       if (s === '') return { value: null };
@@ -207,7 +209,13 @@ export function yieldBody(rows) {
     if (dry.error) return dry;
     const price = one(priceKg, YIELD_PRICE, 'priceKg', 'price', 'RM per kg');
     if (price.error) return price;
-    if (dry.value !== null || price.value !== null) cropYield[crop] = { dryKg: dry.value, priceKg: price.value };
+    // ---- Data integrity ---- (6.2) how many days it keeps fresh, whole, 1 to 60; empty: the crop's default (web/crops.js)
+    const k = String(keepDays ?? '').trim();
+    const keep = k === '' ? null : /^[0-9]{1,2}$/.test(k) && Number(k) >= YIELD_KEEP[0] && Number(k) <= YIELD_KEEP[1] ? Number(k) : NaN;
+    if (Number.isNaN(keep)) return { field: `keepDays:${crop}`, error: `${CROPS[crop]?.name ?? crop}: keeps fresh must be ${YIELD_KEEP[0]} to ${YIELD_KEEP[1]} days, or empty` };
+    if (dry.value !== null || price.value !== null || keep !== null) {
+      cropYield[crop] = { dryKg: dry.value, priceKg: price.value, ...(keep !== null ? { keepDays: keep } : {}) };
+    }
   }
   return { cropYield };
 }

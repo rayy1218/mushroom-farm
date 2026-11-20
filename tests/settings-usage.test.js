@@ -61,6 +61,6 @@ test('defaults, storing a subset, and clearing with null', () => {
   writeSettings(db, { waterPrice: 0 });
   assert.equal(readSettings(db).waterPrice, 0); // zero is a price, not none
   db.setSetting('electricityPrice', 'junk');
-  assert.equal(readSettings(db).electricityPrice, 0.55); // unusable text is the default
+  assert.equal(readSettings(db).electricityPrice, 0.4); // the price is the tariff's today (Data integrity): the key is not read
   db.close();
 });

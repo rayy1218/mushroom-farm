@@ -15,9 +15,10 @@ import {
   flushColumns, flushRows, flushPerCrop, flushSplits, BY_CROP_COLUMNS, byCropRows, harvestLine,
 } from './harvest-math.js';
 import { SHARED_NOTE } from './costs-math.js';
+import { harvestMarks } from './harvest-integrity-math.js'; // ---- Data integrity ----
 import {
   LIST_COLUMNS, cropChoices, listRow, emptyText, runTitle, runSub, pageTiles, costsMix, batchRows, SALE_COLUMNS, saleRows,
-  salesTotal, costRows, costsTotal, costNotes, tieText, untiedText, countLine, COUNT_TITLE, countLead, countBody, countRange,
+  salesTotal, costRows, costsTotal, costNotes, tieText, untiedText, repricedLine, countLine, COUNT_TITLE, countLead, countBody, countRange,
 } from './runs-math.js';
 import { openForm, errorText, closeTaskDialog } from './task-dialogs.js'; // ---- Money truth ---- the block-in day's dialog
 
@@ -33,8 +34,8 @@ function el(tag, className, content) {
   return node;
 }
 // A link in the Business pages' link look (neutral ink, a muted underline: Costs' .co-link).
-const link = (text, href) => {
-  const a = el('a', 'co-link', text);
+const link = (text, href, extra = '') => {
+  const a = el('a', `co-link${extra ? ` ${extra}` : ''}`, text);
   a.href = href;
   return a;
 };
@@ -231,6 +232,7 @@ export function mount(container, { crop = null } = {}) {
         if (loss) td.append(el('span', 'co-loss', c));
         if (i === 4 && r.loss) td.append(el('span', 'co-sub', 'Loss'));
         if (i === 3 && r.costsLine) td.append(el('span', 'co-sub', r.costsLine));
+        if (i === 4 && r.repriced) td.append(link(r.repriced.text, r.repriced.href, 'co-sub')); // ---- Data integrity ----
         return td;
       });
       tr.append(name, crops, ...figures);
@@ -332,7 +334,8 @@ export function mountRun(container, { id }) {
     // what the costs are made of: the why of the profit (Costs' parts), then Harvest's Settings → Yield line
     const mix = costsMix(v);
     const missing = missingLine(v.missing);
-    els.notes.replaceChildren(...(mix ? [el('p', 'muted rn-mix', mix)] : []), ...(missing ? [missing] : []));
+    const repriced = repricedLine(v); // ---- Data integrity ---- a closed month of the run moved since
+    els.notes.replaceChildren(...(mix ? [el('p', 'muted rn-mix', mix)] : []), ...(missing ? [missing] : []), ...(repriced ? [el('p', 'co-note-warn rn-mix', repriced)] : []));
   }
 
   function paintBlocks(v, today) {
@@ -387,8 +390,14 @@ export function mountRun(container, { id }) {
       const li = el('li', 'hv-row');
       const text = el('div', 'hv-text');
       const title = el('p', 'hv-title');
-      title.append(el('span', 'hv-kg', l.kg), `${DOT}${l.what}`);
+      // ---- Data integrity ---- a voided pick stays, struck, its void said (the Void Rule); it counts in no figure
+      const marks = harvestMarks(h);
+      if (marks.voided) {
+        li.classList.add('dx-voided');
+        title.append(el('span', 'dx-chip', 'Voided'), el('span', 'hv-kg dx-figure', l.kg), `${DOT}${l.what}`);
+      } else title.append(el('span', 'hv-kg', l.kg), `${DOT}${l.what}`);
       text.append(title, el('p', 'hv-meta', [l.when, l.who, l.from].filter(Boolean).join(DOT)));
+      if (marks.voided) text.append(el('p', 'dx-void-line', marks.voided));
       li.append(picture('task', 'harvestDaily', { crop: h.crop, size: 32 }), text);
       list.append(li);
     }

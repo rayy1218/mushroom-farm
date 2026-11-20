@@ -1,6 +1,8 @@
 // Farm-wide settings: validation and the stored values. No HTTP.
 
 import { CROP_KEYS } from '../web/crops.js';
+import { tariffOf, priceOn, setRateFrom } from './tariffs.js'; // ---- Data integrity ----
+import { localDate } from './task-rules.js';
 
 export const DEFAULT_SETTINGS = { pollSeconds: 5, outdoorAddress: null, electricityPrice: 0.55, waterPrice: null };
 
@@ -71,13 +73,14 @@ export function settingsView(db, status = {}) {
 }
 
 // ---- Harvest and yield (spec 2026-11-04-harvest-design.md section 5) ----
-const YIELD_ERROR = 'Dry substrate must be 0.05–20 kg and price 0–1,000 RM per kg, or empty';
+const YIELD_ERROR = 'Dry substrate must be 0.05–20 kg, price 0–1,000 RM per kg and keeps fresh 1–60 days, or empty';
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const inRange = (v, min, max) => v === null || (isNumber(v) && v >= min && v <= max);
 
-// One crop's entry: exactly dryKg and priceKg (a missing one is not set), each empty or in range.
-const yieldEntryOk = (e) => isPlainObject(e) && Object.keys(e).every((k) => k === 'dryKg' || k === 'priceKg')
-  && inRange(e.dryKg ?? null, 0.05, 20) && inRange(e.priceKg ?? null, 0, 1000);
+// One crop's entry: dryKg, priceKg and (Data integrity) keepDays (a missing one is not set), each empty or in range.
+const keepOk = (v) => v === null || (Number.isInteger(v) && v >= 1 && v <= 60);
+const yieldEntryOk = (e) => isPlainObject(e) && Object.keys(e).every((k) => k === 'dryKg' || k === 'priceKg' || k === 'keepDays')
+  && inRange(e.dryKg ?? null, 0.05, 20) && inRange(e.priceKg ?? null, 0, 1000) && keepOk(e.keepDays ?? null);
 
 const YIELD_FIELDS = {
   cropYield: { ok: (v) => isPlainObject(v) && Object.entries(v).every(([crop, e]) => CROP_KEYS.includes(crop) && yieldEntryOk(e)), error: YIELD_ERROR },
@@ -90,7 +93,9 @@ export function readCropYield(db) {
   if (!isPlainObject(parsed)) return {};
   const out = {};
   for (const [crop, e] of Object.entries(parsed)) {
-    if (CROP_KEYS.includes(crop) && yieldEntryOk(e)) out[crop] = { dryKg: e.dryKg ?? null, priceKg: e.priceKg ?? null };
+    if (CROP_KEYS.includes(crop) && yieldEntryOk(e)) {
+      out[crop] = { dryKg: e.dryKg ?? null, priceKg: e.priceKg ?? null, ...(e.keepDays ? { keepDays: e.keepDays } : {}) };
+    }
   }
   return out;
 }
@@ -147,13 +152,20 @@ export function readSettings(db) {
     const value = Number(text);
     if (FIELDS[field].ok(value)) settings[field] = value;
   }
+  // ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 8.1) the electricity price is today's on the tariff
+  const tariff = tariffOf(db);
+  if (tariff) settings.electricityPrice = priceOn(tariff, localDate(Date.now()));
   return settings;
 }
 
-// Stores valid settings (see validateSettings); a setting not given is kept. None is stored as an empty text.
-export function writeSettings(db, settings) {
+// Stores valid settings (see validateSettings); a setting not given is kept. None is stored as an empty text. The
+// electricity price (Data integrity 8.1) is a tariff rate from today, so the days before keep theirs; who: the signed-in.
+export function writeSettings(db, settings, { who, now = Date.now() } = {}) {
   for (const field of Object.keys(FIELDS)) {
     if (Object.hasOwn(settings, field)) db.setSetting(field, settings[field] === null ? '' : String(settings[field]));
+  }
+  if (Object.hasOwn(settings, 'electricityPrice') && typeof db.listTariffs === 'function') {
+    setRateFrom(db, localDate(now), settings.electricityPrice, { who, now });
   }
   for (const field of Object.keys(TELEGRAM_FIELDS)) {
     if (!Object.hasOwn(settings, field)) continue;

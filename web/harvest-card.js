@@ -1,6 +1,8 @@
 // The room's Harvest tab (spec 2026-11-04-harvest-design.md 3 and 7): Record a harvest; This run (when the blocks went in,
 // the tiles, the flushes, By crop in a mixed room, a note when Settings → Yield lacks a figure); the run's Harvests, newest
-// first, each with Edit and Delete; Past runs, each opening to its flushes and harvests. createHarvestCard(host, { roomId,
+// first, each with Edit (its Void in the dialog); Past runs, each opening to its flushes and harvests. Data integrity (spec
+// 2026-11-12-data-integrity-design.md 5, 6 and 11): Not sold beside Record (owner and worker) and the run's Not sold records
+// under its harvests; a voided harvest or record stays in place, struck; Record, Edit and Done show the server's asks. createHarvestCard(host, { roomId,
 // onGone }) → { destroy() }. The card asks for its own data: on the room's harvest events and crop changes (New
 // blocks starts a run), when the stream comes back, and on a timer (60 s; slower while the stream is up).
 
@@ -12,12 +14,19 @@ import { cropShortName } from './crops.js';
 import { picture } from './pictures.js';
 import { roomHash } from './route.js';
 import { DOT } from './text-math.js';
-import { openForm, closeTaskDialog, loadWorkers, workerField, errorText, pickGuard } from './task-dialogs.js';
+import { openForm, closeTaskDialog, loadWorkers, workerField, errorText } from './task-dialogs.js';
 import {
   runHead, recordLead, recordTitle, dateHint, harvestLine, pastRow, pastColumns, hasMoney, missingNote, flushColumns, flushRows, flushPerCrop, flushSplits,
   byCropColumns, byCropRows, runTiles, pricesNote,
-  deleteTitle, deleteLead, whenBoxes, recordBody, editBody, recordPicks, editPicks,
+  voidTitle, voidedTitle, pickedLead, whenBoxes, recordBody, editBody,
 } from './harvest-math.js';
+// ---- Data integrity ----
+import { askingSend } from './asks.js';
+import { openVoid, openVoided } from './void-dialog.js';
+import { addHistory } from './changes-fold.js';
+import { openNotSold, undoNotSold } from './not-sold-dialog.js';
+import { harvestMarks, notSoldLine, notSoldSaid } from './harvest-integrity-math.js';
+const SAID_MS = 58_000; // a Not sold just recorded: its line and Undo for its minute (2 s inside the server's 60 s)
 import { batchLineFor } from './batches-math.js'; // ---- Batches ----
 import { runProfitLine } from './costs-math.js'; // ---- Costs ----
 import { runHash } from './route.js'; // ---- Runs ----
@@ -147,7 +156,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   let showAll = false;
   const openRuns = new Set(); // the past runs opened, kept over a repaint
   const allOf = new Set(); // the past runs showing all their harvests
-  let pendingFocus = null; // after a Delete: where the cursor goes once the row is gone (focus keys, the first found)
+  let pendingFocus = null; // after a Void or a Restore: where the cursor goes once the row is repainted (focus keys, the first found)
 
   const hostClass = host.className;
   host.className = 'hv-grid';
@@ -156,6 +165,11 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const head = el('div', 'hv-head');
   const record = button('Record a harvest', 'primary');
   record.disabled = true; // until the first answer says whether the room has a run
+  // ---- Data integrity ---- (6.1) kg picked and never sold (spoiled, given away): owner and worker, the run's crops
+  const notSold = button('Not sold');
+  notSold.disabled = true;
+  const nsStatus = el('p', 'hv-ns-status');
+  nsStatus.setAttribute('role', 'status');
   const recordNote = el('p', 'muted hv-note');
   const toCrop = el('a', '', 'Crop tab');
   toCrop.href = roomHash(roomId, 'crop');
@@ -165,7 +179,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const error = el('p', 'meta warn tk-error');
   error.setAttribute('role', 'alert');
   error.hidden = true;
-  head.append(record, recordNote, error);
+  head.append(record, notSold, recordNote, error, nsStatus);
 
   // This run
   const runCard = el('section', 'card hv-part hv-run-card');
@@ -192,7 +206,10 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   const listTitle = el('h2', '', 'Harvests');
   listTitle.tabIndex = -1;
   listTitle.dataset.focusKey = 'harvests-title';
-  listCard.append(listTitle, el('p', 'muted tk-sub', "This run's harvests, newest first."), list, listNone, more);
+  // ---- Data integrity ---- the run's Not sold records, newest first, under its harvests
+  const nsPart = el('div', 'hv-ns');
+  nsPart.hidden = true;
+  listCard.append(listTitle, el('p', 'muted tk-sub', "This run's harvests, newest first."), list, listNone, more, nsPart);
 
   // Past runs: a table, a row per run opening below it to the run's flushes and harvests
   const pastCard = el('section', 'card hv-part hv-past-card');
@@ -222,19 +239,25 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
   function harvestRow(h, run, fallback) {
     const mixed = (run.crops ?? []).length > 1;
     const l = harvestLine(h, { mixed });
+    const marks = harvestMarks(h); // ---- Data integrity ---- voided (struck, who and why) or edited
     const li = el('li', 'hv-row');
     li.dataset.id = String(h.id);
     const text = el('div', 'hv-text');
     const title = el('p', 'hv-title');
-    title.append(el('span', 'hv-kg', l.kg), `${DOT}${l.what}`);
-    text.append(title, el('p', 'hv-meta', [l.when, l.who, l.from].filter(Boolean).join(DOT)));
+    if (marks.voided) {
+      li.classList.add('dx-voided');
+      title.append(el('span', 'dx-chip', 'Voided'), el('span', 'hv-kg dx-figure', l.kg), `${DOT}${l.what}`);
+    } else title.append(el('span', 'hv-kg', l.kg), `${DOT}${l.what}`);
+    const meta = el('p', 'hv-meta', [l.when, l.who, l.from].filter(Boolean).join(DOT));
+    if (marks.edited) meta.append(el('span', 'dx-edited', 'edited'));
+    text.append(title, meta, ...(marks.voided ? [el('p', 'dx-void-line', marks.voided)] : []));
     const actions = el('div', 'tk-actions');
-    // one quiet Edit a row; Delete is in its dialog
-    const edit = button('Edit', 'tk-quiet');
+    // one quiet Edit a row; Void is in its dialog (a voided one opens as itself: Restore, History)
+    const edit = button(marks.voided ? 'Open' : 'Edit', 'tk-quiet');
     edit.dataset.ownerOnly = ''; // ---- Login ---- a harvest is changed by the owner
     edit.dataset.focusKey = `edit-${h.id}`;
-    edit.setAttribute('aria-label', `Edit ${l.kg} picked ${l.when}`);
-    edit.addEventListener('click', () => editHarvest(h, run, li, fallback));
+    edit.setAttribute('aria-label', marks.voided ? `Open ${l.kg} picked ${l.when}, voided` : `Edit ${l.kg} picked ${l.when}`);
+    edit.addEventListener('click', () => (marks.voided ? openVoidedHarvest(h) : editHarvest(h, run, li, fallback)));
     actions.append(edit);
     li.append(picture('task', 'harvestDaily', { crop: h.crop, size: 32 }), text, actions);
     return li;
@@ -274,7 +297,43 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     listNone.hidden = harvests.length > 0;
     more.hidden = shown.length === harvests.length;
     more.textContent = `Show all ${harvests.length}`;
+    const ns = notSoldPart(run);
+    nsPart.hidden = !ns;
+    nsPart.replaceChildren(...(ns ? [ns] : []));
   }
+
+  // ---- Data integrity ---- a run's Not sold records ("12.00 kg spoiled · Aminah · 10 Nov 16:20"), voided ones struck; the
+  // owner's quiet Edit each (a voided one opens as itself). null when the run has none.
+  function notSoldPart(run) {
+    const records = run.notSold ?? [];
+    if (!records.length) return null;
+    const mixed = (run.crops ?? []).length > 1;
+    const ul = el('ul', 'hv-list hv-ns-list');
+    for (const r of records) {
+      const x = notSoldLine(r, { mixed });
+      const li = el('li', `hv-row hv-ns-row${x.voided ? ' dx-voided' : ''}`);
+      const text = el('div', 'hv-text');
+      const title = el('p', 'hv-title');
+      if (x.voided) title.append(el('span', 'dx-chip', 'Voided'));
+      title.append(el('span', `hv-kg${x.voided ? ' dx-figure' : ''}`, x.kg), ` ${x.text}`);
+      if (x.edited) title.append(el('span', 'dx-edited', 'edited'));
+      text.append(title, ...(x.voided ? [el('p', 'dx-void-line', x.voided)] : []));
+      const actions = el('div', 'tk-actions');
+      const edit = button(x.voided ? 'Open' : 'Edit', 'tk-quiet');
+      edit.dataset.ownerOnly = ''; // a worker records Not sold; the owner changes it
+      edit.dataset.focusKey = `ns-${r.id}`;
+      edit.setAttribute('aria-label', `${x.voided ? 'Open' : 'Edit'} ${x.kg} not sold, ${x.text}`);
+      edit.addEventListener('click', () => openNotSold({ record: r, crops: cropsOf(run), rooms: roomsHere(), onChanged: changed, onError: showError }));
+      actions.append(edit);
+      li.append(picture('crop', r.crop, { size: 32 }), text, actions);
+      ul.append(li);
+    }
+    const part = document.createDocumentFragment();
+    part.append(el('h3', 'hv-ns-title', 'Not sold'), ul);
+    return part;
+  }
+  const cropsOf = (run) => (run?.crops ?? []).map((c) => c.crop);
+  const roomsHere = () => [{ id: roomId, name: getRoom()?.name ?? 'This room' }];
 
   // A past run: its row (the dates a button that opens it) and the row under it with its flushes and latest harvests.
   function pastRun(run, money) {
@@ -322,6 +381,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
         body.append(rest);
       }
     } else body.append(el('p', 'none', 'No harvests in this run.'));
+    const ns = notSoldPart(run); // ---- Data integrity ----
+    if (ns) body.append(ns);
     cell.append(body);
     detail.append(cell);
     const show = (open) => {
@@ -361,6 +422,8 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const never = !run && past.length === 0; // never had crops: no button, the empty card shows the way
     record.disabled = !run;
     record.hidden = never;
+    notSold.disabled = !run; // ---- Data integrity ----
+    notSold.hidden = !run;
     recordNote.hidden = Boolean(run) || never;
     if (run || never) record.removeAttribute('aria-describedby');
     else record.setAttribute('aria-describedby', recordNote.id);
@@ -437,14 +500,19 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
 
   // ---- Record, Edit and Delete ----
 
-  // A command; after it (and after a 404 or 409: gone, or the crops cleared meanwhile) the harvests are asked again.
-  async function send(method, path, body) {
+  // A command; after it (and after a 404 or 409: gone, or the crops cleared meanwhile) the harvests are asked again. Data
+  // integrity (5.1): with form and asking (askingSend's) it goes through the server's asks (a likely duplicate, a heavy pick,
+  // a closed month): the asks under their boxes, the same values sent again confirmed.
+  async function send(method, path, body, form = null, asking = null) {
     try {
-      await request(method, path, body, COMMAND_TIMEOUT);
+      if (asking) {
+        const out = await asking(form, body, (b) => request(method, path, b, COMMAND_TIMEOUT), (f) => (f === 'pickedAt' ? 'pickedDate' : f));
+        if (out !== true) return out;
+      } else await request(method, path, body, COMMAND_TIMEOUT);
       changed();
       return true;
     } catch (err) {
-      if (err.status === 404 || err.status === 409) changed();
+      if (err.status === 404 || (err.status === 409 && !err.asks)) changed();
       if (err.status === 400 && err.field === 'worker') window.dispatchEvent(new CustomEvent('farm:worker')); // renamed or removed
       return err.status === 400 && err.field ? { field: err.field, message: err.message } : { message: errorText(err) };
     }
@@ -489,7 +557,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       p.append("No names yet: add the workers' names in ", a, ' first.');
       lead.push(p);
     }
-    const implausible = pickGuard({ value: 'record', label: 'Record', fields: ['crop', 'kg'] });
+    const recording = askingSend({ value: 'record', label: 'Record', fields: ['crop', 'kg', 'pickedDate', 'pickedTime'] });
     ask({
       title: recordTitle(getRoom()?.name),
       lead,
@@ -501,9 +569,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       submit: async (v, _which, form) => {
         const body = recordBody(v, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
-        const asked = implausible(form, recordPicks(body, run));
-        if (asked) return asked;
-        return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body));
+        return onTime(await send('POST', `/api/rooms/${roomId}/harvests`, body, form, recording));
       },
     });
   }
@@ -512,49 +578,68 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
     const now = Date.now();
     const shown = whenBoxes(h.pickedAt);
     const l = harvestLine(h, { mixed: true }); // the crop named, whatever the room
-    const implausible = pickGuard({ value: 'save', label: 'Save', fields: ['kg'] });
+    const saving = askingSend({ value: 'save', label: 'Save', fields: ['kg', 'pickedDate', 'pickedTime'] });
     ask({
       title: 'Edit a harvest',
       lead: [[l.what, l.who, l.from].filter(Boolean).join(DOT)],
       fields: [kgField(String(h.kg)), ...whenFields(shown, run, now)],
-      buttons: [{ label: 'Delete this harvest', action: () => deleteHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],
+      buttons: [{ label: 'Void this harvest', action: () => voidHarvest(h, li, fallback) }, { value: 'save', label: 'Save', primary: true }],
       submit: async (v, _which, form) => {
         const body = editBody(v, h, { run, now: Date.now(), shown });
         if (body.error) return { field: body.field, message: body.error };
         if (Object.keys(body).length === 0) return true; // nothing changed
-        const asked = implausible(form, editPicks(body, h));
-        if (asked) return asked;
-        return onTime(await send('PUT', `/api/harvests/${h.id}`, body));
+        return onTime(await send('PUT', `/api/harvests/${h.id}`, body, form, saving));
       },
     });
+    addHistory({ kind: 'harvest', id: h.id }); // ---- Data integrity ---- the owner's History fold
   }
 
-  // From the Edit dialog. After it the cursor goes to the next row's Edit (the previous row's when it was the last), else the
-  // list's title (the Harvests card's, or a past run's fold); Keep it goes back to the row's Edit.
-  function deleteHarvest(h, li, fallback) {
-    const near = li.nextElementSibling ?? li.previousElementSibling;
-    let gone = false;
-    const form = ask({
-      title: deleteTitle(h),
-      lead: [deleteLead(h), ...(h.taskId ? ["Its harvest check's kg becomes the total of what is left."] : [])],
-      buttons: [{ value: 'delete', label: 'Delete', primary: true, danger: true }],
-      closeLabel: 'Keep it',
-      submit: async () => {
-        pendingFocus = [near && `edit-${near.dataset.id}`, fallback].filter(Boolean);
-        const r = await send('DELETE', `/api/harvests/${h.id}`);
-        if (r !== true) pendingFocus = null;
-        gone = r === true;
-        return r;
-      },
+  // ---- Data integrity ---- (4.1) Void, from the Edit dialog (the owner's; a reason asked): the harvest stays in its list,
+  // struck, and leaves every figure; a check's harvest sets its check's kg to the total left. The cursor comes back to its row.
+  function voidHarvest(h, li, fallback) {
+    const back = () => { pendingFocus = [`edit-${h.id}`, fallback]; };
+    const form = openVoid({
+      title: voidTitle(h), lead: [pickedLead(h), ...(h.taskId ? ["Its harvest check's kg becomes the total of what is left."] : [])], label: 'Void harvest',
+      path: `/api/harvests/${h.id}/void`, onChanged: () => { back(); changed(); }, onError: showError, hint: 'Weighed with the crate',
     });
     form.closed.then(() => {
-      if (gone || !alive) return;
-      const edit = li.querySelector('[data-focus-key^="edit-"]');
+      if (!alive) return;
+      const edit = host.querySelector(`[data-focus-key="edit-${h.id}"]`) ?? li.querySelector('[data-focus-key^="edit-"]');
       if (edit?.isConnected && !document.querySelector('dialog[open]')) edit.focus();
     });
   }
+  // A voided harvest's own dialog: what it was, the void said, Restore and its History.
+  function openVoidedHarvest(h) {
+    openVoided({
+      title: voidedTitle(h), lead: [pickedLead(h)], voided: h.voided, path: `/api/harvests/${h.id}/restore`,
+      onChanged: () => { pendingFocus = [`edit-${h.id}`]; changed(); }, onError: showError, kind: 'harvest', id: h.id,
+    });
+  }
+
+  // Not sold from the run card (owner and worker): the run's crops, this room; its line and Undo for its minute after.
+  function recordNotSold() {
+    const run = view?.current;
+    if (!run) return;
+    const crops = cropsOf(run);
+    openNotSold({ crops, prefill: { crop: crops[0], roomId }, rooms: roomsHere(), onChanged: changed, onError: showError, onRecorded: said });
+  }
+  let saidTimer = null;
+  function said(made) {
+    clearTimeout(saidTimer);
+    const undo = button('Undo', 'tk-quiet');
+    undo.addEventListener('click', async () => {
+      undo.disabled = true;
+      const r = await undoNotSold(made.id);
+      if (!alive) return;
+      nsStatus.textContent = r === true ? 'Undone' : r;
+      changed();
+    });
+    nsStatus.replaceChildren(`${notSoldSaid(made)}${DOT}`, undo);
+    saidTimer = setTimeout(() => { if (alive) nsStatus.replaceChildren(); }, SAID_MS);
+  }
 
   record.addEventListener('click', recordHarvest);
+  notSold.addEventListener('click', recordNotSold); // ---- Data integrity ----
   more.addEventListener('click', () => {
     const at = list.children.length;
     showAll = true;
@@ -584,6 +669,7 @@ export function createHarvestCard(host, { roomId, getRoom = () => null, onGone }
       alive = false;
       seq++;
       clearTimeout(timer);
+      clearTimeout(saidTimer);
       reload.cancel();
       for (const off of offLive) off();
       closeTaskDialog();

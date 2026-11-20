@@ -1,11 +1,11 @@
 // The Sales page's pure parts (spec 2026-11-05-sales-design.md 3 and 6): the formatter, the tiles, a delivery's row, the
-// tables, the dialog's line totals, the price pre-fill, the unlikely-value check, the body, and the myGAP sheet's rows.
+// tables, the dialog's line totals, the price pre-fill, the body, and the myGAP sheet's rows (the unlikely values: the server's asks).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   priceText, ageText, linesShort, lineParts, paidMark, pageTiles, deliveryRow, cropRows, buyerRows, CROP_COLUMNS, BUYER_COLUMNS,
-  lineTotal, footText, prefill, unlikely, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead, num,
+  lineTotal, footText, prefill, saleBody, sheetWithSales, sheetTotals, emptyText, deleteTitle, deleteLead, num,
   round2, money, roomsOf,
 } from '../web/sales-math.js';
 import { rmText } from '../web/harvest-math.js';
@@ -34,7 +34,9 @@ test('a delivery\'s row: day, buyer, lines in short, total, the paid mark, the r
   assert.deepEqual(lineParts(delivery.lines), [`Grey oyster 12.00${nb}kg`, `Pink oyster 4.50${nb}kg`], 'a line part each, kept whole on the page');
   assert.deepEqual(paidMark(delivery), { text: 'Unpaid', unpaid: true });
   assert.deepEqual(paidMark({ ...delivery, paidAt: Date.UTC(2026, 10, 9, 2) }), { text: `Paid 9${nb}Nov`, unpaid: false });
-  assert.deepEqual(deliveryRow(delivery), { day: 'Wed 4 Nov', buyer: 'Kedai Ah Seng', lines: linesShort(delivery.lines), total: `RM${nb}214.50`, paid: paidMark(delivery), reference: 'R-1' });
+  assert.deepEqual(deliveryRow(delivery), { day: 'Wed 4 Nov', buyer: 'Kedai Ah Seng', lines: linesShort(delivery.lines), total: `RM${nb}214.50`, paid: paidMark(delivery), reference: 'R-1', voided: '', edited: false });
+  const voided = { ...delivery, voided: { at: Date.UTC(2026, 10, 10, 6), by: 'Lim', reason: 'Entered twice' }, edits: 2 };
+  assert.deepEqual([deliveryRow(voided).voided, deliveryRow(voided).edited], ['Voided 10 Nov by Lim: Entered twice', true]);
 });
 
 test('the tiles: sold of harvested, income, owed all time', () => {
@@ -88,14 +90,6 @@ test('the dialog: a line\'s total, the foot, the price pre-fill (buyer, expected
   assert.deepEqual(prefill('black', buyer, cropYield), { value: '', expected: false });
 });
 
-test('the unlikely-value check: over 3 times the expected price, over 500 kg', () => {
-  const cropYield = { oyster: { priceKg: 12 } };
-  assert.deepEqual(unlikely([{ crop: 'oyster', kg: 10, priceKg: 41 }], cropYield), [{ field: 'lines.0.priceKg', message: `That's 3.4 times the expected RM${nb}12.00 per kg. Is RM${nb}41.00 right?` }]);
-  assert.deepEqual(unlikely([{ crop: 'oyster', kg: 650, priceKg: 12 }], cropYield), [{ field: 'lines.0.kg', message: `Is 650.00${nb}kg right?` }]);
-  assert.deepEqual(unlikely([{ crop: 'black', kg: 10, priceKg: 999 }], cropYield), [], 'no expected price: no price check');
-  assert.deepEqual(unlikely([{ crop: 'oyster', kg: 10, priceKg: 36 }], cropYield), []);
-});
-
 test('the body from the boxes: the day at the time typed (today: now; another day: 12:00), numbers, room or mixed', () => {
   const body = saleBody({ date: '2026-11-05', buyerId: '3', invoiceNo: ' R-1 ', note: '', lines: [{ crop: 'oyster', kg: '12', priceKg: '10.5', roomId: '' }, { crop: 'pink', kg: '4,5', priceKg: '14', roomId: '2' }] }, { now: NOW });
   assert.deepEqual(body, { soldAt: NOW, buyerId: 3, invoiceNo: 'R-1', note: null, lines: [{ crop: 'oyster', kg: 12, priceKg: 10.5, roomId: null }, { crop: 'pink', kg: 4.5, priceKg: 14, roomId: 2 }] });
@@ -139,10 +133,6 @@ test('review pins: numbers, the edit keeps its time, the sheet order, the wordin
   assert.equal(body('1', { date: '2026-11-02' }, { soldAt: was }).soldAt, Date.UTC(2026, 10, 2, 4), 'another day: 12:00');
   assert.deepEqual(body('1', { date: '2026-13-01' }), { error: 'Give the date', field: 'date' });
 
-  const cropYield = { oyster: { priceKg: 12 }, black: { priceKg: 0 } };
-  assert.deepEqual(unlikely([{ crop: 'oyster', kg: 500, priceKg: 12 }], cropYield), [], '500 kg exactly: no question');
-  assert.deepEqual(unlikely([{ crop: 'black', kg: 1, priceKg: 50 }], cropYield), [], 'expected 0: no price check');
-  assert.equal(unlikely([{ crop: 'oyster', kg: 1, priceKg: 36.1 }], cropYield)[0].message, `That's over 3 times the expected RM${nb}12.00 per kg. Is RM${nb}36.10 right?`);
   assert.deepEqual(prefill('oyster', { prices: { oyster: 1000 } }, {}), { value: '1000.00', expected: false });
   assert.equal(footText([{ kg: '0.1', priceKg: '1' }, { kg: '0.2', priceKg: '1' }]), `0.30${nb}kg${dot}RM${nb}0.30`);
   assert.deepEqual(sheetTotals({ totals: { kg: 1 } }, [{ kg: 0.1, total: 0.1 }, { kg: 0.2, total: 0.2 }]), { harvested: '1.00', sold: '0.30', total: '0.30' });

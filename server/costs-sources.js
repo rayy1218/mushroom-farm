@@ -13,6 +13,8 @@ import { split } from './costs-math.js';
 const exists = (raw, name) => Boolean(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
 const hasColumn = (raw, table, name) => Boolean(raw.prepare('SELECT 1 FROM pragma_table_info(?) WHERE name = ?').get(table, name));
 const money = (v) => Math.round(v * 100) / 100;
+// ---- Data integrity ---- a voided row counts in no figure: the WHERE part leaving it out, when the table has the column
+const live = (raw, table, alias = '') => (hasColumn(raw, table, 'voided_at') ? `${alias}voided_at IS NULL` : '1');
 
 // Every stock move with its item, oldest first, and what each move out took of its item's lots: { moves, items: Map id →
 // { id, name, kind, unit }, outs: Map moveId → { cost, unpricedQty } }.
@@ -21,7 +23,7 @@ function stockOf(raw) {
   const col = (name, sql = name) => (hasColumn(raw, 'stock_moves', name) ? sql : `NULL AS ${name}`);
   const items = new Map(raw.prepare('SELECT id, name, kind, unit FROM stock_items').all().map((r) => [r.id, { ...r }]));
   const moves = raw.prepare(`SELECT id, item_id, at, qty, unit_cost, ref_kind, ref_id, ${col('total')}, ${col('lot_id')}, ${col('room_id')}
-    FROM stock_moves ORDER BY at, id`).all().map((r) => ({
+    FROM stock_moves WHERE ${live(raw, 'stock_moves')} ORDER BY at, id`).all().map((r) => ({
     id: r.id, itemId: r.item_id, at: r.at, qty: r.qty, unitCost: r.unit_cost, refKind: r.ref_kind, refId: r.ref_id, total: r.total,
     lotId: r.lot_id, roomId: r.room_id,
   }));
@@ -102,7 +104,8 @@ export function readSources(raw, from, to) {
   const paid = exists(raw, 'stock_moves') && hasColumn(raw, 'stock_moves', 'total') ? 'COALESCE(m.total, m.qty * m.unit_cost)' : 'm.qty * m.unit_cost';
   const purchases = !(exists(raw, 'stock_moves') && exists(raw, 'stock_items')) ? [] : raw.prepare(`
     SELECT m.id, m.item_id, i.name, i.kind, m.at, m.qty, m.unit_cost, ${paid} AS paid FROM stock_moves m JOIN stock_items i ON i.id = m.item_id
-    WHERE m.ref_kind = 'purchase' AND m.qty > 0 AND i.kind <> 'blocks' AND m.at BETWEEN ? AND ? ORDER BY m.at, m.id`)
+    WHERE m.ref_kind = 'purchase' AND m.qty > 0 AND i.kind <> 'blocks' AND m.at BETWEEN ? AND ? AND ${live(raw, 'stock_moves', 'm.')}
+    ORDER BY m.at, m.id`)
     .all(from, to).map((r) => ({
       id: r.id, itemId: r.item_id, name: r.name, kind: r.kind, at: r.at, qty: r.qty, unitCost: r.unit_cost,
       total: r.paid === null ? null : money(r.paid),
@@ -117,7 +120,8 @@ export function readSources(raw, from, to) {
     };
   });
   const sales = !exists(raw, 'sales') ? [] : raw.prepare(`
-    SELECT id, sold_at, crop, kg, total, room_id, run_id FROM sales WHERE sold_at BETWEEN ? AND ? ORDER BY sold_at, id`)
+    SELECT id, sold_at, crop, kg, total, room_id, run_id FROM sales WHERE sold_at BETWEEN ? AND ? AND ${live(raw, 'sales')}
+    ORDER BY sold_at, id`)
     .all(from, to).map((r) => ({ id: r.id, at: r.sold_at, crop: r.crop, kg: r.kg, total: r.total, roomId: r.room_id, runId: r.run_id }));
   return { batches, purchases, uses, sales };
 }

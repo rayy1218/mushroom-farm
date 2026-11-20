@@ -1,18 +1,15 @@
 // The Sales page's pure parts (spec 2026-11-05-sales-design.md 3 and 6): the one formatter (RM and kg through Harvest's),
-// the tiles, a delivery's row and the tables, the Record dialog's line totals, price pre-fill, unlikely-value check and
-// body, the Delete confirm's words, and the myGAP 4-6 sheet's sale rows.
+// the tiles, a delivery's row and the tables, the Record dialog's line totals, price pre-fill and body, the Void confirm's
+// words, and the myGAP 4-6 sheet's sale rows. The unlikely price and kg are the server's asks now (Data integrity 5).
 
 import { cropShortName } from './crops.js';
 import { DOT } from './text-math.js';
 import { farmDate, dayMonth, daysFrom } from './tasks-math.js';
 import { kgText, rmText, sheetRows, periodWords, whenMs } from './harvest-math.js';
+import { voidLine } from './changes-math.js';
 
 const NB = ' ';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-// A price over this many times the crop's expected price is asked about once (a slipped decimal point).
-export const UNLIKELY_TIMES = 3;
-// A line over this many kg is asked about once (a slipped decimal point).
-export const UNLIKELY_KG = 500;
 // The server's bounds: a line's kg over 0 up to this, RM per kg 0 up to MAX_PRICE. Keep in step with server/sales-math.js.
 const MAX_KG = 10_000;
 const MAX_PRICE = 1_000;
@@ -69,9 +66,11 @@ export const paidMark = (d) => (d.paidAt === null || d.paidAt === undefined
   ? { text: 'Unpaid', unpaid: true }
   : { text: `Paid ${dayMonth(farmDate(d.paidAt)).replace(' ', NB)}`, unpaid: false });
 
-// A delivery's row on the page: day, buyer, lines in short, total, paid mark, reference.
+// A delivery's row on the page: day, buyer, lines in short, total, paid mark, reference; Data integrity: voided (the row's
+// second line, "Voided 10 Nov by Lim: Entered twice", or '') and edited (it was changed after it was recorded).
 export const deliveryRow = (d) => ({
   day: shortDay(d.soldAt), buyer: d.buyer, lines: linesShort(d.lines), total: rmText(d.total), paid: paidMark(d), reference: d.invoiceNo ?? '',
+  voided: voidLine(d.voided), edited: (d.edits ?? 0) > 0,
 });
 
 // A delivery's rooms (joint audit B3), a line's room by name ("Mixed" for none, "a deleted room" for one gone): one entry when
@@ -163,26 +162,10 @@ export function prefill(crop, buyer, cropYield) {
   return { value: '', expected: false };
 }
 
-// The questions asked once (not refusals): RM per kg over 3 times the crop's expected price, kg over 500.
-export function unlikely(lines, cropYield) {
-  return lines.flatMap((l, i) => {
-    const out = [];
-    const expected = cropYield?.[l.crop]?.priceKg;
-    if (finite(expected) && expected > 0 && l.priceKg > UNLIKELY_TIMES * expected) {
-      const times = (Math.round((l.priceKg / expected) * 10) / 10).toFixed(1);
-      const many = times === '3.0' ? 'over 3' : times;
-      const message = `That's ${many} times the expected ${rmText(expected)} per kg. Is ${rmText(l.priceKg)} right?`;
-      out.push({ field: `lines.${i}.priceKg`, message });
-    }
-    if (l.kg > UNLIKELY_KG) out.push({ field: `lines.${i}.kg`, message: `Is ${kgText(l.kg, { exact: true })} right?` });
-    return out;
-  });
-}
-
 // The POST/PUT body from the dialog's boxes: { date, buyerId, invoiceNo, note, lines: [{ crop, kg, priceKg, roomId }] } (all
 // text). An edit passes the sale's soldAt: its time stays while its date does. Today's date is now; another day is 12:00 at
 // the farm. kg and RM per kg are sent to 2 places (round2), as the server keeps them. The server's bounds are checked here
-// too (kg, RM per kg) so the unlikely-value question is never asked about a value that would be refused. → the body, or
+// too (kg, RM per kg) so the server's asks are never about a value it would refuse. → the body, or
 // { error, field }.
 export function saleBody(v, { now, soldAt: was = null }) {
   const noon = whenMs(v.date, '12:00');
@@ -203,8 +186,13 @@ export function saleBody(v, { now, soldAt: was = null }) {
   return { soldAt, buyerId: Number(v.buyerId), invoiceNo: text(v.invoiceNo), note: text(v.note), lines };
 }
 
-// The Delete confirm's title.
+// The Delete confirm's title (a voided sale's dialog says it of the sale: saleTitle).
 export const deleteTitle = (d) => `Delete the sale of ${dayMonth(farmDate(d.soldAt))} to ${d.buyer}?`;
+// ---- Data integrity ---- the void's confirm, a voided sale's dialog and Mark unpaid.
+export const voidTitle = (d) => `Void the sale of ${dayMonth(farmDate(d.soldAt))} to ${d.buyer}?`;
+export const saleTitle = (d) => `The sale of ${dayMonth(farmDate(d.soldAt))} to ${d.buyer}`;
+export const paidLockText = (d) => `Paid ${dayMonth(farmDate(d.paidAt))}. To change this sale, mark it unpaid first.`;
+export const unpaidLead = (d) => `${shortDay(d.soldAt)}${DOT}${d.buyer}${DOT}${rmText(d.total)}, paid ${dayMonth(farmDate(d.paidAt))}`;
 // The Delete confirm's lead: the total and the lines.
 export const deleteLead = (d) => `${rmText(d.total)}${DOT}${d.lines.map(lineWords).join(', ')}.`;
 
@@ -233,3 +221,22 @@ export function sheetTotals(farm, lines) {
   const total = lines.reduce((s, l) => s + l.total, 0);
   return { harvested, sold: sheet2(round2(sold)), total: sheet2(round2(total)) };
 }
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.2 and 11) the Unsold card: a row per crop with kg left,
+// "9.0 kg still to sell · about RM 162.00" and "166.0 kg past its keeping days since 6 Nov" (the warning), past: its kg (the
+// Record not sold's fill).
+export function unsoldRows(sales) {
+  return (sales?.unsold?.crops ?? []).map((c) => ({
+    crop: c.crop, name: cropShortName(c.crop),
+    fresh: c.fresh > 0 ? `${kgText(c.fresh)} still to sell${c.value > 0 ? `${DOT}about ${rmText(c.value)}` : ''}` : '',
+    past: c.past > 0 ? `${kgText(c.past)} past its keeping days${c.pastSince ? ` since ${dayMonth(c.pastSince)}` : ''}` : '',
+    pastKg: c.past,
+  }));
+}
+// A Not sold record's row: day, "12.00 kg of Grey oyster", why, who; voided and edited as a delivery's.
+const REASON_WORDS = { spoiled: 'Spoiled', rejected: 'Rejected by the buyer', sample: 'Sample', staff: 'Eaten by staff', dried: 'Dried', given: 'Given away' };
+export const notSoldRow = (r) => ({
+  day: shortDay(r.at), what: `${kgText(r.kg, { exact: true })} of ${cropShortName(r.crop)}`,
+  why: [REASON_WORDS[r.reason] ?? r.reason, r.buyer ? `by ${r.buyer}` : '', r.roomName ?? ''].filter(Boolean).join(DOT),
+  who: r.worker ?? '', voided: voidLine(r.voided), edited: (r.edits ?? 0) > 0,
+});

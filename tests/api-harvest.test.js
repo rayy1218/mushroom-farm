@@ -62,9 +62,12 @@ test('record, list, edit and delete a room\'s harvests', async (t) => {
   assert.equal((await call('PUT', '/api/harvests/99999', { kg: 4 })).status, 404);
 
   const gone = await call('DELETE', `/api/harvests/${made.body.id}`);
-  assert.equal(gone.status, 204);
-  assert.equal(gone.body, null);
-  assert.equal((await call('DELETE', `/api/harvests/${made.body.id}`)).status, 404);
+  assert.deepEqual([gone.status, gone.body.error], [409, 'Void it instead: a money record is kept.']);
+  assert.equal((await call('DELETE', '/api/harvests/99999')).status, 404);
+  const voided = await call('POST', `/api/harvests/${made.body.id}/void`, { reason: 'Weighed twice' });
+  assert.deepEqual([voided.status, voided.body.voided.reason], [200, 'Weighed twice']);
+  assert.equal((await call('GET', `/api/rooms/${id}/harvests`)).body.current.kg, 0, 'out of the figures');
+  assert.equal((await call('POST', `/api/harvests/${made.body.id}/restore`, {})).status, 200);
 
   assert.equal((await call('POST', '/api/rooms/9999/harvests', { kg: 1 })).status, 404);
   assert.equal((await call('GET', '/api/rooms/9999/harvests')).status, 404);
@@ -111,7 +114,7 @@ test('a harvest event with the room id on each write; a check\'s harvest edit or
   const made = await call('POST', `/api/rooms/${id}/harvests`, { kg: 1, crop: 'oyster', worker: 'Ali' });
   assert.deepEqual(harvestEvents(), [{ roomId: id }]);
   await call('PUT', `/api/harvests/${made.body.id}`, { kg: 2 });
-  await call('DELETE', `/api/harvests/${made.body.id}`);
+  await call('POST', `/api/harvests/${made.body.id}/void`, { reason: 'Weighed twice' });
   assert.deepEqual(harvestEvents(), [{ roomId: id }, { roomId: id }, { roomId: id }]);
   assert.equal(seen.filter(([type, d]) => type === 'room' && d.part === 'tasks').length, 0, 'a record by hand is no task change');
 
@@ -130,7 +133,7 @@ test('a harvest event with the room id on each write; a check\'s harvest edit or
   assert.equal(harvestEvents().length, 5);
   assert.equal(seen.filter(([type, d]) => type === 'room' && d.part === 'tasks' && d.id === id).length, tasksBefore + 1);
   assert.equal(seen.filter(([type]) => type === 'tasks').length, dueBefore + 1, 'Today and Calendar listen to tasks');
-  await call('DELETE', `/api/harvests/${fromTask.id}`);
+  await call('POST', `/api/harvests/${fromTask.id}/void`, { reason: 'Weighed twice' });
   assert.equal(harvestEvents().length, 6);
   assert.equal(seen.filter(([type, d]) => type === 'room' && d.part === 'tasks' && d.id === id).length, tasksBefore + 2);
   assert.equal(seen.filter(([type]) => type === 'tasks').length, dueBefore + 2);

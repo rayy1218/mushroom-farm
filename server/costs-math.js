@@ -6,6 +6,7 @@ import { addDays, daysBetween } from './task-rules.js';
 import { round, costPerKgOf, valueOf, unpricedOf } from './harvest-math.js';
 import { cell } from './csv.js';
 import { cropShortName } from '../web/crops.js';
+import { dayCost, splitOf } from './energy-cost.js'; // ---- Data integrity ---- one pricing of the usage days
 
 export const CATEGORIES = ['blocks', 'spawn', 'labour', 'rent', 'repairs', 'transport', 'packaging', 'utilities', 'other'];
 export const CATEGORY_LABELS = {
@@ -212,9 +213,11 @@ export function writeOffCharges(item, from, to, today) {
 }
 const monthsBetween = (a, b) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5, 7)) - Number(a.slice(5, 7));
 
-// Each room's measured kWh and litres over [from, to] grouped by the run open that day (null: none): groups [{ roomId, runId,
-// kWh, waterL }]; pending when a day is not worked out yet, pendingRuns the runs open on such a day; notKept when the range
-// reaches before the energy kept. The month's lines and a bill's measured part both read it, so they round alike.
+// Each room's usage over [from, to] grouped by the run open that day (null: none): groups [{ roomId, runId, kWhMeasured,
+// kWhEstimated, waterL, unseenMs, measured, estimated, water (RM: each day priced at its own tariff price and rounded, then
+// summed: energy-cost.js) }]; pending when a day is not worked out yet, pendingRuns the runs open on such a day; notKept when
+// the range reaches before the energy kept. The month's lines and a bill's counted part both read it, so they round alike.
+const pricesOf = (data) => ({ tariff: data.tariff ?? null, electricity: data.prices.electricity, water: data.prices.water });
 function measuredGroups(from, to, data) {
   const groups = [];
   const pendingRuns = new Set();
@@ -235,18 +238,25 @@ function measuredGroups(from, to, data) {
         if (runId !== null) pendingRuns.add(runId);
         continue;
       }
-      const g = byRun.get(runId) ?? { roomId, runId, kWh: 0, waterL: 0 };
-      g.kWh += day.kWh;
+      const g = byRun.get(runId) ?? { roomId, runId, kWhMeasured: 0, kWhEstimated: 0, waterL: 0, unseenMs: 0, measured: 0, estimated: 0, water: 0 };
+      const c = dayCost({ ...day, date: d }, pricesOf(data));
+      const split = splitOf(day);
+      g.kWhMeasured += split.measured;
+      g.kWhEstimated += split.estimated;
       g.waterL += day.waterL;
+      g.unseenMs += day.unseenMs ?? 0;
+      g.measured = round(g.measured + c.measured, 2);
+      g.estimated = round(g.estimated + c.estimated, 2);
+      if (c.water !== null) g.water = round(g.water + c.water, 2);
       byRun.set(runId, g);
     }
     groups.push(...byRun.values());
   }
   return { groups, pending, pendingRuns, notKept };
 }
-// A group's measured cost to 2 places: its electricity, or its water by the m³ (a water price set).
-const electricityOf = (g, prices) => round(round(g.kWh, 3) * prices.electricity, 2);
-const waterOf = (g, prices) => round((round(g.waterL, 3) / 1000) * prices.water, 2);
+// A group's counted cost: its electricity (measured and estimated), or its water (a water price set).
+const electricityOf = (g) => round(g.measured + g.estimated, 2);
+const waterOf = (g) => g.water;
 
 // A bill's period: its own, or (an old row) its date's calendar month.
 const periodOf = (bill) => ({
@@ -267,7 +277,7 @@ function measuredFor(bill, from, to, data) {
   // each room's and run's part rounded as its line is, so the month's lines and top-up sum to the bill to the sen
   const over = (a, b) => {
     const m = measuredGroups(a, b, data);
-    return m.pending ? null : round(m.groups.reduce((s, g) => s + costOf(g, data.prices), 0), 2);
+    return m.pending ? null : round(m.groups.reduce((s, g) => s + costOf(g), 0), 2);
   };
   const others = data.costs.filter((o) => o.id !== bill.id && isBill(o) && o.utility === bill.utility)
     .map((o) => ({ amount: o.amount, ...periodOf(o) }))
@@ -286,8 +296,10 @@ function measuredFor(bill, from, to, data) {
   return round(measured, 2);
 }
 
-// A bill's top-up (section 4): the bill − the measured cost of that utility over its period, shared when over 0; a note when
-// the measured cost is higher, or when the bill counts in full (days not kept, no water price); nothing when they are equal.
+// A bill's top-up (section 4): the bill − the counted cost of that utility over its period, shared when over 0; under 0 (Data
+// integrity 8.2) the bill lowers it: the difference taken off the period's estimated lines first, each by its share of the
+// estimated RM, then off the measured ones, each piece a line on its room and run (`lines`); a note when the bill counts in
+// full (days not kept, no water price); nothing when they are equal.
 function topUp(bill, data) {
   const what = bill.utility;
   const { from, to } = periodOf(bill);
@@ -307,32 +319,94 @@ function topUp(bill, data) {
   const diff = round(bill.amount - measured, 2);
   if (diff > 0) return { line: line(diff) };
   if (diff === 0) return {};
-  const text = `Measured ${rm(measured)} is above the ${what} bill of ${rm(bill.amount)}: the estimate runs high`;
-  return { note: note('bill-below', text) };
+  return { lines: correctionLines(bill, -diff, measuredGroups(from, to, data).groups) };
+}
+
+// The pieces taking `amount` (RM, over 0) off a bill's period (Data integrity 8.2): off the estimated electricity first (water
+// has no estimate), by each group's share, up to all of it; the rest off the measured, the same way. → lines (negative).
+function correctionLines(bill, amount, groups) {
+  const isWater = bill.utility === 'water';
+  const label = isWater ? 'Water above the bill' : 'Electricity above the bill';
+  const out = [];
+  const take = (left, list, valueOf, estimated) => {
+    const total = round(list.reduce((s, g) => s + valueOf(g), 0), 2);
+    if (!(left > 0) || !(total > 0)) return left;
+    const off = left < total ? left : total;
+    split(off, list.map(valueOf)).forEach((piece, i) => {
+      if (!(piece > 0)) return;
+      const g = list[i];
+      out.push({
+        key: `over-bill-${bill.utility}`, category: 'utilities', label, source: 'bill', amount: -piece, roomId: g.roomId, runId: g.runId,
+        shared: false, costId: bill.id, estimated,
+      });
+    });
+    return round(left - off, 2);
+  };
+  if (isWater) take(amount, groups.filter((g) => g.water > 0), (g) => g.water, false);
+  else take(take(amount, groups.filter((g) => g.estimated > 0), (g) => g.estimated, true), groups.filter((g) => g.measured > 0), (g) => g.measured, false);
+  return out;
 }
 
 // What an electricity or water bill adds, for its entry: { amount (its Unmeasured line; 0 when the measured cost covers it;
 // null while a day of its own period is not worked out), month (where it lands: the month its period ends) }.
 export function billTopUp(bill, data) {
   const t = topUp(bill, data);
-  return { amount: t.pending ? null : t.line ? t.line.amount : 0, month: monthOf(landingOf(bill, data.today)) };
+  const amount = t.pending ? null : t.line ? t.line.amount : t.lines ? round(t.lines.reduce((s, l) => s + l.amount, 0), 2) : 0;
+  return { amount, month: monthOf(landingOf(bill, data.today)) };
 }
 
-// Each room's measured electricity and water over [from, to], one line per room and run (null: no run that day).
+// Each room's electricity and water over [from, to], lines per room and run (null: no run that day): "Electricity · measured"
+// (the meter's; drawn too when nothing was used, as before) and "Electricity · estimated" (machine run time while the room was
+// seen; Data integrity 7.2) when over 0, and the water. The notes: estimates over ESTIMATED_SHARE of the kWh, a room not seen
+// for an hour or more. kWh: { measured, estimated, unseenMs }.
+export const ESTIMATED_SHARE = 0.2;
+const FULL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const kwhText = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// "5 days 6 h 55 min" (to the 5 minutes).
+export function unseenWords(ms) {
+  const mins = Math.round(ms / 300_000) * 5;
+  const [d, h, m] = [Math.floor(mins / 1440), Math.floor((mins % 1440) / 60), mins % 60];
+  return [d ? `${d} day${d === 1 ? '' : 's'}` : '', h ? `${h} h` : '', m ? `${m} min` : ''].filter(Boolean).join(' ') || '0 min';
+}
 function measuredLines(from, to, data) {
   const m = measuredGroups(from, to, data);
   const lines = [];
   for (const g of m.groups) {
     const at = { roomId: g.roomId, runId: g.runId, shared: false };
-    const amount = electricityOf(g, data.prices);
-    lines.push({ key: 'electricity', category: 'utilities', label: 'Electricity', source: 'measured', amount, ...at });
+    // (each carries its kWh, the first its room's unseen time: a run's own notes, runTotals)
+    const drawn = g.measured > 0 || !(g.estimated > 0);
+    if (drawn) {
+      lines.push({ key: 'electricity', category: 'utilities', label: 'Electricity · measured', source: 'measured', amount: g.measured, ...at,
+        kWh: { measured: g.kWhMeasured, estimated: 0, unseenMs: g.unseenMs } });
+    }
+    if (g.estimated > 0) {
+      lines.push({ key: 'electricity-estimated', category: 'utilities', label: 'Electricity · estimated', source: 'estimated', amount: g.estimated, ...at,
+        kWh: { measured: 0, estimated: g.kWhEstimated, unseenMs: drawn ? 0 : g.unseenMs } });
+    }
     if (data.prices.water !== null) {
-      lines.push({ key: 'water', category: 'utilities', label: 'Water', source: 'measured', amount: waterOf(g, data.prices), ...at });
+      lines.push({ key: 'water', category: 'utilities', label: 'Water', source: 'measured', amount: waterOf(g), ...at });
     }
   }
   const kept = `${dayMonth(data.keptFrom)} ${data.keptFrom.slice(0, 4)}`;
   const notes = m.notKept ? [note('energy-not-kept', `Energy before ${kept} is not kept: not counted`)] : [];
-  return { lines, notes, pending: m.pending, pendingRuns: m.pendingRuns };
+  const kWh = {
+    measured: round(m.groups.reduce((s, g) => s + g.kWhMeasured, 0), 3), estimated: round(m.groups.reduce((s, g) => s + g.kWhEstimated, 0), 3),
+    unseenMs: m.groups.reduce((s, g) => s + g.unseenMs, 0),
+  };
+  const counted = kWh.measured + kWh.estimated;
+  if (!m.pending && counted > 0 && kWh.estimated / counted > ESTIMATED_SHARE) {
+    const month = FULL_MONTHS[Number(to.slice(5, 7)) - 1];
+    const soFar = to >= data.today ? ' so far' : '';
+    notes.push(note('estimated-high', `${Math.round((kWh.estimated / counted) * 100)} % of ${month}’s electricity${soFar} (${kwhText(kWh.estimated)} of ${kwhText(counted)} kWh) is estimated from machine run time. Enter the TNB bill to check it.`));
+  }
+  const unseen = new Map();
+  for (const g of m.groups) unseen.set(g.roomId, (unseen.get(g.roomId) ?? 0) + g.unseenMs);
+  const span = monthOf(from) === monthOf(to) ? 'this month' : 'in these days';
+  for (const [roomId, ms] of unseen) {
+    if (ms < 3_600_000) continue; // a blip of minutes is no news
+    notes.push(note('unseen', `The app could not see ${data.rooms.get(roomId) ?? 'a room'} for ${unseenWords(ms)} ${span}: no electricity is counted for that time. Enter the TNB bill: its top-up counts it.`));
+  }
+  return { lines, notes, pending: m.pending, pendingRuns: m.pendingRuns, kWh };
 }
 
 // Every cost line of [from, to]: { key, category, label, source ('manual' | 'batches' | 'inventory' | 'measured' | 'bill'),
@@ -351,6 +425,7 @@ export function linesOf(from, to, data) {
       const t = topUp(c, data);
       if (t.pending) pending = sharedPending = true;
       if (t.line) lines.push({ ...t.line, date });
+      if (t.lines) lines.push(...t.lines.map((l) => ({ ...l, date }))); // Data integrity: the bill lowers the counted
       if (t.note) notes.push(t.note);
       continue;
     }
@@ -434,7 +509,7 @@ export function linesOf(from, to, data) {
   // ---- end Money truth ----
   const m = measuredLines(from, to, data);
   if (m.pending) pending = true;
-  return { lines: [...lines, ...m.lines], notes: [...notes, ...m.notes], pending, sharedPending, pendingRuns: m.pendingRuns };
+  return { lines: [...lines, ...m.lines], notes: [...notes, ...m.notes], pending, sharedPending, pendingRuns: m.pendingRuns, kWh: m.kWh };
 }
 
 // ---- Money truth ---- (spec 5.2) What was bought for stock in [from, to], at what was paid: Inventory's purchases (kind not
@@ -474,7 +549,7 @@ function categoryLines(lines, total) {
     g.amount = round(g.amount + l.amount, 2);
     by.set(l.key, g);
   }
-  return [...by.values()].filter((g) => g.amount > 0) // a room that used nothing: no 0 line
+  return [...by.values()].filter((g) => g.amount !== 0) // a room that used nothing: no 0 line (a bill's lowering is under 0)
     .map((g) => ({ ...g, share: total > 0 ? Math.round((g.amount / total) * 100) : null }))
     .sort((a, b) => b.amount - a.amount);
 }
@@ -490,18 +565,22 @@ function unsoldOf(harvests, picked, sold, cropYield) {
 
 const PARTS = ['blocks', 'energy', 'water', 'own', 'equipment', 'shared'];
 const emptyPart = () => ({
-  blocks: 0, energy: 0, water: 0, own: 0, equipment: 0, shared: 0, income: 0, kgHarvested: 0, kgSold: 0, byCategory: {}, pending: false,
+  blocks: 0, energy: 0, water: 0, own: 0, equipment: 0, shared: 0, income: 0, kgHarvested: 0, kgSold: 0, kgNotSold: 0, byCategory: {}, pending: false,
+  energyEstimated: 0, // ---- Data integrity ---- the estimated part of energy (a bill's lowering of the estimates taken off)
+  kWhMeasured: 0, kWhEstimated: 0, unseenMs: 0, // and the run's kWh and unseen time, for its own notes
 });
 // equipment (Money truth): a room's own items written off; the farm's are in the shared costs
+// Data integrity: the estimated electricity and a bill's lowering of the counted are energy (or water) too
 const partOf = (l) => (l.source === 'batches' ? 'blocks' : l.source === 'register' ? 'equipment'
-  : l.source === 'measured' ? (l.key === 'electricity' ? 'energy' : 'water') : 'own');
+  : l.source === 'measured' || l.source === 'estimated' ? (l.key.startsWith('electricity') ? 'energy' : 'water')
+    : l.source === 'bill' && l.key.startsWith('over-bill-') ? (l.key === 'over-bill-water' ? 'water' : 'energy') : 'own');
 
 // The figures of [from, to] (section 4): { from, to, lines, byCategory, income, costs, profit, kgHarvested, kgSold, costPerKg,
 // profitPerKg, unsold, runs (Map run id → { blocks, energy, water, own, shared, income, kgHarvested, kgSold, byCategory,
 // pending }), notes [{ kind, text, runId? }], pending, sharedPending (a bill's top-up not known yet), incomplete (a batch
 // or a purchase with no price left out), waterPriced }. While pending: costs, profit and the per-kg figures null.
 export function figuresOf(from, to, data) {
-  const { lines, notes, pending, sharedPending, pendingRuns } = linesOf(from, to, data);
+  const { lines, notes, pending, sharedPending, pendingRuns, kWh } = linesOf(from, to, data);
   const incomplete = notes.some((n) => LEFT_OUT.includes(n.kind));
   const known = new Set(data.runs.map((r) => r.id));
   const runs = new Map();
@@ -515,6 +594,12 @@ export function figuresOf(from, to, data) {
     const p = part(l.runId);
     const k = partOf(l);
     p[k] = round(p[k] + l.amount, 2);
+    if (l.source === 'estimated' || l.estimated) p.energyEstimated = round(p.energyEstimated + l.amount, 2);
+    if (l.kWh) {
+      p.kWhMeasured = round(p.kWhMeasured + l.kWh.measured, 3);
+      p.kWhEstimated = round(p.kWhEstimated + l.kWh.estimated, 3);
+      p.unseenMs += l.kWh.unseenMs;
+    }
     if (k !== 'energy' && k !== 'water') p.byCategory[l.category] = round((p.byCategory[l.category] ?? 0) + l.amount, 2);
   }
   const sharedTotal = sum(lines.filter((l) => l.shared), 'amount');
@@ -537,6 +622,15 @@ export function figuresOf(from, to, data) {
       p.kgSold = round(p.kgSold + x.kg, 2);
     }
   }
+  // ---- Data integrity ---- Not sold records reach runs by the sale steps, as a sale line of 0 RM (spec 6.1)
+  const notSold = (data.notSold ?? []).filter((n) => n.date >= from && n.date <= to);
+  for (const n of notSold) {
+    for (const x of saleParts({ ...n, total: 0 }, data)) {
+      const p = part(x.runId);
+      p.kgNotSold = round(p.kgNotSold + x.kg, 2);
+    }
+  }
+  const kgNotSold = sum(notSold, 'kg');
   const harvests = data.harvests.filter((h) => h.date >= from && h.date <= to);
   for (const h of harvests) {
     if (h.runId === null || !known.has(h.runId)) continue;
@@ -549,7 +643,7 @@ export function figuresOf(from, to, data) {
   const kgSold = sum(sales, 'kg');
   const kgHarvested = sum(harvests, 'kg');
   const profit = round(income - costs, 2);
-  const unsold = unsoldOf(harvests, kgHarvested, kgSold, data.cropYield);
+  const unsold = unsoldOf(harvests, kgHarvested, round(kgSold + kgNotSold, 2), data.cropYield);
   if (unsold) {
     const about = unsold.value === null ? '' : ` (about ${rm(unsold.value)} at your expected prices)`;
     notes.unshift(note('unsold', `${unsold.kg.toFixed(1)} kg picked and not yet sold${about}`));
@@ -560,7 +654,8 @@ export function figuresOf(from, to, data) {
     notes.push(note('no-water-price', 'No water price is set: energy is electricity only'));
   }
   return {
-    from, to, lines, byCategory: categoryLines(lines, costs), income, kgHarvested, kgSold, unsold, runs, bought: boughtOf(from, to, data),
+    from, to, lines, byCategory: categoryLines(lines, costs), income, kgHarvested, kgSold, kgNotSold, unsold, runs, bought: boughtOf(from, to, data),
+    kWh, // ---- Data integrity ---- { measured, estimated, unseenMs } of the rooms' days
     costs: pending ? null : costs,
     profit: pending ? null : profit,
     writeOff, profitBeforeWriteOff: pending ? null : round(profit + writeOff, 2),
@@ -581,6 +676,20 @@ export const runFirstMonth = (run) => monthOf(addDays(run.startDate, -RUN_LEAD_D
 // income, kgHarvested, kgSold, costs, profit, costPerKg, profitPerKg, notes, pending, incomplete }. Pending only when a day
 // not worked out falls on the run, or a month it had block-days in has a bill's top-up not known yet: another room's
 // pending day never hides a closed run's figures.
+// ---- Data integrity ---- (7.2) a run's own notes: its estimates over ESTIMATED_SHARE of its kWh, its room not seen for an
+// hour or more over its days.
+function runEnergyNotes(run, t) {
+  const out = [];
+  const counted = t.kWhMeasured + t.kWhEstimated;
+  if (counted > 0 && t.kWhEstimated / counted > ESTIMATED_SHARE) {
+    out.push({ ...note('estimated-high', `${Math.round((t.kWhEstimated / counted) * 100)} % of this run’s electricity (${kwhText(t.kWhEstimated)} of ${kwhText(counted)} kWh) is estimated from machine run time. Enter the TNB bill to check it.`), runId: run.id });
+  }
+  if (t.unseenMs >= 3_600_000) {
+    out.push({ ...note('unseen', `The app could not see ${run.roomName ?? 'its room'} for ${unseenWords(t.unseenMs)} during this run: no electricity is counted for that time.`), runId: run.id });
+  }
+  return out;
+}
+
 export function runTotals(run, figs, today) {
   const t = emptyPart();
   const notes = [];
@@ -591,9 +700,12 @@ export function runTotals(run, figs, today) {
     pending ||= Boolean(p?.pending) || (f.sharedPending && blockDays(run, f.from, f.to, today) > 0);
     notes.push(...f.notes.filter((n) => n.runId === run.id || (n.kind === 'energy-not-kept' && m === monthOf(run.startDate))));
     if (!p) continue;
-    for (const k of [...PARTS, 'income', 'kgHarvested', 'kgSold']) t[k] = round(t[k] + p[k], 2);
+    for (const k of [...PARTS, 'income', 'kgHarvested', 'kgSold', 'kgNotSold', 'energyEstimated']) t[k] = round(t[k] + p[k], 2);
+    for (const k of ['kWhMeasured', 'kWhEstimated']) t[k] = round(t[k] + (p[k] ?? 0), 3);
+    t.unseenMs += p.unseenMs ?? 0;
     for (const [c, v] of Object.entries(p.byCategory)) t.byCategory[c] = round((t.byCategory[c] ?? 0) + v, 2);
   }
+  notes.push(...runEnergyNotes(run, t)); // ---- Data integrity ---- (7.2) the run's own days
   const costs = round(PARTS.reduce((s, k) => s + t[k], 0), 2);
   const profit = round(t.income - costs, 2);
   const byCategory = [
@@ -601,8 +713,8 @@ export function runTotals(run, figs, today) {
     ...(t.shared > 0 ? [{ category: 'shared', amount: t.shared }] : []),
   ];
   return {
-    parts: Object.fromEntries(PARTS.map((k) => [k, t[k]])), byCategory, income: t.income, kgHarvested: t.kgHarvested,
-    kgSold: t.kgSold,
+    parts: { ...Object.fromEntries(PARTS.map((k) => [k, t[k]])), energyEstimated: t.energyEstimated }, byCategory, income: t.income, kgHarvested: t.kgHarvested,
+    kgSold: t.kgSold, kgNotSold: t.kgNotSold, // ---- Data integrity ---- the run's kg left: kgHarvested − kgSold − kgNotSold
     costs: pending ? null : costs,
     profit: pending ? null : profit,
     costPerKg: pending || t.kgHarvested === 0 ? null : costPerKgOf(costs, t.kgHarvested),
@@ -618,11 +730,13 @@ export function runTotals(run, figs, today) {
 // null when no water price is set.
 export function summaryOf(f) {
   const by = {};
-  for (const l of f.lines) if (l.source !== 'measured') by[l.category] = round((by[l.category] ?? 0) + l.amount, 2);
-  const measured = (key) => sum(f.lines.filter((l) => l.source === 'measured' && l.key === key), 'amount');
+  const usage = (l) => l.source === 'measured' || l.source === 'estimated';
+  for (const l of f.lines) if (!usage(l)) by[l.category] = round((by[l.category] ?? 0) + l.amount, 2);
+  const measured = (key) => sum(f.lines.filter((l) => usage(l) && l.key === key), 'amount');
   return {
     total: f.costs, byCategory: LINE_CATEGORIES.filter((c) => by[c]).map((c) => ({ category: c, amount: by[c] })),
-    energy: f.pending ? null : measured('electricity'),
+    // the electricity counted from the rooms' days: measured and estimated (Data integrity 7)
+    energy: f.pending ? null : round(measured('electricity') + measured('electricity-estimated'), 2),
     water: f.pending || !f.waterPriced ? null : measured('water'),
     income: f.income, profit: f.profit, profitPerKg: f.profitPerKg,
   };
@@ -630,7 +744,9 @@ export function summaryOf(f) {
 
 // ---- Export CSV (2026-11-05, the Business audit): GET /api/costs.csv?month= ----
 export const CSV_HEADER = 'date,type,category,what,room,run started,source,amount';
-const CSV_SOURCES = { manual: 'entered', batches: 'Batches', inventory: 'Inventory', measured: 'measured', bill: 'bill − measured', register: 'equipment register' };
+const CSV_SOURCES = {
+  manual: 'entered', batches: 'Batches', inventory: 'Inventory', measured: 'measured', estimated: 'estimated', bill: 'bill − measured', register: 'equipment register',
+};
 const PENDING_ROW = ['', 'cost', 'Utilities', 'Electricity and water still being worked out: export again in a minute', '', '', 'measured', ''];
 
 // A period's lines (figuresOf's f over data) as the CSV's lines, the header first: each cost line, each sale (income) and
@@ -648,12 +764,13 @@ export function csvRows(f, data) {
     if (l.source === 'batches') return l.blocks === null || l.blocks === undefined ? '' : `${l.blocks} blocks`;
     if (l.source === 'inventory' || l.source === 'register') return l.name ?? ''; // the item used; the equipment written off
     if (l.source === 'bill') return `${l.label}, bill of ${dayMonth(costOf(l.costId)?.date ?? l.date)}`;
-    return `${l.label} measured ${span}`;
+    return `${l.label} ${span}`; // "Electricity · measured 1–10 Nov"
   };
-  // a line of 0 (a room that used nothing) is left out, as By category leaves it
-  const rows = f.lines.filter((l) => l.amount > 0).map((l, i) => ({
-    date: l.source === 'measured' ? '' : l.date, order: i,
-    cells: [l.source === 'measured' ? '' : l.date, 'cost', CATEGORY_LABELS[l.category] ?? l.label, whatOf(l), roomName(l.roomId),
+  // a line of 0 (a room that used nothing) is left out, as By category leaves it; a bill's lowering (under 0) stays
+  const dateless = (l) => l.source === 'measured' || l.source === 'estimated';
+  const rows = f.lines.filter((l) => l.amount !== 0).map((l, i) => ({
+    date: dateless(l) ? '' : l.date, order: i,
+    cells: [dateless(l) ? '' : l.date, 'cost', CATEGORY_LABELS[l.category] ?? l.label, whatOf(l), roomName(l.roomId),
       runStart(l.runId), CSV_SOURCES[l.source] ?? l.source, l.amount.toFixed(2)],
   }));
   data.sales.filter((s) => s.date >= f.from && s.date <= f.to).forEach((s, i) => {

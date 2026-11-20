@@ -7,7 +7,6 @@
 //   result: { text, moves: [ids] (Undo; none: no Undo), at (ms, when it was saved) }
 
 import { request } from './api.js';
-import { isOwner } from './session.js'; // ---- Login ----
 import { errorText } from './task-dialogs.js';
 import { DOT } from './text-math.js';
 import { undoLeft } from './inventory-math.js';
@@ -70,8 +69,8 @@ export function createDoneLine(node, { onUndone, onError } = {}) {
 
   function show(result) {
     if (!result?.text) return;
-    // ---- Login ---- deleting a move is the owner's: a worker's record is said without Undo
-    const moves = isOwner() ? result.moves : null;
+    // Data integrity (12): Undo inside its minute is the recorder's own, a worker's too (the server checks the person)
+    const moves = result.moves;
     const left = moves?.length ? undoLeft(result.at ?? Date.now(), Date.now()) : 0;
     if (!left) {
       if (moves?.length) return; // a flash whose minute is over: nothing to say any more

@@ -40,20 +40,19 @@ test('water price: blank is none, else 0 to 100', () => {
   for (const bad of ['100.5', '-2', 'abc']) assert.deepEqual(parseWaterPrice(bad), { error: WATER_MESSAGE });
 });
 
-test('the three settings together: a body, or an error per wrong field', () => {
-  assert.deepEqual(parseExtraSettings({ outdoorAddress: '', electricityPrice: '0.55', waterPrice: '' }),
-    { body: { outdoorAddress: null, electricityPrice: 0.55, waterPrice: null } });
-  const r = parseExtraSettings({ outdoorAddress: '300', electricityPrice: '0.55', waterPrice: 'x' });
+// Data integrity (8.1): the electricity price is the tariff card's now (tests/web-settings-integrity.test.js)
+test('the settings together: a body, or an error per wrong field', () => {
+  assert.deepEqual(parseExtraSettings({ outdoorAddress: '', waterPrice: '' }),
+    { body: { outdoorAddress: null, waterPrice: null } });
+  const r = parseExtraSettings({ outdoorAddress: '300', waterPrice: 'x' });
   assert.deepEqual(Object.keys(r.errors), ['outdoorAddress', 'waterPrice']);
 });
 
-test('the inputs show the server values; an older server (no fields) shows the default price and blanks', () => {
+test('the inputs show the server values; an older server (no fields) shows blanks', () => {
   const show = Object.fromEntries(EXTRA_FIELDS.map((f) => [f.name, f.show]));
   assert.equal(show.outdoorAddress(9), '9');
   assert.equal(show.outdoorAddress(null), '');
   assert.equal(show.outdoorAddress(undefined), '');
-  assert.equal(show.electricityPrice(0.5068), '0.5068');
-  assert.equal(show.electricityPrice(undefined), '0.55');
   assert.equal(show.waterPrice(null), '');
   assert.equal(show.waterPrice(2.07), '2.07');
 });

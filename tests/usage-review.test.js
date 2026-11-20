@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from '../server/db.js';
+import { seenAllDay } from './integrity-fixture.js';
 import { fixedZone, dayWindows, meteredDays, roomDays, roomUsage, farmUsage, warmUsage, USAGE_DAYS_KEPT } from '../server/usage.js';
 
 const zone = fixedZone(480);
@@ -55,8 +56,8 @@ test('byMachine adds up to kWh when the estimates exceed the metered energy', (t
   db.logMachine(room.id, 'intake', { on: true }, 'auto', at(20, 0));
   db.logMachine(room.id, 'exhaust', { on: true }, 'auto', at(20, 0));
   db.logMachine(room.id, 'humidifier', { on: true }, 'auto', at(20, 0)); // 10 + 10 + 20 kWh estimated by 10:00
-  db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 1), ok: true, energyKwh: 100 });
-  db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 9), ok: true, energyKwh: 108 });
+  // the meter read every 10 minutes from midnight (Data integrity: metered while a reading is fresh): 100 to 108 kWh
+  for (let i = 0; i <= 60; i += 1) db.addMeterReading({ roomId: room.id, address: 30, at: at(20, 0) + i * 600_000, ok: true, energyKwh: 100 + i * (8 / 60) });
   const today = roomUsage(db, room.id, { days: 1, prices: PRICES, now: NOW, zone }).days[0];
   assert.equal(today.kWh, 8);
   assert.equal(today.byMachine.rest, 0);
@@ -79,20 +80,22 @@ test('an unwired aircon stops being charged', (t) => {
 test('completed days are kept: the same answer, and a change of the room or a late row works them out again', (t) => {
   const db = openDb(':memory:');
   t.after(() => db.close());
-  const room = db.createRoom({ ...fields, meterAddress: 30, intakeW: 1000 }, at(1, 0));
+  const room = db.createRoom({ ...fields, meterAddress: 30, intakeW: 1000, trhAddress: 1 }, at(1, 0));
+  seenAllDay(db, room.id, at(19, 0), NOW); // the room seen all the while (Data integrity)
   const add = (time, energyKwh) => db.addMeterReading({ roomId: room.id, address: 30, at: time, ok: true, energyKwh });
   add(at(19, 1), 10); add(at(19, 5), 12);
   db.logMachine(room.id, 'intake', { on: true }, 'auto', at(19, 6));
   db.logMachine(room.id, 'intake', { on: false }, 'auto', at(19, 8));
   const ask = () => roomUsage(db, room.id, { days: 2, prices: PRICES, now: NOW, zone }).days;
   const first = ask();
-  assert.equal(first[0].kWh, 2);
+  // 2 kWh measured; the intake's 2 h after the meter's readings went stale estimated
+  assert.deepEqual([first[0].kWhMeasured, first[0].kWhEstimated, first[0].kWh], [2, 2, 4]);
   assert.equal(first[0].byMachine.intake, 2);
   assert.deepEqual(ask(), first);
   add(at(19, 3), 11); // arrives late, inside a completed day: 10, 11, 12
-  assert.equal(ask()[0].kWh, 2);
-  add(at(19, 6), 13); // a late reading after the others
-  assert.equal(ask()[0].kWh, 3);
+  assert.equal(ask()[0].kWh, 4);
+  add(at(19, 6), 13); // a late reading after the others: 3 measured; the intake's first 15 minutes are metered now
+  assert.deepEqual([ask()[0].kWhMeasured, ask()[0].kWhEstimated], [3, 1.75]);
   db.updateRoom(room.id, { ...fields, meterAddress: null, intakeW: 500 }, at(20, 5));
   const after = ask();
   assert.equal(after[0].metered, false);

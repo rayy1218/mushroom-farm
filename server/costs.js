@@ -7,6 +7,14 @@ import { readSettings, readCropYield } from './settings.js';
 import { roomDays, warmRoom, localZone, USAGE_DAYS_KEPT } from './usage.js';
 import { checkWorker, TaskError } from './tasks.js';
 import { checkEquipment, equipmentView } from './costs-equipment.js'; // ---- Money truth ----
+import { askOrThrow, confirmedOf } from './asks.js'; // ---- Data integrity ----
+import { record, reasonOf, voidedOf, APP } from './changes.js';
+import { costDuplicateAsks, cropBalance, oversold, dayWords } from './integrity-math.js';
+import { CROP_KEYS, cropShortName } from '../web/crops.js';
+import { kgText } from '../web/harvest-math.js';
+import { tariffOf } from './tariffs.js';
+import { isClosable, closeDayOf, keptFigures, differs, changesReaching, askClosed, closedAsks } from './closes.js';
+import { localDate } from './task-rules.js';
 import {
   CATEGORIES, BILLS, monthOf, firstDayOf, lastDayOf, addMonths, monthName, chargeDate, chargesOf, runOn, runEnd, figuresOf,
   runTotals, summaryOf, CATEGORY_LABELS, billTopUp, runFirstMonth, csvRows, saleParts, SALE_DAYS,
@@ -114,7 +122,10 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     const { electricityPrice, waterPrice } = readSettings(db);
     return {
       today: t, keptFrom: kept, prices: { electricity: electricityPrice, water: waterPrice }, rooms, runs,
-      costs: db.listCosts(), usage, purchases: dated(src.purchases), sales: dated(src.sales), uses: dated(src.uses),
+      tariff: tariffOf(db), // ---- Data integrity ---- each day at its own price (energy-cost.js)
+      costs: db.listCosts(), costsAll: db.listCostsAll(), usage,
+      // ---- Data integrity ---- Not sold records, as the sales are dated (spec 6.1)
+      notSold: db.liveNotSold().map((n) => ({ ...n, date: zone.label(n.at), total: 0 })), purchases: dated(src.purchases), sales: dated(src.sales), uses: dated(src.uses),
       equipment: db.listEquipment(), // ---- Money truth ---- the register, written off a month at a time
       // ---- Money truth ---- a batch row's cost lands on its placing day (date; null while it waits) or its losses' days
       batches: src.batches.map((b) => ({
@@ -135,20 +146,25 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     };
   }
 
-  // A run as the page shows it, with its whole figures.
+  // A run as the page shows it, with its whole figures; repriced (Data integrity 8.3): the closed months it has a part in whose
+  // figures moved since they closed.
   const runView = (r, figs, t) => ({
     id: r.id, roomId: r.roomId, roomName: r.roomName, startedAt: r.startedAt, endedAt: r.endedAt, crops: r.crops,
     ...runTotals(r, figs, t),
+    repriced: db.monthCloses().map((c) => c.month).filter((m) => m >= runFirstMonth(r) && m <= monthOf(t) && figs(m).runs.has(r.id) && repriced(m, figs(m))),
   });
 
   // The month's charges of the costs entered by hand, newest first; an electricity or water bill with its topUp { amount,
   // month }: what it adds and the month it lands in (section 4), worked out from its own period.
+  // Data integrity: a voided cost's charges are listed too, struck (voided), with no top-up; edits: how often it was changed.
   function entriesOf(month, data) {
-    return data.costs.flatMap((c) => chargesOf(c, firstDayOf(month), lastDayOf(month), data.today).map(({ date }) => ({
+    const edits = db.editCounts('cost');
+    return data.costsAll.flatMap((c) => chargesOf(c, firstDayOf(month), lastDayOf(month), data.today).map(({ date }) => ({
       costId: c.id, date, category: c.category, label: CATEGORY_LABELS[c.category], worker: c.worker, note: c.note,
       roomId: c.roomId, roomName: c.roomId === null ? null : data.rooms.get(c.roomId) ?? null, amount: c.amount,
       repeat: c.repeat, utility: c.utility, periodFrom: c.periodFrom, periodTo: c.periodTo,
-      ...(c.category === 'utilities' && BILLS.includes(c.utility) ? { topUp: billTopUp(c, data) } : {}),
+      ...(c.category === 'utilities' && BILLS.includes(c.utility) && c.voidedAt === null ? { topUp: billTopUp(c, data) } : {}),
+      voided: voidedOf(c), edits: edits.get(c.id) ?? 0,
     }))).sort((a, b) => (a.date === b.date ? b.costId - a.costId : a.date < b.date ? 1 : -1));
   }
 
@@ -231,9 +247,78 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
   }
   function monthlyOf(id) {
     const c = costOf(id);
+    if (c.voidedAt !== null) throw new CostError(409, 'Restore it first');
     if (c.repeat !== 'monthly') throw new CostError(400, 'This cost is not a monthly item');
     return c;
   }
+
+  // ---- Data integrity (spec 2026-11-12-data-integrity-design.md 3 to 5) ----
+  // The crops sold and not sold above their picks (+5 %) by the month's last day (today in this month): a note each (5.3).
+  function oversoldNotes(m) {
+    const t = today();
+    const end = lastDayOf(m) < t ? lastDayOf(m) : t;
+    const notSold = db.liveNotSold();
+    const out = [];
+    for (const crop of CROP_KEYS) {
+      const sales = db.cropSales(crop);
+      if (!sales.length && !notSold.some((n) => n.crop === crop)) continue; // over through Not sold alone counts too
+      const b = cropBalance({ picks: db.cropHarvestsBetween(crop, -8.64e15, 8.64e15), sales: sales.map((s) => ({ kg: s.kg, soldAt: s.soldAt })),
+        notSold: notSold.filter((n) => n.crop === crop) }, end);
+      if (b.firstAt === null || !oversold(b)) continue;
+      const exact = (kg) => kgText(kg, { exact: true });
+      out.push({ kind: 'oversold', crop, text: `${cropShortName(crop)}: ${exact(Math.round((b.sold + b.notSold) * 100) / 100)} sold or not sold to ${dayWords(end)} against ${exact(b.picked)} picked. Check the sales.` });
+    }
+    return out;
+  }
+  // Closed months (8.3): each of `months` past its close day with no kept figures, and not pending, keeps them now.
+  function closeMonths(months, figs) {
+    const t = today();
+    for (const m of months) {
+      if (!isClosable(m, t) || db.monthClose(m)) continue;
+      const f = figs(m);
+      if (!f.pending) db.putMonthClose(m, now(), keptFigures(f));
+    }
+  }
+  // A closed month whose figures moved since: { closedAt, was: { income, costs, profit }, now: { … }, changes: [entries] }; null
+  // otherwise (or while pending).
+  function repriced(m, f) {
+    const kept = db.monthClose(m);
+    if (!kept || f.pending) return null;
+    const live = keptFigures(f);
+    if (!differs(kept.figures, live)) return null;
+    const pick = (x) => ({ income: x.income, costs: x.costs, profit: x.profit });
+    return { closedAt: kept.closedAt, closedOn: closeDayOf(m), was: pick(kept.figures), now: pick(live), changes: changesReaching(db, m, kept.closedAt, { localDate, today: today() }) };
+  }
+  function equipmentOf(id) {
+    const e = db.getEquipment(id);
+    if (!e) throw new CostError(404, 'Equipment not found');
+    return e;
+  }
+  const equipmentSnapshot = (e) => {
+    const { createdAt, voidedAt, voidedBy, voidReason, ...rest } = e;
+    return { ...rest, roomName: e.roomId === null ? null : db.getRoom(e.roomId)?.name ?? null };
+  };
+  // The days a cost charges (8.3's ask): a one-off its date; a monthly item its first to its last month (today while it runs);
+  // a bill its period too (its top-up lands in the period's months).
+  const daysOfCost = (c) => {
+    const d = c.repeat ? { from: c.date, to: c.repeatUntil ? lastDayOf(c.repeatUntil) : today() } : { from: c.date, to: c.date };
+    return c.periodFrom && c.periodTo ? { from: [d.from, c.periodFrom].sort()[0], to: [d.to, c.periodTo].sort()[1] } : d;
+  };
+  // A cost as its change entries keep it.
+  const snapshotOf = (c) => {
+    const { createdAt, voidedAt, voidedBy, voidReason, sourceKind, sourceId, ...rest } = c;
+    return { ...rest, roomName: c.roomId === null ? null : db.getRoom(c.roomId)?.name ?? null };
+  };
+  // A one-off's duplicate (5.2): another cost not voided of the same date, category, amount and place. self: an edit's own.
+  function costAsks(fields, self = null) {
+    const others = db.listCosts().filter((o) => o.id !== self).map((o) => ({ ...o, by: db.addOf('cost', o.id)?.by ?? null }));
+    return costDuplicateAsks(fields, others, { label: CATEGORY_LABELS[fields.category] });
+  }
+  const writeLogged = (who, entry, write) => db.transaction(() => {
+    const out = write();
+    record(db, who, now(), entry(out));
+    return out;
+  });
   // `from` (change): its first month (edited in place) to this month; `after` (stop): its first month to this month; both
   // only to its last month when stopped earlier (a Stop only shortens).
   function monthIn(value, c, field) {
@@ -253,52 +338,98 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     return m;
   }
 
-  return {
-    // Every cost (the edit dialogs).
+  const service = {
+    // Every cost, voided ones too (the edit dialogs), each with its void.
     list() {
-      return db.listCosts();
+      return db.listCostsAll().map((c) => ({ ...c, voided: voidedOf(c) }));
     },
 
-    add(body) {
-      const made = db.insertCost(fieldsOf(body), now());
+    // { ...fields, confirmed? } by who (the signed-in person). A one-off like another asks first (Data integrity 5.2).
+    add(body, who = APP) {
+      const fields = fieldsOf(body);
+      askOrThrow([...costAsks(fields), ...closedAsks(db, [daysOfCost(fields)], 'date')], confirmedOf(body));
+      const made = writeLogged(who, (c) => ({ kind: 'cost', rowId: c.id, action: 'add', after: snapshotOf(c) }), () => db.insertCost(fields, now()));
       tell();
       return made;
     },
 
-    edit(id, body) {
-      const row = db.updateCost(id, fieldsOf(body, costOf(id)));
+    edit(id, body, who = APP) {
+      const old = costOf(id);
+      if (old.voidedAt !== null) throw new CostError(409, 'Restore it first');
+      const fields = fieldsOf(body, old);
+      const moves = ['date', 'category', 'amount', 'roomId', 'periodFrom', 'periodTo'].some((k) => fields[k] !== old[k]); // a note alone moves no figure
+      askOrThrow([...costAsks(fields, id), ...(moves ? closedAsks(db, [daysOfCost(fields), daysOfCost(old)], 'date') : [])], confirmedOf(body));
+      const row = writeLogged(who, (c) => ({ kind: 'cost', rowId: id, action: 'edit', before: snapshotOf(old), after: snapshotOf(c) }),
+        () => db.updateCost(id, fields));
       tell();
       return row;
     },
 
+    // A cost is never deleted: voided (Data integrity 4.3).
     remove(id) {
-      if (!db.deleteCost(id)) throw new CostError(404, 'Cost not found');
+      costOf(id);
+      throw new CostError(409, 'Void it instead: a money record is kept.');
+    },
+
+    // Void a cost { reason }: it stays listed, struck, and leaves every figure (a monthly item: every month). → the cost.
+    voidCost(id, body, who = APP) {
+      const old = costOf(id);
+      if (old.voidedAt !== null) throw new CostError(409, 'This cost is voided already');
+      const reason = reasonOf(body, { words: 'Say why you void it', Err: CostError });
+      askClosed(db, [daysOfCost(old)], body, 'date');
+      const row = writeLogged(who, () => ({ kind: 'cost', rowId: id, action: 'void', before: snapshotOf(old), reason }), () => {
+        db.voidRow('costs', id, { at: now(), by: who.name, reason });
+        return db.getCost(id);
+      });
       tell();
+      return { ...row, voided: voidedOf(row) };
+    },
+
+    restoreCost(id, body, who = APP) {
+      const old = costOf(id);
+      if (old.voidedAt === null) throw new CostError(409, 'This cost is not voided');
+      const reason = reasonOf(body ?? {}, { required: false, Err: CostError });
+      askClosed(db, [daysOfCost(old)], body, 'date');
+      const row = writeLogged(who, (c) => ({ kind: 'cost', rowId: id, action: 'restore', before: snapshotOf(c), reason }), () => {
+        db.restoreRow('costs', id);
+        return db.getCost(id);
+      });
+      tell();
+      return { ...row, voided: null };
     },
 
     // A monthly item's new amount (and note) from a month (section 2.1): from its first month, edited in place ({ ended:
     // null, started: the item }); later, it ends the month before and a new one starts. → { ended, started }.
-    change(id, body) {
+    change(id, body, who = APP) {
       const c = monthlyOf(id);
       const b = bodyOf(body);
       const from = monthIn(b.from, c, 'from');
+      askClosed(db, [{ from: firstDayOf(from), to: today() }], body, 'from');
       if (b.amount === undefined) throw new CostError(400, AMOUNT_MESSAGE, 'amount');
       const fields = fieldsOf({ amount: b.amount, note: b.note ?? c.note }, c);
       if (from === monthOf(c.date)) {
-        const started = db.updateCost(id, fields);
+        const started = writeLogged(who, (x) => ({ kind: 'cost', rowId: id, action: 'edit', before: snapshotOf(c), after: snapshotOf(x) }),
+          () => db.updateCost(id, fields));
         tell();
         return { ended: null, started };
       }
-      const changed = db.changeCost(id, addMonths(from, -1), { ...fields, date: chargeDate(c.date, from) }, now());
+      const changed = db.transaction(() => {
+        const out = db.changeCost(id, addMonths(from, -1), { ...fields, date: chargeDate(c.date, from) }, now());
+        record(db, who, now(), { kind: 'cost', rowId: id, action: 'change', before: snapshotOf(c), after: { ...snapshotOf(out.ended), from, amount: out.started.amount } });
+        record(db, who, now(), { kind: 'cost', rowId: out.started.id, action: 'add', after: snapshotOf(out.started) });
+        return out;
+      });
       tell();
       return changed;
     },
 
     // A monthly item's last month (section 2.1). → the item.
-    stopItem(id, body) {
+    stopItem(id, body, who = APP) {
       const c = monthlyOf(id);
       const after = monthIn(bodyOf(body).after, c, 'after');
-      const row = db.stopCost(id, after);
+      askClosed(db, [{ from: firstDayOf(addMonths(after, 1)), to: today() }], body, 'after');
+      const row = writeLogged(who, (x) => ({ kind: 'cost', rowId: id, action: 'stop', before: snapshotOf(c), after: snapshotOf(x) }), // the item whole: its date reaches the months it charged (What changed)
+        () => db.stopCost(id, after));
       tell();
       return row;
     },
@@ -321,6 +452,9 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       const figs = monthsOf(data);
       const f = figs(m);
       const months = Array.from({ length: 12 }, (_, i) => addMonths(m, i - 11)).filter((x) => x >= first);
+      // ---- Data integrity ---- (8.3) the months shown that have closed keep their figures; one moved since is re-priced
+      closeMonths(months, figs);
+      const repricedOf = (x) => repriced(x, figs(x));
       return {
         month: m, today: t, first,
         tiles: {
@@ -328,7 +462,8 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
           kgHarvested: f.kgHarvested, kgSold: f.kgSold, unsold: f.unsold, incomplete: f.incomplete,
           writeOff: f.writeOff, profitBeforeWriteOff: f.profitBeforeWriteOff, // ---- Money truth ---- the register's
         },
-        notes: f.notes, byCategory: f.byCategory, pending: f.pending,
+        notes: [...f.notes, ...oversoldNotes(m)], byCategory: f.byCategory, pending: f.pending,
+        kWh: f.kWh, repriced: repricedOf(m), // ---- Data integrity ---- the month's kWh (measured, estimated, unseen); re-priced
         bought: f.bought, // ---- Money truth ---- what was bought for stock: a cash line, not a cost
         entries: entriesOf(m, data),
         repeating: data.costs.filter((c) => c.repeat === 'monthly' && monthOf(c.date) <= m && (c.repeatUntil === null || c.repeatUntil >= m))
@@ -336,7 +471,7 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
         runs: runs.map((r) => runView(r, figs, t)),
         last12: months.map((x) => {
           const g = figs(x);
-          return { month: x, income: g.income, costs: g.costs, profit: g.profit, pending: g.pending };
+          return { month: x, income: g.income, costs: g.costs, profit: g.profit, pending: g.pending, repriced: repricedOf(x) !== null };
         }),
       };
     },
@@ -426,31 +561,104 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
     },
     // ---- end Money truth ----
 
+    // ---- Data integrity ---- (spec 8.3) the closed-month ask of a write that reprices days { from, to } (the tariff's)
+    closedAsk(days, body) {
+      askClosed(db, [days], body, 'from');
+    },
+
+    // Keep a re-priced month's new figures (8.3): { reason? } by who. → the month's view.
+    keepMonth(month, body, who = APP) {
+      const kept = isMonth(month) ? db.monthClose(month) : null;
+      if (!kept) throw new CostError(404, 'That month is not closed');
+      const view = service.monthView({ month });
+      if (view.pending) throw new CostError(409, 'Its figures are still being worked out');
+      const reason = reasonOf(body ?? {}, { required: false, Err: CostError });
+      const data = dataFor(addDays(firstDayOf(addMonths(month, -11)), -MAX_BILL_DAYS));
+      const figs = monthsOf(data);
+      const now2 = keptFigures(figs(month));
+      db.transaction(() => {
+        db.putMonthClose(month, now(), now2);
+        record(db, who, now(), {
+          kind: 'month', rowId: Number(month.replace('-', '')), action: 'keep',
+          before: { income: kept.figures.income, costs: kept.figures.costs, profit: kept.figures.profit },
+          after: { income: now2.income, costs: now2.costs, profit: now2.profit }, reason,
+        });
+      });
+      tell();
+      return service.monthView({ month });
+    },
+
     // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 6) The equipment register: { items: [equipmentView] },
     // newest bought first; add, edit and remove tell (the figures change).
+    // Data integrity: voided items too, struck (voided), with how often each was changed.
     equipment() {
       const t = today();
       const rooms = new Map(db.listRooms().map((r) => [r.id, r.name]));
-      return { items: db.listEquipment().toReversed().map((e) => equipmentView(e, t, e.roomId === null ? null : rooms.get(e.roomId) ?? null)) };
+      const edits = db.editCounts('equipment');
+      return {
+        items: db.listEquipmentAll().toReversed().map((e) => ({
+          ...equipmentView(e, t, e.roomId === null ? null : rooms.get(e.roomId) ?? null), voided: voidedOf(e), edits: edits.get(e.id) ?? 0,
+        })),
+      };
     },
-    addEquipment(body) {
+    addEquipment(body, who = APP) {
       const fields = checkEquipment(body, { today: today(), roomOf: (id) => db.getRoom(id), fail: (...a) => { throw new CostError(...a); } });
-      const made = db.insertEquipment(fields, now());
+      askClosed(db, [{ from: fields.boughtOn, to: today() }], body, 'boughtOn');
+      const made = writeLogged(who, (e) => ({ kind: 'equipment', rowId: e.id, action: 'add', after: equipmentSnapshot(e) }),
+        () => db.insertEquipment(fields, now()));
       tell();
       return made;
     },
-    editEquipment(id, body) {
-      const old = db.getEquipment(id);
-      if (!old) throw new CostError(404, 'Equipment not found');
-      const row = db.updateEquipment(id, checkEquipment(body, { old, today: today(), roomOf: (x) => db.getRoom(x), fail: (...a) => { throw new CostError(...a); } }));
+    editEquipment(id, body, who = APP) {
+      const old = equipmentOf(id);
+      if (old.voidedAt !== null) throw new CostError(409, 'Restore it first');
+      const fields = checkEquipment(body, { old, today: today(), roomOf: (x) => db.getRoom(x), fail: (...a) => { throw new CostError(...a); } });
+      if (['boughtOn', 'amount', 'resale', 'lifeMonths', 'roomId'].some((k) => fields[k] !== old[k])) { // a name or note alone moves no figure
+        askClosed(db, [{ from: fields.boughtOn < old.boughtOn ? fields.boughtOn : old.boughtOn, to: today() }], body, 'boughtOn');
+      }
+      const row = writeLogged(who, (e) => ({ kind: 'equipment', rowId: id, action: 'edit', before: equipmentSnapshot(old), after: equipmentSnapshot(e) }),
+        () => db.updateEquipment(id, fields));
       tell();
       return row;
     },
+    // An item is never deleted: voided (Data integrity 4.3).
     removeEquipment(id) {
-      if (!db.deleteEquipment(id)) throw new CostError(404, 'Equipment not found');
+      equipmentOf(id);
+      throw new CostError(409, 'Void it instead: a money record is kept.');
+    },
+    voidEquipment(id, body, who = APP) {
+      const old = equipmentOf(id);
+      if (old.voidedAt !== null) throw new CostError(409, 'This item is voided already');
+      const reason = reasonOf(body, { words: 'Say why you void it', Err: CostError });
+      askClosed(db, [{ from: old.boughtOn, to: today() }], body, 'boughtOn');
+      const row = writeLogged(who, () => ({ kind: 'equipment', rowId: id, action: 'void', before: equipmentSnapshot(old), reason }), () => {
+        db.voidRow('equipment', id, { at: now(), by: who.name, reason });
+        return db.getEquipment(id);
+      });
       tell();
+      return { ...row, voided: voidedOf(row) };
+    },
+    restoreEquipment(id, body, who = APP) {
+      const old = equipmentOf(id);
+      if (old.voidedAt === null) throw new CostError(409, 'This item is not voided');
+      const reason = reasonOf(body ?? {}, { required: false, Err: CostError });
+      askClosed(db, [{ from: old.boughtOn, to: today() }], body, 'boughtOn');
+      const row = writeLogged(who, (e) => ({ kind: 'equipment', rowId: id, action: 'restore', before: equipmentSnapshot(e), reason }), () => {
+        db.restoreRow('equipment', id);
+        return db.getEquipment(id);
+      });
+      tell();
+      return { ...row, voided: null };
     },
     // ---- end Money truth ----
+
+    // ---- Data integrity ---- (8.3) the daily tick: last month's figures kept once it is closable, though nobody opened Costs
+    // (its view keeps the closable months it shows). While its usage is still being worked out, the next tick or read keeps it.
+    closeDue() {
+      const t = today();
+      const prev = addMonths(monthOf(t), -1);
+      if (isClosable(prev, t) && !db.monthClose(prev)) service.monthView({ month: prev });
+    },
 
     // A promise for the usage warms under way (tests).
     warmed: () => Promise.all([...warming.values()].map((job) => job.done)),
@@ -466,4 +674,5 @@ export function createCosts({ db, now = Date.now, zone = localZone, log = consol
       return () => listeners.delete(fn);
     },
   };
+  return service;
 }

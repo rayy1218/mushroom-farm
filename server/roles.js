@@ -28,6 +28,11 @@ const WORKER_ROUTES = [
   ['GET', `/api/inventory/items/${ID}`],
   ['POST', '/api/inventory/uses'],
   ['POST', '/api/inventory/counts'],
+  // their own use or count undone within its minute (spec 2026-11-12-data-integrity-design.md 12: the store checks who and when)
+  ['DELETE', `/api/inventory/moves/${ID}`],
+  // Not sold: a worker records it from the Harvest tab, and undoes their own within its minute (spec 12)
+  ['POST', '/api/not-sold'],
+  ['DELETE', `/api/not-sold/${ID}`],
 ].map(([method, path]) => [method, new RegExp(`^${path}$`)]);
 
 export const workerMay = (method, path) => WORKER_ROUTES.some(([m, re]) => m === method && re.test(path));

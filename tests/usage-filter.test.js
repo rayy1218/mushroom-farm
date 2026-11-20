@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDb } from '../server/db.js';
+import { seenAllDay } from './integrity-fixture.js';
 import { fixedZone, roomUsage, estimateDay } from '../server/usage.js';
 
 const zone = fixedZone(480);
@@ -29,7 +30,8 @@ test('estimateDay: the intake times the factor, the other machines as rated', ()
 });
 
 test('a day with counted pressure: intake kWh × fanWattFactor(mean Pa, clean, max)', (t) => {
-  const { db, room } = setup(t, { dpAddress: 7 });
+  const { db, room } = setup(t, { dpAddress: 7, trhAddress: 1 });
+  seenAllDay(db, room.id, at(19, 0), at(20, 0)); // the room seen all day (Data integrity)
   log(db, room, 'intake', at(19, 0));
   log(db, room, 'exhaust', at(19, 0));
   log(db, room, 'intake', at(19, 2), false);
@@ -57,7 +59,8 @@ test('without a sensor, or a day without a counted reading, the intake is at its
 });
 
 test('a reading written into a worked-out day makes it count again', (t) => {
-  const { db, room } = setup(t, { dpAddress: 7 });
+  const { db, room } = setup(t, { dpAddress: 7, trhAddress: 1 });
+  seenAllDay(db, room.id, at(18, 0), at(19, 0)); // the room seen all day (Data integrity)
   log(db, room, 'intake', at(18, 0));
   log(db, room, 'intake', at(18, 2), false);
   const first = roomUsage(db, room.id, { days: 3, prices: PRICES, now: NOW, zone }).days[0];

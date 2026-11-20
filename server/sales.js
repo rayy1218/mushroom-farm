@@ -4,6 +4,11 @@
 import { readCropYield } from './settings.js';
 import { localDate, dayStart, addDays, daysBetween } from './task-rules.js';
 import { buckets } from './harvest-math.js';
+import { askOrThrow, confirmedOf } from './asks.js';
+import { record as logChange, reasonOf, APP } from './changes.js';
+import { saleDuplicateAsks, salePriceAsks, saleBalanceAsks, cropBalance, DUPLICATE_MS } from './integrity-math.js';
+import { farmUnsold } from './not-sold.js';
+import { closedAsks, askClosed } from './closes.js';
 import {
   SalesError, deliveryBody, buyerBody, paidBody, deliveriesOf, owedOf, byCropOf, byBuyerOf, summaryOf, csvRows, round2,
 } from './sales-math.js';
@@ -56,6 +61,44 @@ export function createSales({ db, now = Date.now, log = console.error }) {
     return rows[0];
   }
 
+  // ---- Data integrity (spec 2026-11-12-data-integrity-design.md 3 to 5) ----
+  // A delivery as its change entries keep it: what the owner sees of it, with the names it had then.
+  function snapshot(id) {
+    const d = delivery(id);
+    return {
+      soldAt: d.soldAt, buyerId: d.buyerId, buyer: d.buyer, invoiceNo: d.invoiceNo, note: d.note, paidAt: d.paidAt,
+      lines: d.lines.map((l) => ({ crop: l.crop, kg: l.kg, priceKg: l.priceKg, total: l.total, roomId: l.roomId, roomName: l.roomName })),
+    };
+  }
+  const PAID_LOCK = 'This sale is paid. Mark it unpaid first, with a reason.';
+  const notVoided = (row) => {
+    if (row.voidedAt !== null) throw new SalesError(409, 'Restore it first');
+  };
+  // A crop's balance on a farm day without the delivery `self` (spec 5.3).
+  function balanceOf(self) {
+    const notSold = db.liveNotSold();
+    return (crop, date) => cropBalance({
+      picks: db.cropHarvestsBetween(crop, -8.64e15, 8.64e15),
+      sales: db.cropSales(crop).filter((r) => r.deliveryId !== self).map((r) => ({ kg: r.kg, soldAt: r.soldAt })),
+      notSold: notSold.filter((n) => n.crop === crop),
+    }, date);
+  }
+  // The asks of a checked delivery (5.2): a duplicate of the buyer's deliveries near it, an unlikely price or kg, the crops'
+  // balances. self: the delivery an edit changes (left out).
+  function asksOf(d, self = null) {
+    const t = now();
+    const day = localDate(d.soldAt);
+    const near = deliveries(db.salesBetween(dayStart(day) - DUPLICATE_MS, dayStart(addDays(day, 1)) + DUPLICATE_MS))
+      .filter((o) => o.buyerId === d.buyerId && o.id !== self);
+    const created = new Map(near.map((o) => [o.id, db.deliveryLines(o.id)[0].createdAt]));
+    return [
+      ...saleDuplicateAsks(d, near.map((o) => ({ ...o, createdAt: created.get(o.id) })), t),
+      ...salePriceAsks(d.lines, readCropYield(db)),
+      // a farm that records no harvests in the app is not asked about its balances (every sale would be "before a pick")
+      ...(db.anyHarvest() ? saleBalanceAsks(d, balanceOf(self)) : []),
+    ];
+  }
+
   // A body checked against the database: the buyer exists and is active (or is the sale's own: keep), the rooms exist;
   // each line's run is the room's run open at the sale.
   function checked(body, { keep = null } = {}) {
@@ -92,34 +135,94 @@ export function createSales({ db, now = Date.now, log = console.error }) {
   }
 
   return {
-    // Record a sale: { soldAt, buyerId, invoiceNo?, note?, lines }. → the delivery.
-    record(body) {
-      const id = db.saveDelivery(checked(body), now());
+    // Record a sale: { soldAt, buyerId, invoiceNo?, note?, lines, confirmed? }, by `who` (the signed-in person). Asks first
+    // (Data integrity 5). → the delivery.
+    record(body, who = APP) {
+      const d = checked(body);
+      askOrThrow([...asksOf(d), ...closedAsks(db, [localDate(d.soldAt)], 'soldAt')], confirmedOf(body));
+      const at = now();
+      const id = db.transaction(() => {
+        const made = db.saveDelivery(d, at);
+        logChange(db, who, at, { kind: 'sale', rowId: made, action: 'add', after: snapshot(made) });
+        return made;
+      });
       tell();
       return delivery(id);
     },
 
-    // Replace a delivery's fields and lines; its paid time stays (a new date after the paid day is refused). → the delivery.
-    edit(id, body) {
+    // Replace a delivery's fields and lines; its paid time stays (a new date after the paid day is refused). A paid or a
+    // voided delivery is not edited (Data integrity 4). → the delivery.
+    edit(id, body, who = APP) {
       const old = existing(id);
+      notVoided(old);
+      if (old.paidAt !== null) throw new SalesError(409, PAID_LOCK, 'paidAt');
       const d = checked(body, { keep: old.buyerId });
-      if (old.paidAt !== null && localDate(d.soldAt) > localDate(old.paidAt)) throw new SalesError(400, 'Paid before this date', 'soldAt');
-      db.saveDelivery({ ...d, id }, now());
+      // a reference or a note alone moves no figure
+      const was = db.deliveryLines(id);
+      const same = localDate(d.soldAt) === localDate(old.soldAt) && was.length === d.lines.length
+        && d.lines.every((l) => was.some((w) => w.crop === l.crop && w.kg === l.kg && w.total === l.total && w.roomId === l.roomId));
+      askOrThrow([...asksOf(d, id), ...(same ? [] : closedAsks(db, [localDate(d.soldAt), localDate(old.soldAt)], 'soldAt'))], confirmedOf(body));
+      const at = now();
+      db.transaction(() => {
+        const before = snapshot(id);
+        db.saveDelivery({ ...d, id }, at);
+        logChange(db, who, at, { kind: 'sale', rowId: id, action: 'edit', before, after: snapshot(id) });
+      });
       tell();
       return delivery(id);
     },
 
-    // Delete a delivery and its lines.
+    // A sale is never deleted: voided (Data integrity 4.3).
     remove(id) {
       existing(id);
-      db.deleteDelivery(id);
-      tell();
+      throw new SalesError(409, 'Void it instead: a money record is kept.');
     },
 
-    // { paidAt: ms | null }. → the delivery.
-    setPaid(id, body) {
+    // { paidAt: ms | null, reason? }: Mark unpaid needs a reason. → the delivery.
+    setPaid(id, body, who = APP) {
       const old = existing(id);
-      db.setDeliveryPaid(id, paidBody(body, { soldAt: old.soldAt, now: now() }));
+      notVoided(old);
+      const paidAt = paidBody(body, { soldAt: old.soldAt, now: now() });
+      const reason = paidAt === null && old.paidAt !== null
+        ? reasonOf(body, { words: 'Say why it is no longer paid', Err: SalesError }) : null;
+      const at = now();
+      db.transaction(() => {
+        db.setDeliveryPaid(id, paidAt);
+        if (paidAt !== null) logChange(db, who, at, { kind: 'sale', rowId: id, action: 'paid', before: { paidAt: old.paidAt }, after: { paidAt } });
+        else if (old.paidAt !== null) logChange(db, who, at, { kind: 'sale', rowId: id, action: 'unpaid', before: { paidAt: old.paidAt }, reason });
+      });
+      tell();
+      return delivery(id);
+    },
+
+    // Void a delivery { reason } (not a paid one: Mark unpaid first). → the delivery.
+    voidSale(id, body, who = APP) {
+      const old = existing(id);
+      notVoided(old);
+      if (old.paidAt !== null) throw new SalesError(409, PAID_LOCK, 'paidAt');
+      const reason = reasonOf(body, { words: 'Say why you void it', Err: SalesError });
+      askClosed(db, [localDate(old.soldAt)], body, 'soldAt');
+      const at = now();
+      db.transaction(() => {
+        const before = snapshot(id);
+        db.voidRow('sales', id, { at, by: who.name, reason });
+        logChange(db, who, at, { kind: 'sale', rowId: id, action: 'void', before, reason });
+      });
+      tell();
+      return delivery(id);
+    },
+
+    // Restore a voided delivery { reason? }. → the delivery.
+    restoreSale(id, body, who = APP) {
+      const old = existing(id);
+      if (old.voidedAt === null) throw new SalesError(409, 'This sale is not voided');
+      const reason = reasonOf(body ?? {}, { required: false, Err: SalesError });
+      askClosed(db, [localDate(old.soldAt)], body, 'soldAt');
+      const at = now();
+      db.transaction(() => {
+        db.restoreRow('sales', id);
+        logChange(db, who, at, { kind: 'sale', rowId: id, action: 'restore', before: snapshot(id), reason });
+      });
       tell();
       return delivery(id);
     },
@@ -132,16 +235,21 @@ export function createSales({ db, now = Date.now, log = console.error }) {
       const rooms = new Map(db.listRooms().map((r) => [r.id, r]));
       const buyerList = db.listBuyers();
       const list = deliveries(rows, rooms, buyerList);
+      // the Sales card's list: the period's deliveries, voided ones too (struck), with how often each was changed
+      const edits = db.editCounts('sale');
+      const shown = deliveries(db.salesBetweenAll(dayStart(from), dayStart(addDays(to, 1)) - 1), rooms, buyerList)
+        .map((d) => ({ ...d, edits: edits.get(d.id) ?? 0 }));
       const harvests = db.harvestsBetween(dayStart(from), dayStart(addDays(to, 1)) - 1);
       const owed = owedOf(deliveries(db.unpaidSales(), rooms, buyerList));
       return {
-        from, to, days, deliveries: list,
+        from, to, days, deliveries: shown,
         totals: {
           kg: round2(rows.reduce((s, r) => s + r.kg, 0)), total: round2(rows.reduce((s, r) => s + r.total, 0)),
           harvestedKg: round2(harvests.reduce((s, h) => s + h.kg, 0)), count: list.length,
         },
         owed, byCrop: byCropOf(rows, harvests, readCropYield(db)), byBuyer: byBuyerOf(list, owed),
         buyerCount: buyerList.filter((b) => !b.archived).length, // none: the page says to add the first
+        unsold: farmUnsold(db, localDate(now())), // ---- Data integrity ---- still to sell and past its keeping days, per crop
       };
     },
 

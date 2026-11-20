@@ -214,3 +214,17 @@ test('the styles: one marked .sm- block, tokens only; Money across, then Needs y
   assert.ok(smCss.includes('.sm-need[data-tone="critical"] .sm-dot { background: var(--critical); }'), 'a state\'s colour from its token');
   assert.ok(smCss.includes('@media (min-width: 1100px) {\n  .sm-money .sm-wide { display: block; }'));
 });
+
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 11): the farm's still to sell in place of the month's
+// not sold, what is past its keeping days in the warning text with a Sales link, and the page's foot link to the Changes page.
+test('still to sell from the farm\'s unsold balance; past its days warned, to Sales; Change history at the foot', () => {
+  assert.ok(page.includes('const wide = [unsoldTile(r.unsold), lastMonthTile(r.lastMonth, r.month)].filter(Boolean);'));
+  assert.ok(page.includes('const unsold = unsoldLine(r.unsold);'));
+  assert.ok(page.includes('const past = pastLine(r.unsold);'));
+  assert.ok(page.includes("const p = el('p', 'sm-line sm-past', `${past} `);"));
+  assert.ok(page.includes("p.append(link('Sales', SALES_HASH));"));
+  assert.ok(page.includes('<p class="sm-foot sm-changes"><a class="co-link" href="${CHANGES_HASH}">${CHANGES_LINK}</a></p>'));
+  const dx = css.slice(css.indexOf('/* Summary and Energy card (Data integrity 11) */'));
+  assert.ok(dx.includes('.sm-past { color: var(--warning-text); }'));
+  assert.match(dx, /grid-template-areas: "money money" "needs runs" "changes changes"/);
+});

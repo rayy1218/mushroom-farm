@@ -14,6 +14,7 @@ import { cropsText, runDates, runPageLabel } from './runs-math.js';
 import { mainCrop } from './room-card-math.js';
 import { farmDate, daysFrom } from './tasks-math.js';
 import { runHash } from './route.js';
+import { cropShortName } from './crops.js';
 
 const DASH = '—';
 const MINUS = '−';
@@ -48,19 +49,27 @@ export function stockLine(stock) {
 export const boughtLine = (month) => (month?.bought?.total > 0 ? `Bought for stock this month: ${moneyText(month.bought.total)} (a cost once used)` : null);
 // ---- end Money truth ----
 
-// The kg picked and not sold: "124.4 kg not sold yet, about RM 4,354.00 at your expected prices" (Costs' unsold; without the
-// RM when a picked crop has no expected price); null when everything picked is sold.
-export function unsoldLine(month) {
-  const u = month?.tiles?.unsold;
-  if (!u) return null;
-  return `${kgText(u.kg)} not sold yet${u.value === null || u.value === undefined ? '' : `, about ${moneyText(u.value)} at your expected prices`}`;
+// ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 6.2 and 11) The farm's unsold balance (Sales' unsold:
+// { crops, total: { fresh, past, value } }), in place of the month's kg not sold. What is still to sell: "9.0 kg still to
+// sell, about RM 162.00 at your expected prices" (without the RM when a crop has no expected price); null when nothing fresh
+// is left or without Sales.
+export function unsoldLine(unsold) {
+  const t = unsold?.total;
+  if (!(t?.fresh > 0)) return null;
+  return `${kgText(t.fresh)} still to sell${typeof t.value === 'number' ? `, about ${moneyText(t.value)} at your expected prices` : ''}`;
 }
-// The same as a tile (a desk's fourth): "Not sold" "124.4 kg" "about RM 4,354.00 at your expected prices".
-export function unsoldTile(month) {
-  const u = month?.tiles?.unsold;
-  if (!u) return null;
-  return { label: 'Not sold', value: kgText(u.kg), ...(u.value === null || u.value === undefined ? {} : { line: `about ${moneyText(u.value)} at your expected prices` }) };
+// The same as a tile (a desk's fourth): "Still to sell" "9.0 kg" "about RM 162.00 at your expected prices".
+export function unsoldTile(unsold) {
+  const t = unsold?.total;
+  if (!(t?.fresh > 0)) return null;
+  return { label: 'Still to sell', value: kgText(t.fresh), ...(typeof t.value === 'number' ? { line: `about ${moneyText(t.value)} at your expected prices` } : {}) };
 }
+// What is past its keeping days (no value): "166.0 kg past its keeping days: record it as Not sold" (a Sales link after it,
+// the warning text); null when none.
+export const pastLine = (unsold) => (unsold?.total?.past > 0 ? `${kgText(unsold.total.past)} past its keeping days: record it as Not sold` : null);
+// The page's foot link to the Changes page.
+export const CHANGES_LINK = 'Change history';
+// ---- end Data integrity ----
 
 // Last month's name: "October"; "December 2025" when its year is not this month's.
 const lastName = (last, month) => (month && last.month.slice(0, 4) === month.month.slice(0, 4) ? monthName(last.month) : monthTitle(last.month));
@@ -128,6 +137,8 @@ const KINDS = {
     tone: (n) => (n.useBy.state === 'expired' ? 'critical' : 'warning'),
     words: (n) => `${n.name}${DOT}${useByLine(n).text}`,
   },
+  // ---- Data integrity ---- (5.3) a crop sold (or recorded not sold) above what was picked: amber, to Sales
+  oversold: { place: 0, tone: () => 'warning', words: (n) => `${andList(n.crops.map(cropShortName))}: sales above the harvest` },
   blocks: { place: 4, tone: () => null, words: (n) => `${blocksText(n)} ready for a room` },
   // amber: a delivery with no whole price leaves its run's costs short (Money truth)
   unpriced: {

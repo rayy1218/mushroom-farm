@@ -1,5 +1,7 @@
 // The Sales dialogs (spec 2026-11-05-sales-design.md 3 and 6): Record / Edit sale (its own <dialog>: lines are added and
-// removed, and "New buyer…" opens a name and a phone in place), Mark paid, the Delete confirm and Buyers (openForm's).
+// removed, and "New buyer…" opens a name and a phone in place), Mark paid, Buyers (openForm's). Data integrity (spec
+// 2026-11-12-data-integrity-design.md 4, 5, 11): the server's asks under the boxes ("Record anyway"), a paid sale read only
+// until Mark unpaid (with a reason), Void this sale, a voided sale's own dialog, the History fold.
 // Each takes { onChanged(), onError(text) } from the page; when its dialog closes the cursor goes back to the button that
 // opened it (or, that one gone, the page's title).
 
@@ -8,8 +10,14 @@ import { openForm as openTaskForm, errorText } from './task-dialogs.js';
 import { CROP_KEYS, cropShortName } from './crops.js';
 import { farmDate, dayTitle } from './tasks-math.js';
 import { rmText, whenMs } from './harvest-math.js';
-import { lineTotal, footText, prefill, unlikely, saleBody, deleteTitle, deleteLead, priceText, paidMark, num, deliveryRow } from './sales-math.js';
+import {
+  lineTotal, footText, prefill, saleBody, deleteLead, priceText, paidMark, num, deliveryRow, voidTitle, saleTitle, paidLockText, unpaidLead,
+} from './sales-math.js';
 import { DOT } from './text-math.js';
+import { isAsk, asksProblems, anyway, createConfirm } from './asks.js'; // ---- Data integrity ----
+import { openVoid, openVoided } from './void-dialog.js';
+import { historyFold } from './changes-fold.js';
+import { isOwner } from './session.js';
 
 // The tasks' openForm with the Business dialogs' form class (bz-form: the footer sticks at the dialog's foot on a phone, a
 // Delete on its own row; DESIGN.md "Business").
@@ -155,6 +163,16 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     return;
   }
   if (me !== saleSeq) return; // opened again meanwhile
+  // ---- Data integrity ---- a voided sale opens as itself: the void said, Restore, its History
+  if (delivery?.voided) {
+    openVoided({
+      title: saleTitle(delivery), lead: [deleteLead(delivery)], voided: delivery.voided, path: `/api/sales/deliveries/${delivery.id}/restore`,
+      onChanged, onError, kind: 'sale', id: delivery.id,
+    }).closed.then(() => giveBack(opener));
+    return;
+  }
+  // a paid sale is read only until it is marked unpaid, with a reason (4.2)
+  const locked = Boolean(delivery && delivery.paidAt !== null);
   const roomList = (Array.isArray(rooms) ? rooms : rooms.rooms ?? []).toSorted((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const d = ensureSaleDialog();
   if (d.open) d.close();
@@ -163,7 +181,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   const gone = () => me !== saleSeq || !d.open;
   const lost = (ok, text) => { if (ok) onChanged(); else onError(text); };
   let busy = false;
-  let asked = null; // the values the unlikely question was asked for
+  const confirm = createConfirm(); // the server's asks: the same values sent again go with them confirmed
   const held = []; // the buttons off while sending: the paid toggle, Delete this sale, Cancel, the primary
   const hold = (on) => {
     busy = on;
@@ -179,36 +197,20 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   formError.tabIndex = -1;
   formError.hidden = true;
   form.append(title, formError);
-  // An Edit's paid state: "Unpaid" with Mark paid (its own dialog), or "Paid 9 Nov" with a quiet Mark unpaid.
+  // An Edit's paid state: "Unpaid" with Mark paid (its own dialog), or (Data integrity 4.2) "Paid 9 Nov. To change this sale,
+  // mark it unpaid first." with Mark unpaid… (its own dialog, a reason), the fields read only until then.
   if (delivery) {
     const mark = paidMark(delivery);
     const line = el('p', 'sl-paid-line');
-    const toggle = button(mark.unpaid ? 'Mark paid' : 'Mark unpaid', mark.unpaid ? '' : 'tk-quiet');
+    const toggle = button(mark.unpaid ? 'Mark paid' : 'Mark unpaid…', mark.unpaid ? '' : 'tk-quiet');
     held.push(toggle);
-    toggle.addEventListener('click', async () => {
+    toggle.addEventListener('click', () => {
       if (busy) return;
-      if (mark.unpaid) {
-        d.close();
-        openPaid({ delivery, onChanged, onError, opener });
-        return;
-      }
-      hold(true);
-      let ok = false;
-      let text = '';
-      try {
-        await request('PUT', `/api/sales/deliveries/${delivery.id}/paid`, { paidAt: null }, TIMEOUT);
-        ok = true;
-      } catch (err) {
-        text = errorText(err);
-      }
-      if (gone()) { lost(ok, text); return; }
-      hold(false);
-      if (ok) {
-        d.close();
-        onChanged();
-      } else show({ message: text });
+      d.close();
+      if (mark.unpaid) openPaid({ delivery, onChanged, onError, opener });
+      else openUnpaid({ delivery, onChanged, onError, opener });
     });
-    line.append(el('span', mark.unpaid ? 'sl-unpaid' : '', mark.text), toggle);
+    line.append(el('span', mark.unpaid ? 'sl-unpaid' : '', locked ? paidLockText(delivery) : mark.text), toggle);
     form.append(line);
   }
 
@@ -309,9 +311,8 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     showExpected(l, p.expected);
   }
 
-  // A line added, removed or changed: the unlikely question is asked again, the primary plain.
+  // A line added, removed or changed: the server asks again, the primary plain.
   function linesChanged() {
-    asked = null;
     primary.textContent = label;
   }
 
@@ -369,20 +370,35 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     refresh();
   });
 
-  // The footer: Delete (an Edit's) at its start, Cancel, the primary.
+  // The footer: Void this sale (an unpaid Edit's) at its start, Cancel, the primary (none while paid: read only).
   const actions = el('div', 'actions');
-  const cancel = button('Cancel');
+  const cancel = button(locked ? 'Close' : 'Cancel');
   const label = delivery ? 'Save' : 'Record';
   const primary = button(label, 'primary', 'submit');
-  if (delivery) {
-    const del = button('Delete this sale', 'danger-text tk-aside');
+  if (delivery && !locked) {
+    const del = button('Void this sale', 'danger-text tk-aside');
     held.push(del);
-    del.addEventListener('click', () => { if (busy) return; d.close(); confirmDelete({ delivery, onChanged, onError, opener }); });
+    del.addEventListener('click', () => {
+      if (busy) return;
+      d.close();
+      openVoid({
+        title: voidTitle(delivery), lead: [deleteLead(delivery)], label: 'Void sale', path: `/api/sales/deliveries/${delivery.id}/void`,
+        onChanged, onError,
+      }).closed.then(() => giveBack(opener));
+    });
     actions.append(del);
   }
-  actions.append(cancel, primary);
+  actions.append(cancel);
+  if (!locked) actions.append(primary);
   held.push(cancel, primary);
+  // the History fold over the buttons (the owner's)
+  if (delivery && isOwner()) form.append(historyFold({ kind: 'sale', id: delivery.id }).node);
   form.append(actions);
+  if (locked) {
+    for (const node of form.querySelectorAll('input, select')) node.disabled = true;
+    add.hidden = true;
+    for (const l of lines) l.remove.hidden = true;
+  }
   d.append(form);
   cancel.addEventListener('click', () => d.close());
 
@@ -403,7 +419,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     }
     for (const p of boxed) {
       const { input, error } = boxes.get(p.field);
-      const lineOf = p.warn ? /^lines\.(\d+)\.(kg|priceKg)$/.exec(p.field) : null;
+      const lineOf = p.warn ? /^lines\.(\d+)\.(kg|priceKg|crop)$/.exec(p.field) : null;
       if (lineOf) { // a line's question: under the whole line, the box marked amber
         const said = el('span', '', p.message);
         said.dataset.for = lineOf[2];
@@ -431,16 +447,7 @@ export async function openSale({ delivery, onChanged, onError, opener = document
     };
     const body = saleBody(values, { now, soldAt: delivery?.soldAt ?? null }); // an edit keeps its time unless its date changes
     if (body.error) { show({ field: body.field, message: body.error }); return; }
-    const key = JSON.stringify(body.lines);
-    const warnings = unlikely(body.lines, cropYield);
-    if (warnings.length && key !== asked) {
-      asked = key;
-      primary.textContent = `${label} anyway`;
-      show(warnings.map((w) => ({ ...w, warn: true })));
-      return;
-    }
     hold(true);
-    primary.textContent = label; // plain while sending: a failed send does not still say "anyway" (the same values still go)
     try {
       if (buyer.input.value === NEW) {
         const made = await request('POST', '/api/buyers', { name: newName.input.value, phone: newPhone.input.value }, TIMEOUT);
@@ -456,13 +463,21 @@ export async function openSale({ delivery, onChanged, onError, opener = document
         showNew();
         body.buyerId = made.id;
       }
-      if (delivery) await request('PUT', `/api/sales/deliveries/${delivery.id}`, body, TIMEOUT);
-      else await request('POST', '/api/sales', body, TIMEOUT);
+      const sent = confirm.body(body); // the asks of these very values confirmed
+      if (delivery) await request('PUT', `/api/sales/deliveries/${delivery.id}`, sent, TIMEOUT);
+      else await request('POST', '/api/sales', sent, TIMEOUT);
       if (gone()) { lost(true); return; }
       d.close();
       onChanged();
     } catch (err) {
       if (gone()) { lost(false, errorText(err)); return; }
+      // ---- Data integrity ---- the server's asks: under their boxes, the primary "Record anyway"
+      if (isAsk(err)) {
+        confirm.asked(body, err.asks);
+        primary.textContent = anyway(label);
+        show(asksProblems(err.asks, (f) => (f === 'soldAt' ? 'date' : f)));
+        return;
+      }
       // the server's field names onto the boxes: a new buyer's name and phone, the sale's time on its date
       const where = buyer.input.value === NEW ? { name: 'newName', phone: 'newPhone' } : { soldAt: 'date' };
       const fieldName = err.status === 400 || err.status === 409 ? where[err.field] ?? err.field : null;
@@ -479,24 +494,31 @@ export async function openSale({ delivery, onChanged, onError, opener = document
   (delivery ? title : buyer.input.value === '' ? buyer.input : buyer.input.value === NEW ? newName.input : lines[0].kg.input).focus();
 }
 
-// The Delete confirm: "Delete the sale of 5 Nov to Kedai Ah Seng?" and what it held.
-function confirmDelete({ delivery, onChanged, onError, opener }) {
+// ---- Data integrity ---- Mark unpaid (a paid delivery, 4.2): why it is no longer paid (3–200 characters); then its Edit opens
+// again, its fields open.
+export function openUnpaid({ delivery, onChanged, onError, opener = document.activeElement }) {
+  let back = null;
   openForm({
-    title: deleteTitle(delivery),
-    lead: [deleteLead(delivery)],
-    buttons: [{ value: 'delete', label: 'Delete sale', primary: true, danger: true }],
-    submit: async () => {
+    title: 'Mark unpaid',
+    lead: [unpaidLead(delivery)],
+    fields: [{ name: 'reason', label: 'Why is it no longer paid?', kind: 'text', placeholder: 'The buyer returned 2.5 kg', maxLength: 200 }],
+    buttons: [{ value: 'unpaid', label: 'Mark unpaid', primary: true }],
+    submit: async (v) => {
+      const reason = String(v.reason ?? '').trim();
+      if (reason.length < 3) return { field: 'reason', message: 'Say why it is no longer paid' };
       try {
-        await request('DELETE', `/api/sales/deliveries/${delivery.id}`, undefined, TIMEOUT);
+        back = await request('PUT', `/api/sales/deliveries/${delivery.id}/paid`, { paidAt: null, reason }, TIMEOUT);
         onChanged();
         return true;
       } catch (err) {
-        if (err.status === 404) onChanged();
-        return { message: errorText(err) };
+        return err.status === 400 && err.field === 'reason' ? { field: 'reason', message: err.message } : { message: errorText(err) };
       }
     },
     onLost: onError,
-  }).closed.then(() => giveBack(opener));
+  }).closed.then(() => {
+    if (back) openSale({ delivery: back, onChanged, onError, opener });
+    else giveBack(opener);
+  });
 }
 
 // Mark paid (an unpaid delivery): Paid on, today by default.

@@ -11,6 +11,7 @@ import { drawTimeBars } from './bar-chart.js';
 import { missingLine, tileNodes, figureName } from './harvest-card.js';
 import { mainCrop } from './room-card-math.js';
 import { sheetWithSales, sheetTotals } from './sales-math.js'; // Sales: the sheet's sale rows (spec 2026-11-05-sales-design.md 6)
+import { voidLine } from './changes-math.js'; // ---- Data integrity ----
 import { picture, emptyPicture } from './pictures.js';
 import { isOwner } from './session.js'; // ---- Login ----
 import {
@@ -318,6 +319,14 @@ export function mountSheet(container, { days = 30 } = {}) {
     els.rows.replaceChildren(...rows.map((cells) => {
       const tr = el('tr');
       tr.append(...cells.map((c, i) => el('td', `${i >= 3 && i <= 6 ? 'num' : ''}${i >= 4 && c === '' ? ' hv-write' : ''}`.trim(), c)));
+      // ---- Data integrity ---- a voided pick keeps its row, struck: "Voided" before its day, its kg struck, who and why under
+      // the place (the sheet's total leaves it out)
+      if (cells.voided) {
+        tr.classList.add('dx-voided');
+        tr.children[0].prepend(el('span', 'dx-chip', 'Voided'));
+        tr.children[3].classList.add('dx-figure');
+        tr.children[2].append(el('span', 'dx-void-line', voidLine(cells.voided)));
+      }
       return tr;
     }));
   }

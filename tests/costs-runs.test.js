@@ -60,7 +60,7 @@ test('runViews: every run as monthView\'s runs give it, pending until the energy
   const month = s.costs.monthView({});
   for (const v of views) assert.deepEqual(v, month.runs.find((r) => r.id === v.id), `run ${v.id}: monthView's view`);
   assert.deepEqual(Object.keys(views[0]), ['id', 'roomId', 'roomName', 'startedAt', 'endedAt', 'crops', 'parts', 'byCategory', 'income',
-    'kgHarvested', 'kgSold', 'costs', 'profit', 'costPerKg', 'profitPerKg', 'notes', 'pending', 'incomplete']);
+    'kgHarvested', 'kgSold', 'kgNotSold', 'costs', 'profit', 'costPerKg', 'profitPerKg', 'notes', 'pending', 'incomplete', 'repriced']);
 });
 
 test('runViews: each run\'s figures are its summary\'s; one run alone; none for a run that is not there', async (t) => {

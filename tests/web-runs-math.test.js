@@ -9,6 +9,7 @@ import {
 } from '../web/runs-math.js';
 
 const NB = ' ';
+import { DOT } from '../web/text-math.js';
 const at = (d, h = 12) => Date.UTC(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, Number(d.slice(8)), h - 8); // farm day and hour
 const TODAY = '2026-11-15';
 const RUN = {
@@ -39,8 +40,10 @@ test('a row: named by its container and Costs\' run days, its figures by Harvest
   assert.deepEqual(r, {
     href: '#/business/runs/7', name: `Container 1${NB}· 4 Nov${NB}–${NB}now`, crops: '600 Grey oyster', crop: 'oyster',
     cells: [`80.0${NB}kg`, `0.13${NB}kg`, `RM${NB}480.00`, `RM${NB}1,620.00`, `−RM${NB}1,140.00`, `−RM${NB}28.50`],
-    costsLine: null, loss: true, perKgLoss: true,
+    costsLine: null, loss: true, perKgLoss: true, repriced: null,
   });
+  // Data integrity (8.3): a closed month of the run moved since: "Re-priced" under Profit, a link to that month on Costs
+  assert.deepEqual(listRow({ ...RUN, repriced: ['2026-09', '2026-10'] }).repriced, { text: 'Re-priced', href: '#/business/costs?month=2026-09' });
   assert.equal(listRow({ ...RUN, endedAt: at('2026-12-20') }).name, `Container 1${NB}· 4 Nov${NB}–${NB}20 Dec`, 'Costs\' words for an ended run');
   assert.equal(listRow({ ...RUN, partial: true }).name, `Container 1${NB}· recorded 4 Nov${NB}–${NB}now`);
   const mixed = listRow({ ...RUN, crops: [{ crop: 'oyster', blocks: 300 }, { crop: 'lionsmane', blocks: 1000 }], profit: 20, profitPerKg: 0.5 });
@@ -78,7 +81,7 @@ test('the tiles: Profit so far first, a loss in words; Profit per kg; the kg not
     { label: 'Income', value: `RM${NB}480.00`, line: `40.0${NB}kg sold` },
     { label: 'Costs', value: `RM${NB}1,620.00` },
     { label: 'Profit per kg', value: `−RM${NB}28.50`, line: `on 40.0${NB}kg sold`, tone: 'loss' },
-    { label: 'Picked', value: `80.0${NB}kg`, line: `40.0${NB}kg not sold` },
+    { label: 'Picked', value: `80.0${NB}kg`, line: `40.0${NB}kg left` },
     { label: 'kg per block', value: `0.13${NB}kg` },
     { label: 'BE', title: 'Biological efficiency', value: `34${NB}%` },
   ]);
@@ -88,6 +91,10 @@ test('the tiles: Profit so far first, a loss in words; Profit per kg; the kg not
   assert.equal(ended[2].line, 'Some costs have no price');
   assert.deepEqual(ended[3], { label: 'Profit per kg', value: '—', line: 'Nothing sold' });
   assert.deepEqual(pageTiles({ ...v, kgSold: 80 })[4], { label: 'Picked', value: `80.0${NB}kg` }, 'all sold: no line');
+  // Data integrity: kg recorded not sold (spoiled, given away) are said apart from what is left
+  // (G10: "24.0 kg sold · 166.0 kg not sold · 0.0 kg left" once any is recorded not sold)
+  assert.equal(pageTiles({ ...v, kgNotSold: 6.5 })[4].line, `40.0${NB}kg sold${DOT}6.5${NB}kg not sold${DOT}33.5${NB}kg left`);
+  assert.equal(pageTiles({ ...v, kg: 190, kgSold: 24, kgNotSold: 166 })[4].line, `24.0${NB}kg sold${DOT}166.0${NB}kg not sold${DOT}0.0${NB}kg left`);
   const waiting = pageTiles({ ...v, pending: true, costs: null, profit: null, profitPerKg: null });
   assert.deepEqual([waiting[0], waiting[2], waiting[3]], [{ label: 'Profit so far', value: '—', line: 'working out' },
     { label: 'Costs', value: '—', line: 'working out' }, { label: 'Profit per kg', value: '—', line: 'working out' }]);

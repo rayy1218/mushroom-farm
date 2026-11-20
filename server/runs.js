@@ -50,6 +50,7 @@ export function createRuns({ db, harvests, batches, costs, zone = localZone, onC
     kg: h?.kg ?? 0, perBlock: h?.perBlock ?? null,
     income: c?.income ?? 0, costs: c ? c.costs : null, profit: c ? c.profit : null, profitPerKg: c?.profitPerKg ?? null,
     pending: c?.pending ?? false, incomplete: c?.incomplete ?? false,
+    repriced: c?.repriced ?? [], // ---- Data integrity ---- the closed months of it whose figures moved since
   });
 
   // ---- Money truth ---- (spec 2026-11-12-money-truth-design.md 8.2) A partial run's real block-in day (Runs' one write, on
@@ -122,6 +123,7 @@ export function createRuns({ db, harvests, batches, costs, zone = localZone, onC
       return {
         ...rowOf(run, h, c),
         kgSold: c?.kgSold ?? 0,
+        kgNotSold: c?.kgNotSold ?? 0, // ---- Data integrity ---- kg recorded not sold
         be: h?.be ?? null, byCrop: h?.byCrop ?? [], flushes: h?.flushes ?? [], missing: h?.missing ?? { dryKg: [], price: [] },
         harvests: (h?.harvests ?? []).slice(0, LATEST_HARVESTS), harvestCount: h?.harvests.length ?? 0,
         batches: list, blockCost,

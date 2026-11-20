@@ -84,6 +84,17 @@ const ROUTES = [
   ['GET', '/api/economics', false], ['PUT', '/api/economics/figures', false], ['DELETE', '/api/economics/figures', false], // ---- Economics ----
   ['POST', '/api/economics/work-out', false], // ---- Economics ----
   ['GET', '/api/equipment', false], ['POST', '/api/equipment', false], ['PUT', '/api/equipment/1', false], ['DELETE', '/api/equipment/1', false], ['PUT', '/api/runs/1/blocks-in', false], // ---- Money truth ----
+  // ---- Data integrity ----
+  ['POST', '/api/sales/deliveries/1/void', false], ['POST', '/api/sales/deliveries/1/restore', false],
+  ['POST', '/api/costs/1/void', false], ['POST', '/api/costs/1/restore', false], ['POST', '/api/equipment/1/void', false],
+  ['POST', '/api/equipment/1/restore', false], ['POST', '/api/harvests/1/void', false], ['POST', '/api/harvests/1/restore', false],
+  ['POST', '/api/inventory/moves/1/void', false], ['POST', '/api/inventory/moves/1/restore', false], ['DELETE', '/api/inventory/moves/1', true],
+  ['GET', '/api/changes', false], ['GET', '/api/changes.csv', false],
+  ['GET', '/api/not-sold', false], ['POST', '/api/not-sold', true], ['PUT', '/api/not-sold/1', false], ['DELETE', '/api/not-sold/1', true],
+  ['POST', '/api/not-sold/1/void', false], ['POST', '/api/not-sold/1/restore', false],
+  ['GET', '/api/tariffs', false], ['POST', '/api/tariffs', false], ['PUT', '/api/tariffs/1', false], ['DELETE', '/api/tariffs/1', false],
+  ['POST', '/api/tariffs/1/void', false], ['POST', '/api/tariffs/1/restore', false],
+  ['POST', '/api/costs/months/1/keep', false],
 ];
 
 // Every route the API answers, from the server sources (spec 7: a new route missing from ROUTES fails here): each

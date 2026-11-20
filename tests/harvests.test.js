@@ -12,6 +12,12 @@ import { harvestCropsOf } from '../server/task-rules.js';
 import { fixedZone } from '../server/usage.js';
 import { CSV_HEADER, round } from '../server/harvest-math.js';
 
+// The electricity price of every day: the tariff's first rate (Data integrity 8.1; Settings' key is no longer read).
+const setPrice = (db, rate) => {
+  const first = db.listTariffs().find((r) => !r.voided);
+  db.updateTariff(first.id, { from: first.from, rate, afa: 0, note: '' });
+};
+
 // A check's harvests, oldest pick first (the db has no lookup by task: the app reads harvests by run or by time).
 const taskHarvests = (db, taskId) => db.harvestsBetween(-8.64e15, 8.64e15).filter((h) => h.taskId === taskId);
 
@@ -185,12 +191,15 @@ test('edit and delete keep the task total: the sum left, null when nothing is le
   refused(() => s.harvests.edit(oyster.id, { pickedAt: NOW + 1 }), HarvestError, 400, null, 'pickedAt');
   refused(() => s.harvests.edit(oyster.id, {}), HarvestError, 400, null, undefined);
   refused(() => s.harvests.edit(9999, { kg: 1 }), HarvestError, 404, 'Harvest not found', undefined);
-  s.harvests.remove(oyster.id);
-  assert.equal(s.db.getTask(row.id).amount, 0.5);
-  assert.equal(s.db.getHarvest(oyster.id), null);
-  s.harvests.remove(mane.id);
+  refused(() => s.harvests.remove(oyster.id), HarvestError, 409, 'Void it instead: a money record is kept.', undefined);
+  s.harvests.voidHarvest(oyster.id, { reason: 'Weighed twice' });
+  assert.equal(s.db.getTask(row.id).amount, 0.5, 'the total left');
+  assert.equal(s.db.getHarvest(oyster.id).voidReason, 'Weighed twice', 'kept, voided');
+  s.harvests.voidHarvest(mane.id, { reason: 'Weighed twice' });
   assert.equal(s.db.getTask(row.id).amount, null);
-  refused(() => s.harvests.remove(mane.id), HarvestError, 404, 'Harvest not found', undefined);
+  s.harvests.restoreHarvest(mane.id, {});
+  assert.equal(s.db.getTask(row.id).amount, 0.5, 'restored: counted again');
+  refused(() => s.harvests.remove(9999), HarvestError, 404, 'Harvest not found', undefined);
 });
 
 test('edit: a harvest of an ended run keeps within the run', (t) => {
@@ -330,7 +339,7 @@ test('onChange tells the room on record, edit, delete and a Done with kg', (t) =
   const s = setup(t);
   const h = s.harvests.record(s.id, { crop: 'oyster', kg: 1, worker: 'Ali' });
   s.harvests.edit(h.id, { kg: 2 });
-  s.harvests.remove(h.id);
+  s.harvests.voidHarvest(h.id, { reason: 'Weighed twice' });
   assert.deepEqual(s.changes, [s.id, s.id, s.id]);
   assert.throws(() => s.harvests.record(s.id, { crop: 'oyster', kg: 0, worker: 'Ali' }));
   assert.deepEqual(s.changes, [s.id, s.id, s.id], 'a refused write tells no one');
@@ -340,7 +349,7 @@ test('onChange tells the room on record, edit, delete and a Done with kg', (t) =
   assert.deepEqual(s.harvested, [s.id]);
   const stop = s.harvests.onChange(() => assert.fail('stopped'));
   stop();
-  s.harvests.record(s.id, { crop: 'oyster', kg: 1, worker: 'Ali' });
+  s.harvests.record(s.id, { crop: 'oyster', kg: 1, worker: 'Ali', confirmed: ['duplicate'] }); // the Done's 1 kg a moment ago
 });
 
 test('the CSV says which harvests came from a harvest check', (t) => {
@@ -354,7 +363,8 @@ test('the CSV says which harvests came from a harvest check', (t) => {
 });
 
 test('cost: the room\'s electricity and water over each run\'s days at today\'s prices; the farm\'s over the range', async (t) => {
-  // An intake of 1 kW and a humidifier of 50 L/h that draws nothing, so each hour on is 1 kWh or 50 L.
+  // An intake of 1 kW and a humidifier of 50 L/h that draws nothing, so each hour on is 1 kWh or 50 L. No meter: all the
+  // electricity is estimated from machine run time (Data integrity 7.2), and said so.
   const s = setup(t, { start: NOW - 10 * DAY, fields: { intakeW: 1000, humidifierW: 0, humidifierLH: 50 } });
   const farm = (month, day, hour) => Date.UTC(2026, month - 1, day, hour - 8); // the farm's clock
   const on = (machine, from, hours) => {
@@ -364,7 +374,7 @@ test('cost: the room\'s electricity and water over each run\'s days at today\'s 
   on('intake', farm(10, 25, 10), 2); // the first run's first day: 2 kWh
   on('intake', farm(11, 1, 10), 3); // the second run: 3 kWh
   on('humidifier', farm(11, 1, 10), 1); // and 50 L
-  s.db.setSetting('electricityPrice', '2');
+  setPrice(s.db, 2);
   s.db.setSetting('waterPrice', '100');
   s.set(NOW - 9 * DAY);
   s.harvests.record(s.id, { crop: 'oyster', kg: 50, worker: 'Ali' });
@@ -378,23 +388,23 @@ test('cost: the room\'s electricity and water over each run\'s days at today\'s 
   s.harvests.roomView(s.id);
   await s.harvests.warmed();
   const v = s.harvests.roomView(s.id);
-  assert.deepEqual(v.past[0].cost, { costPerKg: 0.08, cost: 4, days: 3, water: true }, '25 to 27 Oct: 2 kWh × RM 2, not 1 Nov');
-  assert.deepEqual(v.current.cost, { costPerKg: 0.25, cost: 11, days: 9, water: true }, '27 Oct to today: 3 kWh × RM 2 + 0.05 m³ × RM 100, not 25 Oct');
+  assert.deepEqual(v.past[0].cost, { costPerKg: 0.08, cost: 4, days: 3, water: true, estimated: 4 }, '25 to 27 Oct: 2 kWh × RM 2, not 1 Nov');
+  assert.deepEqual(v.current.cost, { costPerKg: 0.25, cost: 11, days: 9, water: true, estimated: 6 }, '27 Oct to today: 3 kWh × RM 2 + 0.05 m³ × RM 100, not 25 Oct');
   s.harvests.farmView({ days: 30 });
   await s.harvests.warmed();
   const f = s.harvests.farmView({ days: 30 });
-  assert.deepEqual(f.totals.cost, { costPerKg: 0.159574, cost: 15, days: 30, water: true }, 'RM 15 over 94 kg');
+  assert.deepEqual(f.totals.cost, { costPerKg: 0.159574, cost: 15, days: 30, water: true, estimated: 10 }, 'RM 15 over 94 kg');
   assert.equal(s.harvests.farmView({ days: 7 }).totals.cost.cost, 11, 'the last 7 days: 1 Nov only');
 
   s.db.setSetting('waterPrice', '');
-  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.136364, cost: 6, days: 9, water: false }, 'no water price: electricity only');
+  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.136364, cost: 6, days: 9, water: false, estimated: 6 }, 'no water price: electricity only');
 });
 
 test('a cold room\'s view does not work its usage days out: the cost is pending, a warm works them out and tells the room', async (t) => {
   const s = setup(t, { start: NOW - 10 * DAY, fields: { intakeW: 1000 } });
   s.db.logMachine(s.id, 'intake', { on: true }, 'auto', NOW - 5 * DAY);
   s.db.logMachine(s.id, 'intake', { on: false }, 'auto', NOW - 5 * DAY + 3_600_000);
-  s.db.setSetting('electricityPrice', '0.5');
+  setPrice(s.db, 0.5);
   s.set(NOW);
   s.harvests.record(s.id, { crop: 'oyster', kg: 10, worker: 'Ali' });
   s.changes.length = 0;
@@ -408,7 +418,7 @@ test('a cold room\'s view does not work its usage days out: the cost is pending,
 
   await s.harvests.warmed();
   assert.deepEqual(s.changes, [s.id], 'one warm a room, then the room is told');
-  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.05, cost: 0.5, days: 11, water: false }, '1 kWh at RM 0.50');
+  assert.deepEqual(s.harvests.roomView(s.id).current.cost, { costPerKg: 0.05, cost: 0.5, days: 11, water: false, estimated: 0.5 }, '1 kWh at RM 0.50');
   assert.equal(s.harvests.farmView({ days: 30 }).totals.cost.cost, 0.5);
   await s.harvests.warmed();
   assert.deepEqual(s.changes, [s.id], 'all worked out: no new warm');

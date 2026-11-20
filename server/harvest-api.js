@@ -1,11 +1,12 @@
 // The harvest routes (spec 2026-11-04-harvest-design.md 6), called from api.js: GET and POST /api/rooms/:id/harvests, PUT and
-// DELETE /api/harvests/:id, GET /api/harvest?days=N and /api/harvest.csv?days=N. server/harvests.js records and works out;
+// DELETE /api/harvests/:id (DELETE answers 409, Data integrity: POST …/void and …/restore), GET /api/harvest?days=N and /api/harvest.csv?days=N. server/harvests.js records and works out;
 // this reads the query and the body and turns its errors into the API's.
 
 import { attachment } from './tasks-api.js';
+import { whoOf } from './changes.js';
 
 const ROOM_HARVESTS = /^\/api\/rooms\/([1-9][0-9]{0,14})\/harvests$/;
-const ONE_HARVEST = /^\/api\/harvests\/([1-9][0-9]{0,14})$/;
+const ONE_HARVEST = /^\/api\/harvests\/([1-9][0-9]{0,14})(\/void|\/restore)?$/; // Data integrity: void, restore
 // Before the CSV, so Excel on Windows reads it as UTF-8.
 const BOM = '\uFEFF';
 
@@ -24,7 +25,7 @@ export function createHarvestRoutes({ harvests, onTaskChange = () => {} }) {
         if (!view) throw new HttpError(404, 'Room not found');
         send(res, 200, view);
       } else if (req.method === 'POST') {
-        send(res, 201, harvests.record(roomId, await readJson(req)));
+        send(res, 201, harvests.record(roomId, await readJson(req), whoOf(req)));
       } else {
         throw notFound();
       }
@@ -34,8 +35,14 @@ export function createHarvestRoutes({ harvests, onTaskChange = () => {} }) {
     const one = ONE_HARVEST.exec(path);
     if (one) {
       const id = Number(one[1]);
-      if (req.method === 'PUT') {
-        const row = harvests.edit(id, await readJson(req));
+      if (one[2]) {
+        if (req.method !== 'POST') throw notFound();
+        const body = await readJson(req);
+        const row = one[2] === '/void' ? harvests.voidHarvest(id, body, whoOf(req)) : harvests.restoreHarvest(id, body, whoOf(req));
+        if (row.taskId != null) onTaskChange(row.roomId);
+        send(res, 200, row);
+      } else if (req.method === 'PUT') {
+        const row = harvests.edit(id, await readJson(req), whoOf(req));
         if (row.taskId != null) onTaskChange(row.roomId);
         send(res, 200, row);
       } else if (req.method === 'DELETE') {

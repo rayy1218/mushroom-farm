@@ -5,7 +5,7 @@
 // dropped. A module that could not be read says so in its own place, with Retry; the rest shows.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
-import { COSTS_HASH, RUNS_HASH, INVENTORY_HASH } from './route.js';
+import { COSTS_HASH, RUNS_HASH, INVENTORY_HASH, SALES_HASH, CHANGES_HASH } from './route.js';
 import { live, EVENT_TYPES } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { farmDate } from './tasks-math.js';
@@ -14,6 +14,7 @@ import { tileNodes } from './harvest-card.js';
 import {
   moneyTitle, moneyTiles, toComeLine, unsoldLine, unsoldTile, lastMonthLine, lastMonthTile, needLines, needsTitle, needsEmpty,
   readFailText, PART_NAMES, RETRY_WORDS, RUNS_NONE, ROOMS_LINK, runRows, stockLine, boughtLine,
+  pastLine, CHANGES_LINK, // ---- Data integrity ----
 } from './business-math.js';
 
 const REFRESH_MS = 60_000;
@@ -100,6 +101,7 @@ const PAGE = `
       <div class="card-head"><h2 id="sm-runs-title">Runs in progress</h2><a class="co-link" href="${RUNS_HASH}">Runs</a></div>
       <div data-runs></div>
     </section>
+    <p class="sm-foot sm-changes"><a class="co-link" href="${CHANGES_HASH}">${CHANGES_LINK}</a></p>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; an answer that finds the token changed is dropped
@@ -129,8 +131,9 @@ export function mount(container) {
     return node;
   };
 
-  // Profit, Income and Costs as Costs' month card has them; on a wide desk the kg not sold and last month as tiles 4 and 5,
-  // else as lines under Costs' still-to-come line.
+  // Profit, Income and Costs as Costs' month card has them; on a wide desk what is still to sell (the farm's unsold balance,
+  // Data integrity) and last month as tiles 4 and 5, else as lines under Costs' still-to-come line; what is past its keeping
+  // days in the warning text, to Sales (record it as Not sold).
   function paintMoney(r) {
     els.moneyTitle.textContent = moneyTitle(r.month);
     if (!r.month) {
@@ -138,7 +141,7 @@ export function mount(container) {
       return;
     }
     const list = moneyTiles(r.month);
-    const wide = [unsoldTile(r.month), lastMonthTile(r.lastMonth, r.month)].filter(Boolean);
+    const wide = [unsoldTile(r.unsold), lastMonthTile(r.lastMonth, r.month)].filter(Boolean);
     const nodes = tileNodes([...list, ...wide]);
     [...list, ...wide].forEach((t, i) => { if (t.tone === 'loss') nodes[i].querySelector('.us-kwh').dataset.tone = 'warn'; });
     nodes.slice(list.length).forEach((n) => n.classList.add('sm-wide'));
@@ -147,7 +150,8 @@ export function mount(container) {
     // a phone: one long figure sets the others a size down (Costs' month card; Profit has its own row)
     tiles.toggleAttribute('data-long', nodes.slice(1, list.length).some((n) => n.querySelector('.us-kwh').hasAttribute('data-long')));
     const toCome = toComeLine(r.month);
-    const unsold = unsoldLine(r.month);
+    const unsold = unsoldLine(r.unsold);
+    const past = pastLine(r.unsold);
     const bought = boughtLine(r.month); // ---- Money truth ----
     const stock = stockLine(r.stock);
     const last = lastMonthLine(r.lastMonth, r.month);
@@ -155,6 +159,11 @@ export function mount(container) {
       ...(toCome ? [el('p', 'muted sm-line', toCome)] : []),
       ...(unsold ? [el('p', 'muted sm-line sm-narrow', unsold)] : []),
     ];
+    if (past) {
+      const p = el('p', 'sm-line sm-past', `${past} `);
+      p.append(link('Sales', SALES_HASH));
+      lines.push(p);
+    }
     if (last) {
       const p = el('p', 'muted sm-line sm-narrow');
       p.append(...last.map((part) => (part.tone === 'loss' ? el('span', 'co-loss', part.text) : part.text)));

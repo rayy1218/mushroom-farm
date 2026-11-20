@@ -110,10 +110,12 @@ test('the routes: add, list (newest bought first, with its write-off), edit, del
   const put = await call('PUT', `/api/equipment/${made.body.id}`, { amount: 1500 });
   assert.deepEqual([put.status, put.body.amount, put.body.lifeMonths], [200, 1500, 24]);
   assert.equal((await call('PUT', '/api/equipment/999', { amount: 1 })).status, 404);
-  assert.equal((await call('DELETE', `/api/equipment/${made.body.id}`)).status, 204);
-  assert.equal((await call('DELETE', `/api/equipment/${made.body.id}`)).status, 404);
+  assert.equal((await call('DELETE', `/api/equipment/${made.body.id}`)).status, 409, 'void it instead');
+  assert.equal((await call('DELETE', '/api/equipment/999')).status, 404);
+  assert.equal((await call('POST', `/api/equipment/${made.body.id}/void`, { reason: 'Sold with the old shed' })).status, 200);
+  assert.equal((await call('GET', '/api/equipment')).body.items[0].voided.reason, 'Sold with the old shed');
   assert.equal((await call('PATCH', '/api/equipment')).status, 404);
-  assert.equal(seen.filter((x) => x === 'costs').length, 3, 'add, edit, delete');
+  assert.equal(seen.filter((x) => x === 'costs').length, 3, 'add, edit, void');
 });
 
 test('the CSV names an item written off and its source', async () => {

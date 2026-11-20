@@ -1,6 +1,7 @@
 // An item's page, #/business/inventory/<id> (spec 2026-11-05-inventory-design.md 5): its tiles (In stock, Reorder at, Last
 // counted), its lots with their use-by and Throw out, and its history newest first (20, then Show all) with one quiet Edit a
-// row (a count: Delete; a batch move: Batches', its batch and room links). Purchase and Record use (neither on a block item:
+// row (a count: Void; a batch move: Batches', its batch and room links; Data integrity: a voided move stays, struck, and
+// opens as itself). Purchase and Record use (neither on a block item:
 // blocks go through Batches), Edit and Archive or Bring back.
 
 import { request, OFFLINE, OUTDATED, routeMissing } from './api.js';
@@ -10,7 +11,7 @@ import { live } from './live.js';
 import { fallbackMs, createThrottle } from './live-math.js';
 import { DOT } from './text-math.js';
 import {
-  openItemDialog, openPurchaseDialog, openUseDialog, openMoveDialog, openDeleteDialog, openThrowOutDialog, openArchiveDialog, bringBack,
+  openItemDialog, openPurchaseDialog, openUseDialog, openMoveDialog, openVoidMove, openVoidedMove, openThrowOutDialog, openArchiveDialog, bringBack,
 } from './inventory-dialogs.js';
 import { farmDate } from './tasks-math.js';
 import { pillNode } from './inventory-page.js';
@@ -209,18 +210,28 @@ export function mount(container, { id }) {
       const text = el('div', 'iv-move-text');
       const what = el('span', 'iv-move-what');
       what.append(...line.parts.map((p) => linkOr(p.text, p.href))); // its batch and its room as links (joint audit B2)
-      text.append(what, el('span', 'iv-move-when', line.when));
-      li.append(text, el('span', 'iv-move-qty', line.qty));
+      const when = el('span', 'iv-move-when', line.when);
+      if (line.edited) when.append(el('span', 'dx-edited', 'edited')); // ---- Data integrity ----
+      text.append(what, when);
+      // ---- Data integrity ---- a voided move stays in place: ink-2, its qty struck, the chip, who voided it and why
+      if (line.voided) {
+        li.classList.add('dx-voided');
+        what.prepend(el('span', 'dx-chip', 'Voided'));
+        text.append(el('span', 'dx-void-line', line.voided));
+      }
+      li.append(text, el('span', line.voided ? 'iv-move-qty dx-figure' : 'iv-move-qty', line.qty));
       if (line.edit === null) {
         li.append(el('span', 'iv-move-edit-none')); // a batch move: Batches' (said once, in the card's head)
       } else {
-        const b = el('button', 'iv-link bz-quiet iv-move-edit', line.edit === 'edit' ? 'Edit' : 'Delete');
+        const b = el('button', 'iv-link bz-quiet iv-move-edit', line.edit === 'edit' ? 'Edit' : line.edit === 'void' ? 'Void' : 'Open');
         b.type = 'button';
         b.dataset.ownerOnly = ''; // ---- Login ---- a move is changed by the owner
         const throwOuts = it.moves.some((x) => x.lotId === m.id);
+        const opts = { move: m, item: it, onDone: done, onLost: showError };
         b.addEventListener('click', () => (line.edit === 'edit'
-          ? openMoveDialog({ move: m, item: it, suppliers: it.suppliers, reasons: it.reasons, throwOuts, onDone: done, onLost: showError, alive })
-          : openDeleteDialog({ move: m, item: it, throwOuts, onDone: done, onLost: showError })));
+          ? openMoveDialog({ ...opts, suppliers: it.suppliers, reasons: it.reasons, throwOuts, alive })
+          : line.edit === 'void' ? openVoidMove({ ...opts, throwOuts }) : openVoidedMove(opts)));
+        if (line.edit === 'open') b.setAttribute('aria-label', `Open, voided: ${line.what}`);
         li.append(b);
       }
       return li;

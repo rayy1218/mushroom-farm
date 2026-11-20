@@ -1,14 +1,16 @@
-// The "Yield" card of the Settings page: per crop the dry substrate of a block and the price per kg, with its own form and Save.
+// The "Yield" card of the Settings page: per crop the dry substrate of a block, the price per kg and (Data integrity 6.2) the
+// days it keeps fresh (empty: the crop's default, shown in the box), with its own form and Save.
 
 import { request, OFFLINE } from './api.js';
-import { CROPS, CROP_KEYS } from './crops.js';
+import { CROPS, CROP_KEYS, KEEP_DAYS } from './crops.js';
 import { picture } from './pictures.js';
-import { yieldBody, YIELD_NOTE, YIELD_DRY, YIELD_PRICE } from './settings-math.js';
+import { yieldBody, YIELD_NOTE, YIELD_DRY, YIELD_PRICE, YIELD_KEEP } from './settings-math.js';
 
 const COMMAND_TIMEOUT = 15000;
 const COLUMNS = [
   { key: 'dryKg', label: 'Dry substrate per block (kg)', short: 'Dry kg per block', range: YIELD_DRY },
   { key: 'priceKg', label: 'Expected price (RM per kg)', short: 'Expected RM per kg', range: YIELD_PRICE },
+  { key: 'keepDays', label: 'Keeps fresh (days)', short: 'Keeps fresh, days', range: YIELD_KEEP }, // ---- Data integrity ----
 ];
 
 const el = (tag, cls, text) => {
@@ -63,7 +65,8 @@ export function mountYield(container) {
       // A text box with the decimal keypad, as the task dialogs' kg: a number box drops text it cannot read ("1,5" reads as
       // empty, saved as not set), where yieldBody names the box and the range.
       const input = el('input');
-      Object.assign(input, { id: `f-yd-${id}`, name: id, type: 'text', inputMode: 'decimal', autocomplete: 'off', placeholder: 'not set' });
+      const keep = c.key === 'keepDays'; // whole days; empty: the crop's default, said in the box
+      Object.assign(input, { id: `f-yd-${id}`, name: id, type: 'text', inputMode: keep ? 'numeric' : 'decimal', autocomplete: 'off', placeholder: keep ? String(KEEP_DAYS[crop]) : 'not set' });
       input.setAttribute('aria-label', `${CROPS[crop].name}: ${c.label}, ${c.range[0].toLocaleString('en-US')} to ${c.range[1].toLocaleString('en-US')}`);
       input.setAttribute('aria-describedby', `e-yd-${id}`);
       const err = el('p', 'field-error');
@@ -113,7 +116,9 @@ export function mountYield(container) {
     event.preventDefault();
     clearErrors();
     saved.hidden = true;
-    const built = yieldBody(CROP_KEYS.map((crop) => ({ crop, dryKg: inputs[`dryKg:${crop}`].input.value, priceKg: inputs[`priceKg:${crop}`].input.value })));
+    const built = yieldBody(CROP_KEYS.map((crop) => ({
+      crop, dryKg: inputs[`dryKg:${crop}`].input.value, priceKg: inputs[`priceKg:${crop}`].input.value, keepDays: inputs[`keepDays:${crop}`].input.value,
+    })));
     if (built.error) {
       setError(built.field, built.error);
       inputs[built.field].input.focus();

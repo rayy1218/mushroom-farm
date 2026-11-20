@@ -20,7 +20,7 @@ test('who did it is the signed-in name (Login): an owner is offered the active w
 test('Done is one tap with a kept worker and no amount; otherwise it asks', () => {
   has("if (row.kind !== 'longterm' && !recordsAmount(row) && worker && list.includes(worker)) {");
   has('const body = doneBody(row, w, v);');
-  has('const r = await send(`/api/tasks/${row.id}/done`, body, form);');
+  has('const r = await send(`/api/tasks/${row.id}/done`, body, form, asking);'); // Data integrity: through the server's asks
   has("hint: 'Leave it empty if it was not weighed or counted.'");
   // a mixed room: the crops' boxes under one legend and one hint, each with its picture and "kg" in a narrow box (audit #15)
   has("kind: 'group', legend: 'kg picked', hint: 'Leave a box empty if that crop was not weighed.', className: 'tk-kg-group',");
@@ -40,7 +40,7 @@ test('Skip asks who and why; Cancel (long-term) asks why; Add posts a text and a
 });
 
 test('a 409 or 404 asks for the list again (someone else closed it); the message stays in the dialog', () => {
-  has('if (alive && (err.status === 409 || err.status === 404)) changed(null);');
+  has('if (alive && ((err.status === 409 && !err.asks) || err.status === 404)) changed(null);'); // an ask is no conflict
 });
 
 test('a long-term machine task: Save and mark done saves Setup first and marks it done only when that worked', () => {

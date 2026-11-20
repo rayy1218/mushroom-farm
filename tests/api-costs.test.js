@@ -43,9 +43,12 @@ test('add, list, edit, delete a cost; each write publishes costs', async (t) => 
   assert.equal(bad.status, 400);
   assert.equal(bad.body.field, 'category');
   assert.equal((await call('PUT', '/api/costs/9999', { amount: 1 })).status, 404);
-  assert.equal((await call('DELETE', `/api/costs/${made.body.id}`)).status, 204);
-  assert.equal((await call('DELETE', `/api/costs/${made.body.id}`)).status, 404);
-  assert.equal(costEvents().length, 3, 'add, edit, delete');
+  assert.equal((await call('DELETE', `/api/costs/${made.body.id}`)).status, 409, 'void it instead');
+  assert.equal((await call('DELETE', '/api/costs/9999')).status, 404);
+  const voided = await call('POST', `/api/costs/${made.body.id}/void`, { reason: 'Entered twice' });
+  assert.deepEqual([voided.status, voided.body.voided.reason], [200, 'Entered twice']);
+  assert.equal((await call('GET', '/api/costs')).body.costs[0].voided.by, 'app', 'listed, voided');
+  assert.equal(costEvents().length, 3, 'add, edit, void');
 });
 
 test('change and stop a monthly item', async (t) => {
