@@ -133,7 +133,9 @@ test('routes publish: a command (machines), control saved, crop saved, a filter 
   assert.equal(await put(base, `/api/rooms/${id}/crop`, { crops: [{ crop: 'oyster', blocks: 100 }] }), 200);
   assert.equal((await fetch(`${base}/api/rooms/${id}/filter/changed`, { method: 'POST' })).status, 200);
   assert.deepEqual(got, [
-    ['room', { id, part: 'machines' }], ['room', { id, part: 'control' }], ['room', { id, part: 'crop' }], ['room', { id, part: 'filter' }],
+    ['room', { id, part: 'machines' }], ['room', { id, part: 'control' }],
+    ['economics', { roomId: id, crop: 'oyster', plan: true }], // Economics stage 2: the run's plan saved as it hears the crop event
+    ['room', { id, part: 'crop' }], ['room', { id, part: 'filter' }],
   ]);
   // a refused command publishes nothing
   got.length = 0;

@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthsText, figureText, rangeText, wayName, headline, rows, fillLine, sizedLine, neverLine, leftLine, labourLine } from '../web/economics-math.js';
+import { monthsText, figureText, rangeText, wayName, headline, rows, fillLine, sizedLine, neverLine, leftLine, labourLine, tilesOf, stickyText, barsOf, SHORT_LEFT, compareChoices, phoneCaption, readerSentence } from '../web/economics-math.js';
 import { compare, grow } from '../web/economics-model.js';
 import { ECONOMICS_CROPS, WAYS, figuresFor, researchOf } from '../web/economics-defaults.js';
 
@@ -96,9 +96,9 @@ test('the rows at the golden inputs: the cold room and import, a loss with "Loss
   const [cold, , imp, warm] = compare(GOLDEN, WAYS.lionsmane);
   const table = rows([cold, imp, warm]);
   const at = (key) => table.find((x) => x.key === key);
-  assert.deepEqual(table.map((x) => x.label), ['Blocks started, or kg bought, a month', 'kg sold a month', 'Income', 'Blocks, or mushrooms bought', 'Electricity', 'Labour',
+  assert.deepEqual(table.map((x) => x.label), ['Blocks a month', 'kg sold a month', 'Income', 'Blocks, or mushrooms bought', 'Electricity', 'Labour',
     'Packing and delivery', 'Transport', 'Rent', 'Equipment written off', 'Costs', 'Profit a month', 'Break-even', 'Equipment',
-    'Pays back, equipment only', 'Pays back, with the first fill']);
+    'Payback (equipment)', 'Payback (incl. first batch)']);
   const cells = (key) => plain(at(key).cells.map((c) => c.text));
   assert.deepEqual(cells('blocks'), ['1,259', '283.4 kg bought', '1,259']);
   assert.deepEqual(cells('kg'), ['255.0 kg', '255.0 kg', '126.5 kg']);
@@ -142,7 +142,7 @@ test('the way names, and the lines under the table', () => {
   assert.equal(wayName('warm', { sentence: true }), 'A warm strain in a lowland shed');
   assert.equal(wayName('import', { sentence: true, lower: true }), 'importing and reselling');
   const [cold, , , warm] = compare(GOLDEN, WAYS.lionsmane);
-  assert.equal(plain(fillLine(cold, { room: 'Container 1', blocks: 1740, first: 12 })), "With the first fill: Container 1's equipment, its first 1,740 blocks (RM 10,440.00) and the costs until the first harvest, 12 days in (RM 326.75).");
+  assert.equal(plain(fillLine(cold, { room: 'Container 1', blocks: 1740, first: 12 })), "First batch: Container 1's equipment, its first 1,740 blocks (RM 10,440.00) and the costs until the first harvest, 12 days in (RM 326.75).");
   assert.equal(plain(sizedLine('Container 1', 1740)), "Every way is sized to Container 1's 1,740 blocks; a shed or a highland house holds up to 2,000.");
   assert.equal(plain(neverLine([cold, warm], 60)), 'Never: not within the 60 months the equipment is written off over.');
   assert.equal(neverLine([cold], 60), null);
@@ -202,4 +202,115 @@ test('the labour line: the room\'s share of the workers and its hours, over them
   assert.deepEqual([wayName('yours'), wayName('yours', { type: 'built' }), wayName('yours', { type: 'shed' }), wayName('shed', { type: 'built' })],
     ['Your container', 'Your room', 'Your shed', 'Lowland shed']);
   assert.equal(plain(figureText('yours.workers', 1.5)), '1.5 workers');
+});
+
+// ---- Economics stage 2 (spec 2026-11-12-economics-stage-2-design.md 4.1) ----
+const LIONS = ['yours', 'highland', 'import', 'warm'];
+const tileWords = (t) => plain({ label: t.label, way: t.way ?? null, figure: t.figure, tone: t.tone ?? null, caption: t.caption, captionTone: t.captionTone ?? null });
+const sticky = (parts) => plain(parts.map((p) => (typeof p === 'string' ? p : `[${p.text}]`)).join(''));
+
+test('the tiles at the golden inputs: a profit at RM 50.00, a loss at RM 36.00', () => {
+  const at = (price) => tilesOf(compare({ ...GOLDEN, price }, LIONS), { room: 'Container 1', crop: 'lionsmane', price, life: 60 }).map(tileWords);
+  assert.deepEqual(at(50), [
+    { label: 'Profit a month', way: null, figure: 'RM 3,003.16', tone: null, caption: "Profit · Container 1, Lion's mane", captionTone: null },
+    { label: 'Break-even', way: null, figure: 'RM 38.23 a kg', tone: null, caption: 'You sell at RM 50.00, RM 11.77 over it.', captionTone: null },
+    { label: 'Payback', way: null, figure: '13 months', tone: null, caption: 'With the first batch · equipment RM 35,990.00', captionTone: null },
+    { label: 'Best other way', way: 'Highland grower', figure: 'RM 3,152.92', tone: null, caption: 'RM 149.76 a month more than yours', captionTone: null },
+  ]);
+  assert.deepEqual(at(36), [
+    { label: 'Profit a month', way: null, figure: '−RM 567.53', tone: 'loss', caption: "Loss · Container 1, Lion's mane", captionTone: null },
+    { label: 'Break-even', way: null, figure: 'RM 38.23 a kg', tone: null, caption: 'You sell at RM 36.00, RM 2.23 short.', captionTone: 'loss' },
+    { label: 'Payback', way: null, figure: 'Never', tone: 'loss', caption: 'Not within the 60 months it is written off over', captionTone: null },
+    { label: 'Best other way', way: 'Highland grower', figure: '−RM 417.77', tone: 'loss', caption: 'RM 149.76 a month more than yours', captionTone: null },
+  ]);
+  assert.equal(tilesOf(compare(GOLDEN, LIONS), { room: 'Container 1', crop: 'lionsmane', price: 50, life: 60 })[3].wayKey, 'highland');
+});
+
+test('the tiles\' other cases: nothing sold, just at break-even, the best other way less or the same, your room by its type', () => {
+  const nothing = tilesOf(compare({ ...GOLDEN, 'yours.yieldG': 0 }, LIONS), { room: 'Container 1', crop: 'lionsmane', price: 50, life: 60 }).map(tileWords);
+  assert.deepEqual([nothing[1].figure, nothing[1].caption, nothing[2].figure], ['—', 'Nothing sells at these figures.', 'Never']);
+  const be = compare(GOLDEN, ['yours'])[0].be;
+  const just = tilesOf(compare({ ...GOLDEN, price: Math.round(be * 100) / 100 }, LIONS), { room: 'Container 1', crop: 'lionsmane', price: Math.round(be * 100) / 100, life: 60 });
+  assert.match(plain(just[1].caption), /^You sell at RM 38\.23, just at it\.$/);
+  const yoursBest = compare({ ...GOLDEN, 'highland.transport': 20 }, LIONS);
+  const t = tilesOf(yoursBest, { room: 'Container 1', crop: 'lionsmane', price: 50, life: 60 });
+  assert.match(plain(t[3].caption), / a month less than yours$/);
+  const same = [{ ...yoursBest[0] }, { ...yoursBest[0], way: 'highland' }];
+  assert.equal(tilesOf(same, { room: 'Container 1', crop: 'lionsmane', price: 50, life: 60 })[3].caption, 'The same as yours');
+  assert.equal(plain(tilesOf(compare(GOLDEN, LIONS), { room: 'Room A', crop: 'lionsmane', price: 50, life: 60, type: 'built' })[0].caption), "Profit · Room A, Lion's mane");
+  const under = tilesOf(compare({ ...GOLDEN, 'yours.container': 0, 'yours.cooling': 0, 'yours.humidifier': 0, 'yours.fans': 0, 'yours.racks': 0, 'yours.first': 1, blockPrice: 0.5 }, LIONS), { room: 'Container 1', crop: 'lionsmane', price: 50, life: 60 });
+  assert.equal(plain(under[2].figure), 'Under 1 month');
+});
+
+test('the sticky line: a profit, a loss (its figure in the critical text), nothing sold', () => {
+  const at = (v) => stickyText(compare(v, ['yours'])[0]);
+  assert.equal(sticky(at(GOLDEN)), 'Profit RM 3,003.16 a month · Break-even RM 38.23 a kg');
+  assert.equal(sticky(at({ ...GOLDEN, price: 36 })), 'Loss [−RM 567.53] a month · Break-even RM 38.23 a kg');
+  assert.equal(at({ ...GOLDEN, price: 36 })[1].tone, 'loss');
+  assert.match(sticky(at({ ...GOLDEN, 'yours.yieldG': 0 })), /^Nothing sells · \[−RM [\d,]+\.\d\d\] a month$/);
+});
+
+// ---- Economics stage 2 (spec 4.2): profit per way as diverging bars ----
+test('the bars at the golden inputs: five rows in the fixed order, the shed not compared, zero at 43.26 % of the track', () => {
+  const b = barsOf(compare(GOLDEN, LIONS), [{ way: 'shed', reason: 'warm-strain' }], 'lionsmane');
+  assert.equal(Math.round(b.zero * 10000) / 100, 43.26);
+  assert.deepEqual(b.rows.map((r) => [r.way, r.compared, r.kind]), [
+    ['yours', true, 'profit'], ['shed', false, null], ['highland', true, 'profit'], ['import', true, 'loss'], ['warm', true, 'loss'],
+  ]);
+  const by = Object.fromEntries(b.rows.map((r) => [r.way, r]));
+  assert.deepEqual(plain([by.yours.name, by.yours.text, by.yours.words]), ['Your container', 'RM 3,003.16', 'Your container, RM 3,003.16 a month profit']);
+  assert.equal(by.yours.yours, true);
+  assert.equal(Math.round((by.highland.start + by.highland.length) * 1e6), 1e6, 'the biggest profit reaches the right edge');
+  assert.equal(Math.round(by.warm.start * 1e6), 0, 'the biggest loss reaches the left edge');
+  assert.equal(Math.round((by.import.start + by.import.length) * 1e4), Math.round(b.zero * 1e4), 'a loss ends at zero');
+  assert.deepEqual(plain([by.warm.text, by.warm.tone, by.warm.words]), ['−RM 2,403.95', 'loss', 'Warm strain, −RM 2,403.95 a month loss']);
+  assert.deepEqual(plain([by.shed.reason, by.shed.words]), ['Not compared: the warm strain is its lowland shed', 'Lowland shed: not compared, the warm strain is its lowland shed']);
+});
+
+test('the bars: grey oyster\'s four rows; all profits, all losses; a way at RM 0.00 breaks even; your way by its type; the short reasons', () => {
+  const oyster = barsOf(compare(GOLDEN, ['yours', 'shed']), [{ way: 'highland', reason: 'too-cool' }, { way: 'import', reason: 'not-imported' }], 'oyster');
+  assert.deepEqual(oyster.rows.map((r) => r.way), ['yours', 'shed', 'highland', 'import']);
+  const fake = (profits) => profits.map(([way, profit]) => ({ way, profit, kind: 'grow' }));
+  assert.equal(barsOf(fake([['yours', 100], ['shed', 50]]), [], 'oyster').zero, 0);
+  assert.equal(barsOf(fake([['yours', -100], ['shed', -50]]), [], 'oyster').zero, 1);
+  const even = barsOf(fake([['yours', 100], ['shed', 0.004]]), [], 'oyster').rows[1];
+  assert.deepEqual([even.kind, even.length, plain(even.words)], ['even', 0, 'Lowland shed breaks even']);
+  assert.equal(barsOf(fake([['yours', 1]]), [], 'oyster', 'built').rows[0].name, 'Your room');
+  assert.deepEqual(Object.keys(SHORT_LEFT).sort(), ['lionsmane', 'oyster', 'pink', 'woodear']);
+  assert.equal(plain(SHORT_LEFT.oyster.highland), 'it fruits best at 25 °C');
+  assert.equal(plain(SHORT_LEFT.pink.import), 'it keeps 1–4 days; none is imported');
+});
+
+// ---- Economics stage 2 (spec 4.4): the phone's pair ----
+test('Compare with: the other ways, the best first; the phone table\'s caption', () => {
+  assert.deepEqual(compareChoices(compare(GOLDEN, LIONS)).map((c) => [c.way, c.name]),
+    [['highland', 'Highland grower'], ['import', 'Import and resell'], ['warm', 'Warm strain']]);
+  assert.deepEqual(compareChoices(compare(GOLDEN, ['yours'])), []);
+  assert.equal(phoneCaption('yours', 'highland'), 'A month: Your container and Highland grower');
+  assert.equal(phoneCaption('yours', 'shed', 'shed'), 'A month: Your shed and Lowland shed');
+});
+
+test('capped at what you can sell (the owner, 2026-11-12): the profit tile leads with the capped month, the uncapped one its caption; kg sold of kg grown', () => {
+  const cap = (50 * 30.4) / 7;
+  const capped = compare(GOLDEN, LIONS, { sellCap: cap });
+  const free = compare(GOLDEN, LIONS)[0];
+  const [profit] = tilesOf(capped, { room: 'Container 1', crop: 'lionsmane', price: 50, life: 60, uncapped: free }).map(tileWords);
+  assert.deepEqual([profit.figure, profit.caption], ['RM 1,221.54', 'Profit at what you can sell · RM 3,003.16 if all 255.0 kg sold']);
+  const kg = rows(capped).find((r) => r.key === 'kg');
+  assert.deepEqual(plain([kg.cells[0].text, kg.cells[0].sub]), ['217.1 kg', 'of 255.0 kg grown']);
+  assert.equal(rows(compare(GOLDEN, LIONS)).find((r) => r.key === 'kg').cells[0].sub, undefined);
+});
+
+test('the reader\'s sentence says the cap after the headline when the month is capped, in words, not the tile\'s middot (the review)', () => {
+  const opts = { room: 'Container 1', crop: 'lionsmane', life: 60 };
+  const capped = compare(GOLDEN, LIONS, { sellCap: (50 * 30.4) / 7 });
+  const uncapped = compare(GOLDEN, LIONS)[0];
+  const h = headline(capped, opts);
+  const said = plain(readerSentence(h, capped, { uncapped, kgWeek: 50 }));
+  assert.ok(said.endsWith(' At what you can sell (50.0 kg a week); RM 3,003.16 a month if all 255.0 kg sold.'), said);
+  assert.ok(!said.includes('·'));
+  const free = compare(GOLDEN, LIONS);
+  const hf = headline(free, opts);
+  assert.equal(readerSentence(hf, free, { uncapped: null, kgWeek: null }), [hf.first.map((x) => (typeof x === 'string' ? x : x.text)).join(''), hf.second].filter(Boolean).join(' '), 'not capped: the headline alone');
+  assert.equal(readerSentence(hf, free, { uncapped: free[0], kgWeek: 500 }), readerSentence(hf, free, {}), 'a limit over what it grows: no extra words');
 });

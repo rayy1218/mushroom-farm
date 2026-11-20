@@ -41,7 +41,7 @@ test('a version 27 database is upgraded to 28: the equipment table (STRICT) and 
   assert.equal(again.openRun(room).crops[0].blocks, 600);
   again.close();
   const raw = new DatabaseSync(file);
-  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 29);
+  assert.equal(raw.prepare('PRAGMA user_version').get().user_version, 30);
   const sql = (name) => raw.prepare('SELECT type, sql FROM sqlite_master WHERE name = ?').get(name);
   assert.match(sql('equipment').sql, /STRICT/);
   assert.equal(sql('equipment_room_gone').type, 'trigger');
@@ -99,7 +99,7 @@ test('a version 26 database is upgraded to 28 in one start (through the alarms\'
   assert.deepEqual(db.listEquipment(), []);
   db.close();
   const check = new DatabaseSync(file);
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 29);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 30);
   const alarms = check.prepare('PRAGMA table_info(alarms)').all().map((c) => c.name);
   assert.ok(alarms.includes('acked_by') && alarms.includes('gateway'), "the alarms' 27 ran on the way");
   for (const [table, column] of [['runs', 'blocks_in_at'], ['rooms', 'room_type']]) {
@@ -112,11 +112,11 @@ test('a file at 28 from before the crop index gains harvests_by_crop on open', (
   const file = fileOf();
   openDb(file).close();
   const raw = new DatabaseSync(file);
-  raw.exec('DROP INDEX harvests_by_crop; PRAGMA user_version = 28;'); // a file at 28 (Data integrity's 29 runs after)
+  raw.exec('DROP INDEX harvests_by_crop; PRAGMA user_version = 28;'); // a file at 28 (Data integrity's 29 and Economics 2's 30 run after)
   raw.close();
   openDb(file).close();
   const check = new DatabaseSync(file);
   assert.equal(check.prepare("SELECT type FROM sqlite_master WHERE name = 'harvests_by_crop'").get()?.type, 'index');
-  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 29);
+  assert.equal(check.prepare('PRAGMA user_version').get().user_version, 30);
   check.close();
 });

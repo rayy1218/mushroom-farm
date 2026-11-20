@@ -46,7 +46,7 @@ test('GET /api/economics: the first room and its crop without a query; the room 
   const { call, room } = await app(t);
   const r = await call('GET', '/api/economics');
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.deepEqual(Object.keys(r.body), ['rooms', 'room', 'crop', 'ways', 'left', 'figures', 'context', 'sim', 'machinesNote', 'errors']);
+  assert.deepEqual(Object.keys(r.body), ['rooms', 'room', 'crop', 'ways', 'left', 'figures', 'context', 'limit', 'sim', 'machinesNote', 'errors']);
   assert.deepEqual([r.body.room.id, r.body.crop], [room, 'lionsmane']);
   const oyster = await call('GET', `/api/economics?room=${room}&crop=oyster`);
   assert.deepEqual([oyster.status, oyster.body.crop, oyster.body.ways], [200, 'oyster', ['yours', 'shed']]);
@@ -178,6 +178,7 @@ test('the owner\'s only: a worker gets 403 on every Economics route; the owner i
     ['PUT', '/api/economics/figures', { room, crop: 'oyster', key: 'price', value: 12 }],
     ['DELETE', `/api/economics/figures?room=${room}&crop=oyster&key=price`],
     ['POST', '/api/economics/work-out', { room, crop: 'oyster' }],
+    ['GET', `/api/economics/plans?room=${room}&crop=oyster`], // ---- Economics stage 2 ----
   ];
   for (const [method, path, body] of routes) {
     assert.deepEqual(await call(method, path, body, worker), { status: 403, body: { error: 'Ask the owner' } }, `${method} ${path}`);
@@ -229,4 +230,31 @@ test('GET /api/economics for a shed: answered, with the shed\'s house and blocks
     assert.equal(fig(r.body, 'yours.cooling').value, 0, 'a shed is not cooled');
     assert.ok(fig(r.body, 'yours.container').value > 0, 'its house');
   }
+});
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.4)
+test('GET /api/economics/plans: a run started on the Crop tab has its plan; refusals', async (t) => {
+  const { call, room, seen } = await app(t);
+  const put = await call('PUT', `/api/rooms/${room}/crop`, { crops: [{ crop: 'lionsmane', blocks: 1000 }] });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  assert.ok(economics(seen).some((d) => d.roomId === room && d.crop === 'lionsmane'), 'the plan saved is told');
+  const r = await call('GET', `/api/economics/plans?room=${room}&crop=lionsmane`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(Object.keys(r.body), ['room', 'crop', 'current', 'past', 'leftOut', 'plans', 'errors']);
+  assert.equal(r.body.current.blocks, 1000);
+  assert.equal(r.body.plans[r.body.current.runId].figures['yours.blocks'].value, 1000);
+  assert.deepEqual(await call('GET', `/api/economics/plans?room=${room}&crop=reishi`), { status: 400, body: { error: 'Pick a crop', field: 'crop' } });
+  assert.deepEqual(await call('GET', '/api/economics/plans?room=99&crop=lionsmane'), { status: 404, body: { error: 'Room not found' } });
+  assert.deepEqual(await call('GET', `/api/economics/plans?crop=lionsmane`), { status: 404, body: { error: 'Room not found' } });
+  assert.deepEqual(await call('POST', `/api/economics/plans?room=${room}&crop=lionsmane`), { status: 404, body: { error: 'Not found' } });
+});
+
+test('PUT and DELETE /api/economics/figures take what you can sell for every crop; the view\'s limit follows', async (t) => {
+  const { call, room } = await app(t);
+  const set = await call('PUT', '/api/economics/figures', { room, crop: 'pink', key: 'market.kgWeek', value: 40 });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.deepEqual([set.body.limit.value, set.body.limit.source], [40, 'owner']);
+  const gone = await call('DELETE', `/api/economics/figures?room=${room}&crop=pink&key=market.kgWeek`);
+  assert.deepEqual(gone.body.limit, { value: null, source: null, at: null, sales: null });
+  assert.equal((await call('PUT', '/api/economics/figures', { room, crop: 'pink', key: 'market.kgWeek', value: 'lots' })).body.field, 'value');
 });

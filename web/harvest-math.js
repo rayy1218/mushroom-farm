@@ -18,7 +18,14 @@ const FARM_OFFSET_MS = 8 * 3_600_000; // the farm's time is UTC+8 all year (Asia
 const MAX_KG = 10_000;
 const finite = (x) => typeof x === 'number' && Number.isFinite(x);
 const cropName = cropShortName; // a record's crop: no "(draft)"
-const grouped = (n, min, max = min) => n.toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: max });
+// One Intl.NumberFormat a shape, kept (toLocaleString makes one a call: the Economics review).
+const FORMATS = new Map();
+const grouped = (n, min, max = min) => {
+  const key = `${min}/${max}`;
+  let f = FORMATS.get(key);
+  if (!f) FORMATS.set(key, (f = new Intl.NumberFormat('en-US', { minimumFractionDigits: min, maximumFractionDigits: max })));
+  return f.format(n);
+};
 
 // Totals to 1 decimal ("18.4 kg"); one harvest (exact) to 2 ("2.35 kg", "2.00 kg"), so a list's figures line up.
 export function kgText(v, { exact = false } = {}) {

@@ -37,7 +37,7 @@ test('the cards in order: the headline, A month, each way, Figures; the selects;
   const at = (s) => page.indexOf(s);
   assert.ok(at('<label for="ec-room">Room</label>') < at('<label for="ec-crop">Crop</label>'));
   assert.ok(at('class="card ec-headline"') < at('<h2 id="ec-compare-title">A month, each way</h2>'));
-  assert.ok(at('<h2 id="ec-compare-title">A month, each way</h2>') < at('<h2 id="ec-figures-title">Figures</h2>'));
+  assert.ok(at('<h2 id="ec-compare-title">A month, each way</h2>') < at('<h2 class="ec-figures-head" id="ec-figures-title">'));
   assert.ok(page.includes('No rooms yet. Economics plans with one of your rooms.'));
   assert.ok(page.includes('Rooms, to add one'));
   assert.ok(page.includes('<div class="banner" role="alert" hidden>'));
@@ -70,7 +70,7 @@ test('the styles: one .ec- block, tokens only (no colour of its own), the phone\
   assert.ok([...ecCss.matchAll(/^\s*([^@/\s][^{]*)\{/gm)].every((m) => m[1].split(/,(?![^(]*\))/).every((s) => /\.ec-/.test(s))), 'every rule is .ec-');
   assert.ok(ecCss.includes('@media (max-width: 600px)'));
   assert.ok(ecCss.includes('.ec-desk { display: none; }'));
-  assert.ok(ecCss.includes('.ec-phone { display: grid; gap: 16px; }'));
+  assert.ok(ecCss.includes('.ec-phone { display: block; }'), 'stage 2: one table of two ways');
   // the box is a field: the shared field rules (40 px on a desk, 44 px on a phone, the refused outline), its own width and figures
   assert.ok(css.includes('.sim-crop-row select, .sim-crop-row input, .brand-top, .ec-box { min-height: 44px; }'), 'the phone\'s field rule after the field rules');
   assert.ok(css.includes('\n.ec-box, .field input, .yd-table input {\n  font: inherit;\n  min-height: 40px;'));
@@ -82,8 +82,7 @@ test('the styles: one .ec- block, tokens only (no colour of its own), the phone\
   assert.ok(ecCss.includes('.ec-fig-field { flex-wrap: wrap; }'));
   assert.ok(ecCss.includes('.ec-fig-field .co-link, .ec-foot .co-link { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; }'));
   assert.doesNotMatch(ecCss, /\.ec-note[^{]*\.co-link[^{]*\{[^}]*padding/, 'a source\'s link in its sentence has no padding over the next line');
-  assert.doesNotMatch(ecCss, /\.ec-tag[^{]*\{[^}]*accent/, 'the source tag is a neutral chip, the owner\'s too');
-  assert.ok(ecCss.includes('.ec-block-label { display: block;'));
+  assert.ok(ecCss.includes('.ec-tag { border-radius: 4px; cursor: default; }'), 'stage 2: a label in its tier, not a chip (4.3)');
 });
 
 test('the reviews\' notes: a new draft for another room or crop; a refusal kept by the page; the tariff\'s link; sources; the run\'s state; farm time', () => {
@@ -124,8 +123,8 @@ test('the spec review\'s notes: replies through createReplies; a save that paint
   assert.ok(page.includes("if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…"));
   // the box: kept while focused, unsaved or refused
   assert.ok(page.includes('if (box && !keepsBox({ focused: typing, unsaved: draft.unsaved(f.key), refused: Boolean(draft.error(f.key) || refusals.has(f.key)) })) box.value = boxText(f.key, f.value);'));
-  // the phone's block head: the way's name with "Profit a month" over its profit
-  assert.ok(page.includes("profitNode.prepend(el('span', 'ec-block-label', profitRow.label));"));
+  // the phone's table (stage 2, 4.4): Your container and the way Compare with picks
+  assert.ok(page.includes("const cols = [0, ...(other ? [results.findIndex((r) => r.way === other)] : [])];"));
 });
 
 test('the spec review\'s notes: Work it out\'s refusals shown and said; a failed save said; the dot; no unused import', () => {
@@ -176,12 +175,17 @@ test('the code re-review: Work it out\'s line keeps the cursor when its button g
 });
 
 // ---- the Impeccable audit (2026-11-10, .impeccable/critique/2026-11-10-economics.md) ----
-test('the audit #1: the result stays in view while typing (a sticky line atop Figures, its loss in words, hidden from a reader)', () => {
-  assert.ok(page.includes('<p class="ec-now" data-now aria-hidden="true"></p>'));
-  assert.ok(page.indexOf('data-now') < page.indexOf('class="muted ec-intro"'), 'atop the Figures card');
-  assert.ok(page.includes('els.now.replaceChildren(...leadNodes(h.first));'), 'the headline\'s first sentence, its loss in words and colour');
-  assert.match(ecCss, /\.ec-now \{ position: sticky; top: var\(--topbar-h\); z-index: 2;/);
+test('the audit #1, stage 2: the result stays in view while typing (one 44 px sticky line under the tiles once they scroll away, hidden from a reader)', () => {
+  assert.ok(page.includes('<p class="ec-sticky" data-sticky aria-hidden="true" hidden></p>'));
+  assert.ok(page.indexOf('data-sticky') > page.indexOf('data-tiles') && page.indexOf('data-sticky') < page.indexOf('ec-compare-title'), 'first in the sections\' box');
+  assert.ok(page.includes('stickyWords.append(...leadNodes(stickyText(results[0])));\n    els.sticky.replaceChildren(stickyWords);'), 'one inline run: no spaces lost at a flex item\'s edge');
+  assert.ok(page.includes('new IntersectionObserver(([e]) => { els.sticky.hidden = e.isIntersecting; }, {'));
+  assert.ok(page.includes("getPropertyValue('--topbar-h')"), 'under the top bar');
+  assert.ok(page.includes('watchTiles?.disconnect();'));
+  assert.match(ecCss, /\.ec-sticky \{ position: sticky; top: var\(--topbar-h\); z-index: 3; display: flex; align-items: center; min-height: 44px;/);
+  assert.ok(ecCss.includes('.ec-rest { display: flex; flex-direction: column; gap: 16px; }'), 'a column, so the line rides to the page\'s end');
   assert.ok(ecCss.includes('.ec-box { width: 9em; text-align: right; font-variant-numeric: tabular-nums; scroll-margin-top:'), 'a focused box clears the line');
+  assert.doesNotMatch(page, /data-now|ec-now/, 'the sticky sentence atop Figures is gone');
 });
 
 test('the audit #7 #8 #9 #10: a refusal left is said and leaves the sums; the parts line in the headline; a box\'s unit and tag described; the saved line says the result', () => {
@@ -195,7 +199,7 @@ test('the audit #7 #8 #9 #10: a refusal left is said and leaves the sums; the pa
   assert.ok(page.includes("const described = [error.hidden ? null : error, ...row.querySelectorAll('.ec-prefix, .ec-unit, .ec-tag')].filter((n) => n && n.textContent);"));
   assert.ok(page.includes("box.setAttribute('aria-describedby', described.map((n) => n.id).join(' '));"));
   // #10: the saved line with the result
-  assert.ok(page.includes('said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0], next.room.type) + (warn ? ` ${warn}` : \'\'));'));
+  assert.ok(page.includes('said(savedText(key, t.value, next.room.name, next.crop, draft.results(capCtx())[0], next.room.type) + (warn ? ` ${warn}` : \'\'));'));
 });
 
 test('the audit #2 #6 #12 #14 #20 #22 #26: fold heads h3; an unusual figure checked; RM inside the box; a new tab said; the row\'s order; the run\'s end said; the gone line said', () => {
@@ -245,5 +249,144 @@ test('the page: Your way and the building named by the room type; the labour lin
   assert.ok(page.includes("th.append(el('span', 'ec-way', wayName(r.way, { type: reply.room.type })));"));
   assert.ok(page.includes("figureLabel(f.key, reply.room.type)"));
   assert.ok(page.includes('const labour = labourLine(results[0], reply.room.name);'));
-  assert.ok(src('economics-figures.js').includes('return figures.length ? compare(valuesOf(figures, typedValues), ways, context) : [];'));
+  assert.ok(src('economics-figures.js').includes('return figures.length ? compare(valuesOf(figures, typedValues), ways, { ...context, ...more }) : [];'));
+});
+
+// ---- Economics stage 2 (spec 2026-11-12-economics-stage-2-design.md) ----
+const charts = src('economics-charts.js');
+const stage2Css = css.slice(css.indexOf('/* ---- Economics stage 2 (spec'), css.indexOf('/* ---- end Economics stage 2'));
+
+test('your runs against the plan: its card before Figures, its own read on its route, asked when the room or crop changes, never after a save', () => {
+  const at = (s) => page.indexOf(s);
+  assert.ok(at('<h2 id="ec-runs-title">Your runs against the plan</h2>') > 0);
+  assert.ok(at('<h2 id="ec-runs-title">Your runs against the plan</h2>') < at('<h2 class="ec-figures-head" id="ec-figures-title">'));
+  assert.ok(page.includes("read: () => request('GET', `/api/economics/plans?${new URLSearchParams({ room: reply.room.id, crop: reply.crop })}`),"));
+  assert.ok(page.includes('if (!plansFit(next)) return; // for a room or crop no longer picked'));
+  assert.ok(page.includes('if (routeMissing(err)) runState.outdated = true; // an older farm app: the reads stop'));
+  assert.ok(page.includes('if (moved && !runState.outdated) plansReader.load();'));
+  assert.ok(page.includes('if (reply?.room) plansReader.load();'), 'the events and the stream\'s return ask again');
+  assert.ok(page.includes('plansReader.stop();'));
+  // a save's reply paints with show(), which asks for the runs only when the room or crop moved
+  assert.equal((page.match(/plansReader\.load\(\)/g) ?? []).length, 3, 'Retry, a reload, a room or crop moved');
+  assert.ok(page.includes('paintRuns();\n  }'), 'worked out again with the typing (a run before plans were kept takes the figures now)');
+});
+
+test('the runs\' DOM: the run in progress and its bar, a fold a run (the newest open), its table and lines, the older runs, the empty and failed lines', () => {
+  assert.ok(charts.includes("box.append(el('p', 'ec-progress', progressLine(p)));"));
+  assert.ok(charts.includes("bar.setAttribute('aria-hidden', 'true');"), 'the line says it');
+  assert.ok(charts.includes("const a = el('a', 'co-link ec-alone', 'Give its block-in day');"));
+  assert.ok(charts.includes('a.href = runHash(current.runId);'));
+  assert.ok(charts.includes('d.open = state.open.get(run.runId) ?? newest; // the newest open until the owner folds it'));
+  assert.ok(charts.includes("const h3 = el('h3', 'ec-fold-title');") && charts.includes('s.append(h3);'), 'a heading inside its summary');
+  assert.ok(charts.includes("else h3.append(title.slice(0, at), el('span', 'co-loss', money), title.slice(at + money.length));"), 'a loss in its head in the critical text');
+  assert.ok(charts.includes("t.append(el('caption', 'sr-only', `${title.split(' · ')[0]} against its plan`));"));
+  assert.ok(charts.includes("for (const [text, cls] of [['Figure', ''], ['Plan', 'num'], ['This run', 'num']]) {"));
+  assert.ok(charts.includes('out.push(...past.slice(0, PAST_SHOWN));'));
+  assert.ok(charts.includes("\"Couldn't read your runs just now\""));
+  assert.ok(charts.includes("'This farm app is older than the page; reload once it is updated.'"));
+  assert.ok(charts.includes('emptyLine({ crop, room, current: Boolean(view.current) })'));
+  assert.ok(stage2Css.includes('.ec-progress-bar { height: 6px;'));
+  assert.ok(ecCss.includes('.ec-alone { display: inline-flex; align-items: center; min-height: 44px; }'), 'alone: 44 px on a phone');
+});
+
+test('the month, stage 2: the sentence for a reader, the tiles (the fourth a button to its bar), the meter', () => {
+  const at = (x) => page.indexOf(x);
+  assert.ok(at('<p class="sr-only" data-sentence></p>') < at('data-tiles') && at('data-tiles') < at('data-meter'));
+  assert.ok(page.includes('<div class="us-tiles hv-tiles co-tiles ec-tiles" data-tiles></div>'), 'Costs\' stat strip');
+  assert.ok(page.includes("const tiles = tilesOf(results, { room: reply.room.name, crop: reply.crop, type: reply.room.type, price: values.price, life, uncapped });"));
+  assert.ok(page.includes('els.sentence.textContent = readerSentence(h, results, { uncapped, kgWeek: limitWeek() });'), 'the cap said to a reader, as typed (the review)');
+  assert.ok(page.includes('paintTiles(els.tiles, tiles, { onBest: showBar });'));
+  // only a limit the owner typed caps (the owner, 2026-11-13); Your sales' week a suggestion with Use this
+  assert.ok(page.includes('const limitWeek = () => limitWeekOf(reply.limit, draft.unsaved(LIMIT_KEY) ? draft.values()[LIMIT_KEY] : null);'));
+  assert.ok(page.includes("if (typeof n.use === 'number') p.append(' ', useNode(key, n.use));"));
+  assert.ok(page.includes('box.value = boxText(key, value);\n      onSave(key, box);'), 'Use this saves as if typed and left');
+  assert.ok(page.includes('const results = draft.results(capCtx());'), 'the owner: what you can sell caps the month everywhere');
+  assert.ok(charts.includes("} else tile.setAttribute('aria-hidden', 'true');"), 'the first three say the sentence again');
+  assert.ok(charts.includes("tile.setAttribute('aria-label', `${t.label}: ${t.way}, ${t.figure} a month, ${t.caption}. Show it in the bars`);"));
+  assert.ok(page.includes('const m = meterText(meterOf(reply.figures));'));
+  assert.ok(page.includes("els.meter.append(`${DOT}set yours in `, go, ' below');"));
+});
+
+test('profit per way, stage 2: an ordered list of bars above the table, each shown way a button marking its column', () => {
+  const at = (x) => page.indexOf(x);
+  assert.ok(at('data-bars') > at('ec-compare-title') && at('data-bars') < at('data-table'), 'under the card\'s title, before the table');
+  assert.ok(page.includes('<ol class="ec-bars" data-bars aria-label="Profit a month, each way"></ol>'));
+  assert.ok(charts.includes("track.setAttribute('aria-hidden', 'true');"));
+  assert.ok(charts.includes("b.setAttribute('aria-pressed', String(picked === r.way));"));
+  assert.ok(page.includes('markedWay = way === markedWay ? null : way;'));
+  assert.ok(page.includes("th.append(el('span', 'ec-way-room', 'Shown'));"));
+  assert.ok(stage2Css.includes('.ec-bar-yours .ec-bar-fill { opacity: 1; outline: 2px solid var(--accent); outline-offset: 1px; }'));
+  assert.ok(stage2Css.includes('.ec-bar-fill { position: absolute; top: 3px; height: 12px; border-radius: 2px; background: var(--good); opacity: .7; }'), '70 % the fill only, never the words');
+  assert.ok(ecCss.includes('.ec-bar-button, .ec-bar-left { min-height: 44px; }'), '44 px on a phone');
+  assert.ok(ecCss.includes('  .ec-go { padding: 12px 0; margin: -12px 0; }'), 'a figure\'s name a 44 px target on a phone, its line kept (the review)');
+});
+
+test('the table, stage 2: 760 px, its label column, a row hover; Compare with on a phone with more than two ways; the labels in tiers', () => {
+  assert.ok(stage2Css.includes('.ec-table { max-width: 760px; }'));
+  assert.ok(stage2Css.includes('.ec-table thead th:first-child { width: 240px; }'));
+  assert.ok(stage2Css.includes('@media (hover: hover) { .ec-table tbody tr:hover > * { background: var(--band); } }'));
+  assert.ok(page.includes('<div class="field ec-pair" data-pair hidden><label for="ec-pair">Compare with</label><select id="ec-pair" data-pair-pick></select></div>'));
+  assert.ok(page.includes('els.pair.hidden = choices.length < 2; // two ways: no choice to make'));
+  assert.ok(page.includes('said(`Comparing with ${els.pairPick.selectedOptions[0]?.textContent ?? \'\'}`);'));
+  assert.ok(page.includes('row.dataset.tier = label.tier;'));
+  assert.ok(page.includes("tag.replaceChildren(...(unsavedMark ? ['Not saved'] : labelNodes(label)));"));
+  assert.ok(stage2Css.includes('.ec-fig[data-tier="typed"] { border-left-color: var(--accent); }'));
+  assert.ok(stage2Css.includes('.ec-fig[data-tier="recorded"] { border-left-color: var(--good); }'));
+  assert.ok(charts.includes("const dots = el('span', 'ec-dots',"));
+  assert.ok(charts.includes("dots.setAttribute('aria-hidden', 'true');"));
+});
+
+test('price × yield, stage 2: its card before the runs, what you can sell as a Figures row first, the grid a table with one Tab stop', () => {
+  const at = (x) => page.indexOf(x);
+  assert.ok(at('<h2 id="ec-map-title">Price × yield</h2>') > at('ec-compare-title') && at('ec-map-title') < at('ec-runs-title'));
+  assert.ok(at('<div class="ec-limit" data-limit>') < at('<div class="ec-map-body" data-map>'), 'the limit\'s row first');
+  assert.ok(page.includes('els.limit.replaceChildren(rowNode(limitFigure(reply.limit, reply.errors)));'));
+  assert.ok(page.includes("const figureByKey = (key) => (key === LIMIT_KEY ? limitFigure(reply.limit, reply.errors) : reply.figures.find((x) => x.key === key));"));
+  assert.ok(page.includes('const map = mapOf(values, draft.context(), { kgWeek: limitWeek() }); // now\'s cell: the month the tiles show'), 'drawn again with the typing');
+  assert.ok(page.includes("if (later) slowTimer = setTimeout(() => { if (alive() && reply?.room) keepRowFocus(paintSlow); }, 150);"), 'after a pause in the typing');
+  assert.ok(page.includes('said(pickedLine.textContent);'), 'a pick said on the polite line, not every repaint');
+  assert.ok(charts.includes("t.append(el('caption', 'sr-only', 'Profit a month by selling price and yield per good block'));"));
+  assert.ok(charts.includes('b.tabIndex = picked ? 0 : -1;'), 'roving tabindex');
+  assert.ok(charts.includes("const to = { ArrowLeft: [r, c - 1], ArrowRight: [r, c + 1], ArrowUp: [r - 1, c], ArrowDown: [r + 1, c], Home: [r, 0], End: [r, lastCol] }[e.key];"));
+  assert.ok(charts.includes("b.setAttribute('aria-label', `${now ? 'Now: ' : ''}${cellLabel(cell, map.prices[c], map.yields[r])}`);"));
+  assert.ok(charts.includes('state.line.textContent = cellLabel(pickedCell, map.prices[state.picked.col], map.yields[state.picked.row]);'), 'the page\'s own line, kept across paints');
+  assert.ok(charts.includes("svg.setAttribute('aria-hidden', 'true');"));
+  assert.ok(stage2Css.includes('.ec-cell { position: relative; width: 64px; height: 40px; padding: 0; }'));
+  assert.ok(ecCss.includes('  .ec-cell { width: 40px; }') && ecCss.includes('    .ec-cell { width: 35px; }'), '40 px on a phone, 35 px under 380 px: seven fit 360 px');
+  assert.ok(stage2Css.includes('.ec-capped { background-image: repeating-linear-gradient(45deg,'));
+});
+
+test('what moves profit most, stage 2: its card after the comparison, a list of rows (words, then a hidden bar), the top 8 and Show all', () => {
+  const at = (x) => page.indexOf(x);
+  assert.ok(at('ec-compare-title') < at('<h2 id="ec-swing-title">What moves profit most</h2>') && at('ec-swing-title') < at('ec-map-title'));
+  assert.ok(page.includes('paintSwing(els.swing, swings(reply.figures, values, { ...draft.context(), ...capCtx() }, { typed: typedKeys }), { room: reply.room.name, type: reply.room.type, figures: reply.figures, people, values }, swingState);'), 'with the typing');
+  assert.ok(charts.includes("bar.setAttribute('aria-hidden', 'true');"));
+  assert.ok(charts.includes('const shown = state.all ? out.rows : out.rows.slice(0, TOP);'));
+  assert.ok(charts.includes("b.dataset.focusKey = 'swing:all';"), 'the cursor kept on it');
+  assert.ok(charts.includes('if (out.rows.length > TOP) {'), 'no button with 8 or fewer');
+  assert.ok(charts.includes("parts.push(el('p', 'muted ec-runs-line', 'No figure moves it at these figures.'));"));
+  assert.ok(stage2Css.includes('.ec-swing-zero { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--axis); }'));
+});
+
+test('the owner\'s decisions (2026-11-12): Set these first above the chart, each a link to its box; Figures folded, kept on the device', () => {
+  assert.ok(charts.includes("set.append(Object.assign(el('h3', 'ec-first-title', 'Set these first'), { id: 'ec-first-title' }),"));
+  assert.ok(charts.includes("b.addEventListener('click', () => state.goTo(key));"), 'a name a link to its box');
+  assert.ok(charts.includes("label.setAttribute('aria-label', `${swingText(r, type)}. Go to the figure`);"), 'the whole row\'s words for a reader');
+  assert.ok(charts.includes("row.append(end(ends.down, 'left'), bar, end(ends.up, 'right'));"), 'the fall at the left, the rise at the right');
+  assert.ok(page.includes('<button type="button" class="ec-figures-toggle" aria-expanded="false" aria-controls="ec-figures-body" data-figures-toggle data-focus-key="figures-toggle">Figures</button>'));
+  assert.ok(page.includes("const FIGURES_KEY = 'farm.economics.figures';"));
+  assert.ok(page.includes("try { figuresOpen = localStorage.getItem(FIGURES_KEY) === 'open'; } catch { /* folded */ }"));
+  assert.ok(page.includes('function goToFigure(key) {\n    setFiguresOpen(true);'));
+  assert.ok(page.includes('typeFrame = requestAnimationFrame(() => {'), 'one paint a frame');
+  assert.ok(charts.includes("svg.setAttribute('class', 'ec-be-line');"), 'one break-even line under the words');
+  assert.ok(charts.includes('if (!state.grid || state.grid.shape !== shape || !node.contains(state.grid.wrap)) state.grid = buildGrid(node, map, state, shape);'), 'built once a shape, then updated in place');
+});
+
+test('the final review: the arrows move the map\'s cursor only; a pick paints the map alone; a figure saved reads the view, not the runs', () => {
+  assert.ok(charts.includes('next.tabIndex = 0;\n        next.focus();'), 'the arrows: the cursor and the Tab stop, no pick');
+  assert.ok(page.includes('keepRowFocus(() => paintPriceYield(draft.values()));'), 'a pick: the map alone');
+  assert.ok(page.includes("...LISTEN.map((type) => live.on(type, (d) => (type === 'economics' && !d?.plan ? reloadView.call() : reload.call()))),"));
+  assert.ok(charts.includes("s.dataset.focusKey = 'runs-older';"), 'the older runs\' summary keeps the cursor');
+  assert.ok(charts.includes("for (const r of runRows(plan, run, values, ctx, crop, { months, errors })) {"), 'a part not read said in its rows; the month once');
+  assert.ok(stage2Css.includes('.ec-rest :is(button, summary, a, select) { scroll-margin-top: calc(var(--topbar-h) + 56px); }'));
 });

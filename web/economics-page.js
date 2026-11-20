@@ -13,12 +13,19 @@ import { fallbackMs, createThrottle } from './live-math.js';
 import { keepFocus, createReader } from './business-page.js';
 import { ECONOMICS_CROPS, figureOf, unitParts, figureLabel } from './economics-defaults.js';
 import { blockLife, inputsOf } from './economics-model.js';
-import { headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText, labourLine } from './economics-math.js';
 import {
-  foldsOf, foldHead, tagText, appliesText, noteParts, simText, sourcesLine, boxText, savedText, partsLine, createDraft,
-  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems,
+  headline, rows, wayName, fillLine, sizedLine, neverLine, leftLine, figureText, labourLine, tilesOf, stickyText, barsOf, compareChoices,
+  phoneCaption, readerSentence,
+} from './economics-math.js';
+import {
+  foldsOf, foldHead, appliesText, noteParts, simText, boxText, savedText, partsLine, createDraft,
+  fitsWant, createReplies, keepsBox, simMoved, noteLinkKey, focusAfterRepaint, likely, sourceItems, labelOf, meterOf, meterText, limitFigure,
+  limitWeekOf,
 } from './economics-figures.js';
 import { DOT } from './text-math.js';
+import { paintPlans, paintTiles, paintBars, labelNodes, paintMap, paintSwing } from './economics-charts.js'; // ---- Economics stage 2 ----
+import { swings } from './economics-swing.js';
+import { mapOf, capOf } from './economics-map.js';
 
 const REFRESH_MS = 60_000;
 const LISTEN = ['economics', 'harvest', 'sales', 'batches', 'costs', 'inventory'].filter((type) => EVENT_TYPES.includes(type)); // inventory: Money truth
@@ -65,24 +72,45 @@ const PAGE = `
     <p class="ec-foot"><a class="co-link" href="${ROOMS_HASH}">Rooms, to add one</a></p>
   </div>
   <div class="ec-page" data-body hidden>
-    <section class="card ec-headline" aria-label="The month">
-      <p class="ec-lead" data-lead></p>
-      <p class="ec-second" data-second></p>
-      <p class="muted ec-sources" data-sources></p>
+    <section class="card ec-headline" aria-label="The month" data-month>
+      <p class="sr-only" data-sentence></p>
+      <div class="us-tiles hv-tiles co-tiles ec-tiles" data-tiles></div>
+      <p class="ec-meter" data-meter></p>
       <p class="ec-parts" data-head-parts hidden></p>
     </section>
+    <div class="ec-rest">
+    <p class="ec-sticky" data-sticky aria-hidden="true" hidden></p>
     <section class="card ec-compare" aria-labelledby="ec-compare-title">
       <div class="card-head"><h2 id="ec-compare-title">A month, each way</h2></div>
+      <ol class="ec-bars" data-bars aria-label="Profit a month, each way"></ol>
+      <div class="field ec-pair" data-pair hidden><label for="ec-pair">Compare with</label><select id="ec-pair" data-pair-pick></select></div>
       <div data-table></div>
       <div class="ec-lines" data-lines></div>
     </section>
-    <section class="card ec-figures" aria-labelledby="ec-figures-title">
-      <div class="card-head"><h2 id="ec-figures-title">Figures</h2></div>
-      <p class="ec-now" data-now aria-hidden="true"></p>
-      <p class="muted ec-intro">Change a figure and the page works it out again as you type; it is saved for every device when you leave the box.</p>
-      <p class="ec-parts" data-parts hidden></p>
-      <div class="ec-folds" data-folds></div>
+    <section class="card ec-swing-card" aria-labelledby="ec-swing-title">
+      <div class="card-head"><h2 id="ec-swing-title">What moves profit most</h2></div>
+      <div class="ec-swing-body" data-swing></div>
     </section>
+    <section class="card ec-map-card" aria-labelledby="ec-map-title">
+      <div class="card-head"><h2 id="ec-map-title">Price × yield</h2></div>
+      <p class="muted ec-intro ec-runs-intro" data-map-lead></p>
+      <div class="ec-limit" data-limit></div>
+      <div class="ec-map-body" data-map></div>
+    </section>
+    <section class="card ec-runs" aria-labelledby="ec-runs-title">
+      <div class="card-head"><h2 id="ec-runs-title">Your runs against the plan</h2></div>
+      <p class="muted ec-intro ec-runs-intro">Each run's figures against the figures saved when it started; its money a month at its own figures.</p>
+      <div class="ec-runs-body" data-runs></div>
+    </section>
+    <section class="card ec-figures" aria-labelledby="ec-figures-title">
+      <h2 class="ec-figures-head" id="ec-figures-title"><button type="button" class="ec-figures-toggle" aria-expanded="false" aria-controls="ec-figures-body" data-figures-toggle data-focus-key="figures-toggle">Figures</button></h2>
+      <div class="ec-figures-body" id="ec-figures-body" data-figures-body hidden>
+        <p class="muted ec-intro">Change a figure and the page works it out again as you type; it is saved for every device when you leave the box.</p>
+        <p class="ec-parts" data-parts hidden></p>
+        <div class="ec-folds" data-folds></div>
+      </div>
+    </section>
+    </div>
   </div>`;
 
 let mountSeq = 0; // every mount gets a token; an answer that finds the token changed is dropped
@@ -94,9 +122,12 @@ export function mount(container, { room = null, crop = null } = {}) {
   const q = (sel) => container.querySelector(sel);
   const els = {
     picks: q('[data-picks]'), room: q('[data-room]'), crop: q('[data-crop]'), banner: q('.banner'), bannerText: q('[data-banner-text]'),
-    said: q('[data-said]'), gone: q('[data-gone]'), empty: q('[data-empty]'), body: q('[data-body]'), lead: q('[data-lead]'),
-    second: q('[data-second]'), sources: q('[data-sources]'), table: q('[data-table]'), lines: q('[data-lines]'), parts: q('[data-parts]'),
-    folds: q('[data-folds]'), now: q('[data-now]'), headParts: q('[data-head-parts]'),
+    said: q('[data-said]'), gone: q('[data-gone]'), empty: q('[data-empty]'), body: q('[data-body]'), table: q('[data-table]'),
+    lines: q('[data-lines]'), parts: q('[data-parts]'), folds: q('[data-folds]'), headParts: q('[data-head-parts]'), runs: q('[data-runs]'),
+    month: q('[data-month]'), sentence: q('[data-sentence]'), tiles: q('[data-tiles]'), meter: q('[data-meter]'), sticky: q('[data-sticky]'),
+    bars: q('[data-bars]'), pair: q('[data-pair]'), pairPick: q('[data-pair-pick]'),
+    map: q('[data-map]'), mapLead: q('[data-map-lead]'), limit: q('[data-limit]'), swing: q('[data-swing]'),
+    figuresToggle: q('[data-figures-toggle]'), figuresBody: q('[data-figures-body]'),
   };
   document.title = 'Economics · Mushroom farm';
   let want = { room, crop }; // the room and crop asked for (null: the server's choice)
@@ -106,22 +137,36 @@ export function mount(container, { room = null, crop = null } = {}) {
   let shape = ''; // the figure rows' keys and room and crop: the rows are rebuilt only when it changes
   const said = (text) => { els.said.textContent = text; };
 
-  // ---- The headline and the comparison: worked out in the browser from the figures (and what is typed) ----
-  // The lead sentence's parts: a loss's figure in the critical text, its word ("loss") beside it.
+  // ---- The month and the comparison: worked out in the browser from the figures (and what is typed) ----
+  // A sentence's parts: a loss's figure in the critical text, its word ("loss") beside it.
   const leadNodes = (first) => first.map((p) => (typeof p === 'string' ? p : el('span', 'co-loss', p.text)));
-  function paintMoney() {
-    const results = draft.results();
+  let markedWay = null; // stage 2: the way whose column a tap on its bar marked (4.2)
+  let pairWay = null; // stage 2: the phone's other way (4.4); null: the best other way
+  let slowTimer = null; // stage 2: the swing, the map and the runs wait for a pause in the typing (the UI check: a fifth of a second a key on a slow phone)
+  // ---- Economics stage 2 ---- what you can sell caps the month everywhere (the owner, 2026-11-12), only when the owner has
+  // typed it (the owner, 2026-11-13): the box as typed, else the saved limit; { sellCap } for the model, or nothing
+  const limitWeek = () => limitWeekOf(reply.limit, draft.unsaved(LIMIT_KEY) ? draft.values()[LIMIT_KEY] : null);
+  const capCtx = () => { const k = limitWeek(); return typeof k === 'number' ? { sellCap: capOf(k) } : {}; };
+  function paintMoney({ later = false } = {}) {
+    const results = draft.results(capCtx());
     if (!results.length) return;
     const values = draft.values();
     const life = values.life;
     const h = headline(results, { room: reply.room.name, crop: reply.crop, life });
-    els.lead.replaceChildren(...leadNodes(h.first));
-    // the same sentence atop Figures, in view while typing (the audit, #1); a reader hears the result in the saved line
-    els.now.replaceChildren(...leadNodes(h.first));
-    els.second.textContent = h.second ?? '';
-    els.second.hidden = !h.second;
-    els.sources.textContent = sourcesLine(reply.figures);
+    // ---- Economics stage 2 ---- (4.1) the sentence for a reader (the cap said too); the tiles say it again; the meter; the
+    // sticky line
+    const uncapped = results[0].capped ? draft.results()[0] : null; // the month if all it grows sold: the profit tile's caption
+    const tiles = tilesOf(results, { room: reply.room.name, crop: reply.crop, type: reply.room.type, price: values.price, life, uncapped });
+    els.sentence.textContent = readerSentence(h, results, { uncapped, kgWeek: limitWeek() });
+    paintTiles(els.tiles, tiles, { onBest: showBar });
+    paintMeter();
+    const stickyWords = el('span', '', ''); // one inline run: a flex line would drop the spaces at its pieces' edges (the UI check)
+    stickyWords.append(...leadNodes(stickyText(results[0])));
+    els.sticky.replaceChildren(stickyWords);
     paintParts(els.headParts, 'retry-parts-head'); // a part not read, where the headline uses its fallback (the audit, #8)
+    if (markedWay && !results.some((r) => r.way === markedWay)) markedWay = null;
+    paintBars(els.bars, barsOf(results, reply.left ?? [], reply.crop, reply.room.type), { picked: markedWay, onPick: pickBar });
+    paintPair(results);
     paintTable(results);
     const labour = labourLine(results[0], reply.room.name); // ---- Money truth ---- the workers' share and its hours
     const lines = [
@@ -134,28 +179,68 @@ export function mount(container, { room = null, crop = null } = {}) {
       ...(labour ? [el('p', `ec-line ${labour.tone === 'warn' ? 'ec-warn' : 'muted'}`, labour.text)] : []),
       ...lines.map((t) => el('p', 'muted ec-line', t)),
     );
+    clearTimeout(slowTimer);
+    if (later) slowTimer = setTimeout(() => { if (alive() && reply?.room) keepRowFocus(paintSlow); }, 150);
+    else paintSlow();
+  }
+  // ---- Economics stage 2 ---- what moves profit most (5.5), price × yield (6.5) and the runs (7.8), with the figures as typed
+  function paintSlow() {
+    if (!draft.results().length) return;
+    const values = draft.values();
+    const typedKeys = reply.figures.filter((f) => draft.unsaved(f.key)).map((f) => f.key);
+    const people = typeof values['yours.workers'] === 'number' && typeof values['yours.workerMonth'] === 'number';
+    paintSwing(els.swing, swings(reply.figures, values, { ...draft.context(), ...capCtx() }, { typed: typedKeys }), { room: reply.room.name, type: reply.room.type, figures: reply.figures, people, values }, swingState);
+    paintPriceYield(values);
+    paintRuns();
   }
 
-  // A desk table (a column a way) and, on a phone, one small table a way, Your container first (CSS shows one of them).
+  // ---- Your runs against the plan (stage 2, spec 2026-11-12-economics-stage-2-design.md 7.8): read on their own route, their
+  // money worked out here with the plan's figures (a run before plans were kept: the figures now, typing included) ----
+  let plansReply = null;
+  const runState = { open: new Map(), failed: false, outdated: false, onRetry: () => plansReader.load() };
+  const plansFit = (p) => Boolean(p && reply?.room && p.room.id === reply.room.id && p.crop === reply.crop);
+  function paintRuns() {
+    if (!reply?.room) return;
+    paintPlans(els.runs, {
+      view: plansFit(plansReply) ? plansReply : null, values: draft.values(), ctx: draft.context(), room: reply.room.name, crop: reply.crop,
+    }, runState);
+  }
+
+  // A desk table (a column a way, capped at 760 px, the column a bar marked tinted) and, on a phone, one table of Your
+  // container beside the way Compare with picks (stage 2, 4.4; CSS shows one of them).
   function paintTable(results) {
     const table = rows(results);
+    const type = reply.room.type;
     const wrap = el('div', 'us-table-wrap ec-desk');
     wrap.setAttribute('role', 'region');
     wrap.setAttribute('aria-label', 'A month, each way');
     wrap.tabIndex = 0;
     wrap.dataset.focusKey = 'region-compare';
+    wrap.append(tableNode(results, table, results.map((_, i) => i), 'A month, each way'));
+    // the phone's: Your container and one other way
+    const other = pairOf(results);
+    const phone = el('div', 'ec-phone');
+    const cols = [0, ...(other ? [results.findIndex((r) => r.way === other)] : [])];
+    phone.append(tableNode(results, table, cols, other ? phoneCaption('yours', other, type) : `A month: ${wayName('yours', { type })}`));
+    els.table.replaceChildren(wrap, phone);
+  }
+  function tableNode(results, table, cols, caption) {
     const t = el('table', 'us-table ec-table');
-    t.append(el('caption', 'sr-only', 'A month, each way'));
+    t.append(el('caption', 'sr-only', caption));
     const head = el('tr');
     const corner = el('th', '');
     corner.scope = 'col';
     corner.append(el('span', 'sr-only', 'Figure'));
     head.append(corner);
-    for (const r of results) {
-      const th = el('th', 'num');
+    const marked = (r) => (r.way === markedWay ? ' ec-on' : '');
+    for (const i of cols) {
+      const r = results[i];
+      const th = el('th', `num${marked(r)}`);
       th.scope = 'col';
+      th.dataset.way = r.way;
       th.append(el('span', 'ec-way', wayName(r.way, { type: reply.room.type })));
       if (r.way === 'yours') th.append(el('span', 'ec-way-room', reply.room.name));
+      if (r.way === markedWay) th.append(el('span', 'ec-way-room', 'Shown'));
       head.append(th);
     }
     const thead = el('thead');
@@ -167,37 +252,105 @@ export function mount(container, { room = null, crop = null } = {}) {
       const th = el('th', '', row.label);
       th.scope = 'row';
       tr.append(th);
-      for (const c of row.cells) tr.append(cellNode('td', c));
+      for (const i of cols) tr.append(cellNode('td', row.cells[i], marked(results[i]).trim()));
       body.append(tr);
     }
     t.append(thead, body);
-    wrap.append(t);
-    // the phone's: a block a way, its head the way's name with Profit a month beside it
-    const phone = el('div', 'ec-phone');
-    const profitRow = table.find((x) => x.key === 'profit');
-    results.forEach((r, i) => {
-      const block = el('section', 'ec-block');
-      const blockHead = el('div', 'ec-block-head');
-      const name = el('h3', 'ec-block-name', wayName(r.way, { type: reply.room.type }));
-      if (r.way === 'yours') name.append(el('span', 'ec-way-room', reply.room.name));
-      const profitNode = cellNode('p', profitRow.cells[i], 'ec-block-profit');
-      profitNode.prepend(el('span', 'ec-block-label', profitRow.label));
-      blockHead.append(name, profitNode);
-      const bt = el('table', 'us-table ec-block-table');
-      bt.append(el('caption', 'sr-only', `${wayName(r.way, { type: reply.room.type })}: a month`));
-      const bb = el('tbody');
-      for (const row of table.filter((x) => x.key !== 'profit')) {
-        const tr = el('tr');
-        const th = el('th', '', row.label);
-        th.scope = 'row';
-        tr.append(th, cellNode('td', row.cells[i]));
-        bb.append(tr);
-      }
-      bt.append(bb);
-      block.append(blockHead, bt);
-      phone.append(block);
-    });
-    els.table.replaceChildren(wrap, phone);
+    return t;
+  }
+  // ---- Economics stage 2 ---- the phone's other way: the one picked, else the best other way (4.4)
+  function pairOf(results) {
+    const choices = compareChoices(results, reply.room.type);
+    if (!choices.length) return null;
+    return choices.some((c) => c.way === pairWay) ? pairWay : choices[0].way;
+  }
+  function paintPair(results) {
+    const choices = compareChoices(results, reply.room.type);
+    els.pair.hidden = choices.length < 2; // two ways: no choice to make
+    const way = pairOf(results);
+    const next = JSON.stringify(choices);
+    if (els.pairPick.dataset.shape !== next) {
+      els.pairPick.dataset.shape = next;
+      els.pairPick.replaceChildren(...choices.map((c) => Object.assign(el('option', '', c.name), { value: c.way })));
+    }
+    if (way) els.pairPick.value = way;
+  }
+  // The meter (4.3): the figures that make Your container's month by tier; with none yours, where to set them.
+  function paintMeter() {
+    const m = meterText(meterOf(reply.figures));
+    els.meter.replaceChildren(m.text);
+    if (m.setYours) {
+      const go = el('button', 'ec-inline', 'Figures');
+      go.type = 'button';
+      go.dataset.focusKey = 'meter-figures';
+      go.addEventListener('click', () => {
+        setFiguresOpen(true);
+        els.figuresToggle.focus();
+        els.figuresToggle.scrollIntoView({ block: 'start' });
+      });
+      els.meter.append(`${DOT}set yours in `, go, ' below');
+    }
+  }
+  // ---- Price × yield (stage 2, 6.5): the map of Your container's profit, capped by what you can sell (its own Figures
+  // row at the top of the card) ----
+  const swingState = { all: false, onToggle: () => { swingState.all = !swingState.all; keepRowFocus(paintMoney); }, goTo: (key) => goToFigure(key) };
+  const LIMIT_KEY = 'market.kgWeek';
+  const figureByKey = (key) => (key === LIMIT_KEY ? limitFigure(reply.limit, reply.errors) : reply.figures.find((x) => x.key === key));
+  const pickedLine = el('p', 'ec-map-picked'); // seen; said on the page's polite line only when a cell is picked (the UI check)
+  const mapState = { picked: { row: 3, col: 3 }, onPick: pickCell, line: pickedLine };
+  let limitShape = '';
+  function paintPriceYield(values) {
+    els.mapLead.textContent = `${reply.room.name}'s profit a month at selling prices and yields around yours now, the rest held.`;
+    const shapeNow = `${reply.room.id}/${reply.crop}`;
+    if (limitShape !== shapeNow) {
+      limitShape = shapeNow;
+      els.limit.replaceChildren(rowNode(limitFigure(reply.limit, reply.errors)));
+    }
+    updateRow(limitFigure(reply.limit, reply.errors));
+    const map = mapOf(values, draft.context(), { kgWeek: limitWeek() }); // now's cell: the month the tiles show
+    paintMap(els.map, map, mapState);
+  }
+  // A cell picked (a tap or Enter): the map alone painted again, its line said (the review: not the whole page).
+  function pickCell(row, col) {
+    mapState.picked = { row, col };
+    keepRowFocus(() => paintPriceYield(draft.values()));
+    said(pickedLine.textContent);
+  }
+
+  // ---- Economics stage 2 ---- Figures starts folded; one tap opens it; the choice kept on the device (the owner, 2026-11-12)
+  const FIGURES_KEY = 'farm.economics.figures';
+  function setFiguresOpen(open, keep = true) {
+    els.figuresToggle.setAttribute('aria-expanded', String(open));
+    els.figuresBody.hidden = !open;
+    if (keep) try { localStorage.setItem(FIGURES_KEY, open ? 'open' : 'closed'); } catch { /* not kept: folded next time */ }
+  }
+  let figuresOpen = false;
+  try { figuresOpen = localStorage.getItem(FIGURES_KEY) === 'open'; } catch { /* folded */ }
+  setFiguresOpen(figuresOpen, false);
+  els.figuresToggle.addEventListener('click', () => setFiguresOpen(els.figuresBody.hidden));
+  // A figure's name in What moves profit most or Set these first: Figures opened, its fold too, the cursor on its box.
+  function goToFigure(key) {
+    setFiguresOpen(true);
+    const row = container.querySelector(`[data-key="${key}"]`);
+    if (!row) return;
+    const fold = row.closest('details');
+    if (fold) fold.open = true;
+    const box = row.querySelector('.ec-box') ?? row.querySelector('a, button');
+    row.scrollIntoView({ block: 'center' });
+    box?.focus({ preventScroll: true });
+  }
+
+  // A bar tapped: its column marked in the table and, on a phone, the way beside Your container.
+  function pickBar(way) {
+    markedWay = way === markedWay ? null : way;
+    if (way !== 'yours' && markedWay) pairWay = way;
+    keepRowFocus(paintMoney);
+    if (markedWay) said(`${wayName(way, { type: reply.room.type })} shown in the table.`);
+  }
+  // Tile 4: to its bar, the cursor on it.
+  function showBar(way) {
+    const b = els.bars.querySelector(`[data-way="${way}"] button`);
+    if (b) b.focus();
   }
   // A cell: its figure, a loss in the critical text with "Loss" under it.
   function cellNode(tag, c, extra = '') {
@@ -285,7 +438,7 @@ export function mount(container, { room = null, crop = null } = {}) {
   }
   // A row's tag, box, note, applies and (electricity per block) simulator line, from the figure as the reply has it.
   function updateRow(f) {
-    const row = els.folds.querySelector(`[data-key="${f.key}"]`);
+    const row = container.querySelector(`[data-key="${f.key}"]`);
     if (!row) return;
     const box = row.querySelector('.ec-box');
     const typing = box && document.activeElement === box;
@@ -293,7 +446,14 @@ export function mount(container, { room = null, crop = null } = {}) {
     const value = row.querySelector('.ec-fig-value');
     if (value) value.textContent = figureText(f.key, f.value);
     const tag = row.querySelector('.ec-tag');
-    if (!tag.dataset.saving) tag.textContent = draft.unsaved(f.key) && notSaved.has(f.key) ? 'Not saved' : tagText(f);
+    // stage 2 (4.3): a label in its tier, its row ruled by it; Saving… and Not saved keep the neutral look
+    const label = labelOf(f);
+    row.dataset.tier = label.tier;
+    if (!tag.dataset.saving) {
+      const unsavedMark = draft.unsaved(f.key) && notSaved.has(f.key);
+      tag.dataset.tier = unsavedMark ? 'app' : label.tier;
+      tag.replaceChildren(...(unsavedMark ? ['Not saved'] : labelNodes(label)));
+    }
     tag.dataset.source = f.source;
     showError(f.key, row);
     const note = row.querySelector('.ec-note');
@@ -319,7 +479,22 @@ export function mount(container, { room = null, crop = null } = {}) {
       p.append('.');
     }
     if (n.back) p.append(' ', backNode(key)); // Back to default on its own line, the set figure's (the audit, #20)
+    if (typeof n.use === 'number') p.append(' ', useNode(key, n.use)); // stage 2: Your sales' week as the limit, one tap
     return p;
+  }
+  // Use this: the suggestion into the box, saved as if typed and left (the owner, 2026-11-13).
+  function useNode(key, value) {
+    const b = el('button', 'bz-quiet ec-back', 'Use this');
+    b.type = 'button';
+    b.dataset.focusKey = `use:${key}`;
+    b.setAttribute('aria-label', `Use this: ${figureLabel(key, reply.room.type)} ${figureText(key, value)}`);
+    b.addEventListener('click', () => {
+      const box = container.querySelector(`[data-key="${key}"] .ec-box`);
+      if (!box) return;
+      box.value = boxText(key, value);
+      onSave(key, box);
+    });
+    return b;
   }
   function backNode(key) {
     const b = el('button', 'bz-quiet ec-back', 'Back to default');
@@ -335,7 +510,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     b.type = 'button';
     b.dataset.focusKey = `retry:${key}`;
     b.addEventListener('click', () => {
-      const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
+      const box = container.querySelector(`[data-key="${key}"] .ec-box`);
       if (box) onSave(key, box);
     });
     p.append(DOT, b);
@@ -343,10 +518,10 @@ export function mount(container, { room = null, crop = null } = {}) {
   }
   // The line under a box: its refusal (aria-invalid), else a check of an unusual figure (the audit, #6: amber, allowed, the
   // box not invalid); the box's description is that line, then its unit and its source tag (the audit, #9).
-  function showError(key, row = els.folds.querySelector(`[data-key="${key}"]`)) {
+  function showError(key, row = container.querySelector(`[data-key="${key}"]`)) {
     const box = row?.querySelector('.ec-box');
     const error = row?.querySelector('.ec-error');
-    const f = reply.figures.find((x) => x.key === key);
+    const f = figureByKey(key);
     if (!box || !error || !f) return;
     const refused = refusals.get(key) ?? draft.error(key);
     const warn = refused ? null : likely(f, draft.unsaved(f.key) ? draft.values()[f.key] : f.source === 'owner' ? f.value : null);
@@ -416,12 +591,20 @@ export function mount(container, { room = null, crop = null } = {}) {
   // ---- Typing, saving, back to default, Work it out ----
   const refusals = new Map(); // key → the refusal kept under a box left with it (the box's own check or the server's)
   const notSaved = new Set(); // keys whose save got no answer or a server fault
+  let typeFrame = null;
   function onType(key, box) {
     refusals.delete(key);
     draft.type(key, box.value);
     showError(key);
-    paintMoney();
-    paintSimRow();
+    // one paint a frame however fast the keys come (the UI check); the slow parts after a pause
+    if (typeFrame === null) {
+      typeFrame = requestAnimationFrame(() => {
+        typeFrame = null;
+        if (!alive() || !reply?.room) return;
+        paintMoney({ later: true });
+        paintSimRow();
+      });
+    }
   }
   // An action's room and crop, as a reply's (fitsWant): a failure for a room or crop no longer picked is dropped too.
   const here = () => ({ room: { id: reply.room.id }, crop: reply.crop });
@@ -437,10 +620,11 @@ export function mount(container, { room = null, crop = null } = {}) {
       return;
     }
     const at = here();
-    const row = els.folds.querySelector(`[data-key="${key}"]`);
+    const row = container.querySelector(`[data-key="${key}"]`);
     const tag = row?.querySelector('.ec-tag');
     if (tag) {
       tag.dataset.saving = '1';
+      tag.dataset.tier = 'app';
       tag.textContent = 'Saving…';
     }
     const act = replies.act(); // a read asked before this save is older than its reply
@@ -453,8 +637,8 @@ export function mount(container, { room = null, crop = null } = {}) {
       draft.drop(key, t.value); // only the value it saved: a newer one typed meanwhile stays
       if (show(next, { act }) !== 'new') repaint(); // a read painted this answer first, while the tag said Saving…
       // said with the result (out of view at the box) and, once, a check of an unusual figure
-      const warn = likely(reply.figures.find((x) => x.key === key), t.value);
-      said(savedText(key, t.value, next.room.name, next.crop, draft.results()[0], next.room.type) + (warn ? ` ${warn}` : ''));
+      const warn = likely(figureByKey(key), t.value);
+      said(savedText(key, t.value, next.room.name, next.crop, draft.results(capCtx())[0], next.room.type) + (warn ? ` ${warn}` : ''));
     } catch (err) {
       if (!alive()) return;
       if (tag) delete tag.dataset.saving;
@@ -482,9 +666,9 @@ export function mount(container, { room = null, crop = null } = {}) {
       notSaved.delete(key);
       if (show(next, { act }) !== 'new') repaint();
       // the box shows the figure it fell to (a repaint leaves a focused box alone), and keeps the cursor
-      const box = els.folds.querySelector(`[data-key="${key}"] .ec-box`);
+      const box = container.querySelector(`[data-key="${key}"] .ec-box`);
       if (box) {
-        box.value = boxText(key, reply.figures.find((f) => f.key === key)?.value);
+        box.value = boxText(key, figureByKey(key)?.value);
         box.focus({ preventScroll: true });
       }
       said(`${figureLabel(key, reply.room.type)}: back to default.`);
@@ -567,6 +751,7 @@ export function mount(container, { room = null, crop = null } = {}) {
     if (verdict === 'drop') return verdict;
     els.banner.hidden = true;
     if (verdict === 'same') return verdict; // the same answer: nothing to paint (the live progress stays)
+    const moved = next.room && (!reply?.room || next.room.id !== reply.room.id || next.crop !== reply.crop); // stage 2: the runs asked again
     if (next.room && reply && (next.room.id !== reply.room?.id || next.crop !== reply.crop)) {
       draft = createDraft();
       refusals.clear();
@@ -587,7 +772,16 @@ export function mount(container, { room = null, crop = null } = {}) {
     els.body.hidden = false;
     fillPicks();
     keepAddress();
+    if (moved) {
+      mapState.picked = { row: 3, col: 3 };
+      markedWay = null;
+      pairWay = null;
+      plansReply = null;
+      runState.open.clear();
+      runState.failed = false;
+    }
     repaint();
+    if (moved && !runState.outdated) plansReader.load();
     return verdict;
   }
   // No answer: the banner says why; what was shown stays (a first read that fails shows the banner alone).
@@ -615,9 +809,33 @@ export function mount(container, { room = null, crop = null } = {}) {
     delay: () => fallbackMs(REFRESH_MS, live.connected()),
     alive,
   });
-  const reload = createThrottle(() => { if (alive()) reader.load(); });
+  // the runs: asked when the room or crop changes, on the same events and timer, never after a save (a save changes only
+  // the figures now, which the page holds)
+  const plansReader = createReader({
+    read: () => request('GET', `/api/economics/plans?${new URLSearchParams({ room: reply.room.id, crop: reply.crop })}`),
+    done(next) {
+      if (!plansFit(next)) return; // for a room or crop no longer picked
+      plansReply = next;
+      runState.failed = false;
+      keepRowFocus(paintRuns);
+    },
+    failed(err) {
+      if (routeMissing(err)) runState.outdated = true; // an older farm app: the reads stop
+      else runState.failed = true;
+      keepRowFocus(paintRuns);
+    },
+    delay: () => fallbackMs(REFRESH_MS, live.connected()),
+    alive: () => alive() && Boolean(reply?.room),
+  });
+  const reload = createThrottle(() => {
+    if (!alive()) return;
+    reader.load();
+    if (reply?.room) plansReader.load();
+  });
+  // a figure saved or Work it out tells 'economics' without plan: the view alone (the review: a save never reads the runs)
+  const reloadView = createThrottle(() => { if (alive()) reader.load(); });
   const offLive = [
-    ...LISTEN.map((type) => live.on(type, () => reload.call())),
+    ...LISTEN.map((type) => live.on(type, (d) => (type === 'economics' && !d?.plan ? reloadView.call() : reload.call()))),
     live.on('room', (d) => { if (d.part === 'crop' || d.part === 'room') reload.call(); }), // a run starts or ends; a room's name
     live.on('simulation', (d) => {
       // its progress words only; done or failed arrives as 'economics'
@@ -634,6 +852,17 @@ export function mount(container, { room = null, crop = null } = {}) {
     els.gone.hidden = true;
     reader.load();
   };
+  els.pairPick.addEventListener('change', () => { // stage 2 (4.4): the phone's other way, said
+    pairWay = els.pairPick.value;
+    keepRowFocus(paintMoney);
+    said(`Comparing with ${els.pairPick.selectedOptions[0]?.textContent ?? ''}`);
+  });
+  // stage 2 (4.1): the sticky line only while the month's tiles are out of view
+  const watchTiles = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver(([e]) => { els.sticky.hidden = e.isIntersecting; }, {
+      rootMargin: `-${parseInt(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h'), 10) || 56}px 0px 0px 0px`, // under the top bar
+    }) : null;
+  watchTiles?.observe(els.month);
   els.room.addEventListener('change', pick); // the crop picked stays: the same crop in another room
   els.crop.addEventListener('change', pick);
   q('[data-retry]').addEventListener('click', () => reader.load());
@@ -642,7 +871,13 @@ export function mount(container, { room = null, crop = null } = {}) {
   return function unmount() {
     mountSeq++;
     reader.stop();
+    plansReader.stop();
+    watchTiles?.disconnect();
+    clearTimeout(slowTimer);
+    if (typeFrame !== null) cancelAnimationFrame(typeFrame);
+    mapState.resize?.disconnect();
     reload.cancel();
+    reloadView.cancel();
     for (const off of offLive) off();
   };
 }

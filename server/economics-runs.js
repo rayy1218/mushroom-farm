@@ -4,7 +4,9 @@
 // Costs' sale steps), Batches and the usage days on each request (never stored); Your sales, the crop's realised price of
 // the last 90 days. A part that cannot be read is logged and named in errors; its figures are left to the next source.
 //   yourRuns({ db, harvests, batches, days, room, crop, today, zone, log }) → { figures, errors }
-//   yourSales({ db, crop, today, zone }) → { value, runs } or null
+//   yourSales({ db, crop, today, zone }) → { value, runs } or null (runs.first: the first sale's day, stage 2)
+//   countedRuns(harvests, roomId, crop) · eachRun({ db, harvests, batches, days, room, crop, today, zone, log }) (Economics
+//   stage 2, spec 2026-11-12-economics-stage-2-design.md 7.3: each counted run's own figures, against its plan)
 
 import { addDays, daysBetween } from './task-rules.js';
 import { runOn, saleParts, SALE_DAYS as SALE_DAYS_TIED } from './costs-math.js';
@@ -36,10 +38,7 @@ export function yourRuns({ db, harvests, batches, days, room, crop, today, zone,
   if (blocks) figures['yours.blocks'] = blocks;
   // the counted runs: ended, with kg of the crop picked, and not partial unless the owner gave the day its blocks went in
   // (Money truth 8.2: its start is then that day); oldest first
-  const counted = read('harvest', () => harvests.roomView(room.id).past
-    .filter((r) => (!r.partial || r.blocksInAt != null) && r.endedAt !== null && r.byCrop.some((c) => c.crop === crop && c.kg > 0))
-    .map((r) => ({ ...r, from: r.partial ? r.blocksInAt : r.startedAt, own: r.byCrop.find((c) => c.crop === crop) }))
-    .sort((a, b) => a.from - b.from || a.id - b.id));
+  const counted = read('harvest', () => countedRuns(harvests, room.id, crop));
   if (!counted?.length) return { figures, errors };
   const span = { count: counted.length, from: counted[0].from, to: counted.at(-1).endedAt, ...partials(counted) };
 
@@ -83,6 +82,73 @@ export function yourRuns({ db, harvests, batches, days, room, crop, today, zone,
   return { figures, errors };
 }
 
+// The counted runs of a room and crop: ended, with kg of the crop picked, and not partial unless the owner gave the day its
+// blocks went in (Money truth 8.2: its start is then that day); oldest first. → [run view + { from, own }] (own: its byCrop
+// entry of the crop).
+// view: the room's view when the caller has read it (eachRun: read once).
+export function countedRuns(harvests, roomId, crop, view = harvests.roomView(roomId)) {
+  return view.past
+    .filter((r) => (!r.partial || r.blocksInAt != null) && r.endedAt !== null && r.byCrop.some((c) => c.crop === crop && c.kg > 0))
+    .map((r) => ({ ...r, from: r.partial ? r.blocksInAt : r.startedAt, own: r.byCrop.find((c) => c.crop === crop) }))
+    .sort((a, b) => a.from - b.from || a.id - b.id);
+}
+
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.3) Each counted run of the room and crop on its
+// own, newest first, with Your runs' rules one run at a time; the open run when it has the crop; the ended runs left out as
+// partial without a block-in day. A part not read: named in errors, its figures null.
+// → { past: [{ runId, from, to, days, partial, mixed, blocks, roomBlocks (every crop's), lost, measured, kg, sold, price,
+//      blockPrice, batchesLeftOut, kwhBlock, kwhPending }], current: { runId, from, partial, blocksInAt, day, kg, blocks } or
+//      null, leftOut: { partial }, errors }
+export function eachRun({ db, harvests, batches, days, room, crop, today, zone, log = console.error }) {
+  const errors = {};
+  const read = (part, fn) => {
+    try {
+      return fn();
+    } catch (err) {
+      log(`Economics: couldn't read ${part}:`, err);
+      errors[part] = PART_FAILED;
+      return null;
+    }
+  };
+  const view = read('harvest', () => harvests.roomView(room.id));
+  if (!view) return { past: [], current: null, leftOut: { partial: 0 }, errors };
+  const has = (r) => r.byCrop?.some((c) => c.crop === crop);
+  const open = view.current && has(view.current) ? view.current : null;
+  const current = open && {
+    runId: open.id, from: open.partial ? open.blocksInAt ?? open.startedAt : open.startedAt, partial: open.partial, blocksInAt: open.blocksInAt ?? null,
+    day: open.partial && open.blocksInAt == null ? null : daysBetween(zone.label(open.partial ? open.blocksInAt : open.startedAt), today),
+    kg: round(open.byCrop.find((c) => c.crop === crop).kg, 2), blocks: open.byCrop.find((c) => c.crop === crop).blocks,
+  };
+  const counted = read('harvest', () => countedRuns(harvests, room.id, crop, view)) ?? [];
+  const leftOut = { partial: view.past.filter((r) => r.partial && r.blocksInAt == null && r.byCrop.some((c) => c.crop === crop && c.kg > 0)).length };
+  const roomRuns = read('harvest', () => db.cropRuns(room.id).map((r) => ({
+    id: r.id, roomId: room.id, startDate: zone.label(r.startedAt), endDate: r.endedAt === null ? null : zone.label(r.endedAt),
+    blocks: total(r.crops, (c) => c.blocks),
+  })));
+  // the sale lines, picks and the farm's runs every counted run's price reads, once (the review: not once a run)
+  const sold = roomRuns && counted.length
+    ? read('sales', () => saleData(db, { crop, span: { from: Math.min(...counted.map((r) => r.from)), to: Math.max(...counted.map((r) => r.endedAt)) }, today, zone }))
+    : null;
+  const past = counted.toReversed().map((r) => {
+    const own = read('batches', () => new Map([[r.id, batches.list({ run: r.id }).batches.filter((b) => b.crop === crop)]]));
+    const rows = own?.get(r.id) ?? [];
+    const loss = rows.length ? lossOf(rows) : null;
+    const span = { from: r.from, to: r.endedAt };
+    const sales = sold ? read('sales', () => priceOf(sold, { crop, ids: new Set([r.id]), span })) : null;
+    const price = own ? batchPrice(own, { count: 1 }) : null;
+    const kwh = roomRuns ? read('energy', () => energy({ days, room, counted: [r], roomRuns, today, zone })) : null;
+    return {
+      runId: r.id, from: r.from, to: r.endedAt, days: daysBetween(zone.label(r.from), zone.label(r.endedAt)), partial: r.partial,
+      mixed: r.byCrop.map((c) => c.crop).filter((c) => c !== crop),
+      blocks: loss ? loss.put : r.own.blocks, roomBlocks: total(r.crops ?? [], (c) => c.blocks) || r.own.blocks, lost: loss ? loss.lost : null, measured: Boolean(loss), kg: round(r.own.kg, 2),
+      sold: sales ? { kg: sales.runs.kg, total: sales.runs.total } : null, price: sales?.value ?? null,
+      blockPrice: price?.value ?? null, batchesLeftOut: price ? price.runs.batchesLeftOut : rows.length,
+      kwhBlock: kwh?.value ?? null, kwhPending: kwh?.pending === true,
+    };
+  });
+  return { past, current, leftOut, errors };
+}
+
 // The room's blocks now (its Crop tab); an empty room: its latest run's.
 function roomBlocks(db, roomId) {
   const now = db.getProgram(roomId)?.crops ?? [];
@@ -112,9 +178,12 @@ function lossOf(rows) {
 
 // Σ total ÷ Σ kg of the crop's sale lines reaching a counted run by Costs' sale steps (its run, its room's that day, the one
 // run growing the crop, or shared by the kg picked), each at its share. None: the next source (Your sales).
-function salesPrice(db, { crop, ids, span, today, zone }) {
-  // only what can reach the counted runs: their crop's lines from the first one's start to SALE_DAYS (Costs') after the
-  // last one's end, and the picks the lines' windows look back on
+const salesPrice = (db, { crop, ids, span, today, zone }) => priceOf(saleData(db, { crop, span, today, zone }), { crop, ids, span });
+
+// What the sale steps read for the counted runs in span: the farm's runs, the crop's picks the lines' windows look back on
+// (from the first one's start to SALE_DAYS, Costs', after the last one's end) and the crop's lines sold in that window (a line
+// of a counted run, its own run, is sold within its span). → { data, sales } (sales: dated by the farm's day).
+function saleData(db, { crop, span, today, zone }) {
   const [from, to] = [span.from - (SALE_DAYS_TIED + 1) * DAY_MS, span.to + (SALE_DAYS_TIED + 1) * DAY_MS];
   const data = {
     today,
@@ -124,12 +193,19 @@ function salesPrice(db, { crop, ids, span, today, zone }) {
     }))),
     harvests: db.cropHarvestsBetween(crop, from, to).map((h) => ({ roomId: h.roomId, runId: h.runId, date: zone.label(h.pickedAt), kg: h.kg, crop: h.crop })),
   };
+  const sales = db.salesBetween(span.from - DAY_MS, to).filter((s) => s.crop === crop).map((s) => ({ ...s, date: zone.label(s.soldAt) }));
+  return { data, sales };
+}
+
+// The price of the lines in { data, sales } reaching the runs ids, from span's start to SALE_DAYS after its end. → { value,
+// runs: { from, to, kg, total } } or null.
+function priceOf({ data, sales }, { crop, ids, span }) {
+  const [from, to] = [span.from - DAY_MS, span.to + (SALE_DAYS_TIED + 1) * DAY_MS];
   let kg = 0;
   let sum = 0;
-  // a line of a counted run (its own run) is sold within its span: the window holds every line that can reach them
-  for (const s of db.salesBetween(span.from - DAY_MS, to)) {
-    if (s.crop !== crop) continue;
-    for (const p of saleParts({ ...s, date: zone.label(s.soldAt) }, data)) {
+  for (const s of sales) {
+    if (s.crop !== crop || s.soldAt < from || s.soldAt > to) continue;
+    for (const p of saleParts(s, data)) {
       if (!ids.has(p.runId)) continue;
       kg += p.kg;
       sum += p.total;
@@ -187,7 +263,9 @@ export function yourSales({ db, crop, today, zone }) {
   const kg = total(lines, (s) => s.kg);
   if (!(kg > 0)) return null;
   const sum = total(lines, (s) => s.total);
-  return { value: round(sum / kg, 2), runs: { kg: round(kg, 2), total: round(sum, 2), count: lines.length, from, to: today } };
+  // first: the window's first sale's day (Economics stage 2: what you can sell a week counts from it)
+  const first = lines.map((s) => zone.label(s.soldAt)).sort()[0];
+  return { value: round(sum / kg, 2), runs: { kg: round(kg, 2), total: round(sum, 2), count: lines.length, from, to: today, first } };
 }
 
 // Σ (blocks × price) ÷ Σ blocks of the crop's batches on the counted runs with a whole price; the ones without (a made

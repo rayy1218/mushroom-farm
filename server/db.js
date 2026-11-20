@@ -9,7 +9,7 @@ import { BATCHES_SCHEMA, createBatchStore } from './batches-db.js'; // ---- Batc
 import { readSources } from './costs-sources.js'; // ---- Costs ----
 import { createIntegrityStore } from './integrity-db.js'; // ---- Data integrity ----
 
-const VERSION = 29;
+const VERSION = 30;
 
 // Iteration 1 (version 0) had only the rooms table without the address columns.
 const ROOMS = `
@@ -492,6 +492,32 @@ const economicsRow = (r) => ({
   id: r.id, roomId: r.room_id, crop: r.crop, key: r.key, source: r.source, value: r.value, at: r.at, status: r.status,
   simId: r.sim_id, startedAt: r.started_at, error: r.error, kwh: r.kwh, blocks: r.blocks, days: r.days,
 });
+// ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.2): a run's plan, the room and crop's figures as
+// they were when the run started, written once. figures null: the run started before plans were kept (the upgrade writes
+// such a row for every crop of the four of every run then). Run ids are reused: the trigger takes a deleted run's plans.
+const ECONOMICS_PLANS = `
+CREATE TABLE IF NOT EXISTS economics_plans (
+  id       INTEGER PRIMARY KEY,
+  run_id   INTEGER NOT NULL,
+  room_id  INTEGER NOT NULL,
+  crop     TEXT    NOT NULL,
+  at       INTEGER NOT NULL,
+  figures  TEXT,
+  context  TEXT
+) STRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS economics_plan ON economics_plans (run_id, crop);
+CREATE INDEX IF NOT EXISTS economics_plans_by_room ON economics_plans (room_id, crop);
+CREATE TRIGGER IF NOT EXISTS economics_plan_run_gone AFTER DELETE ON runs BEGIN
+  DELETE FROM economics_plans WHERE run_id = OLD.id;
+END;`;
+const ECONOMICS_PLANS_BEFORE = `INSERT OR IGNORE INTO economics_plans (run_id, room_id, crop, at, figures, context)
+  SELECT r.id, r.room_id, json_extract(c.value, '$.crop'), ?, NULL, NULL FROM runs r, json_each(r.crops) c
+  WHERE json_extract(c.value, '$.crop') IN ('oyster', 'pink', 'woodear', 'lionsmane')`;
+const planRow = (r) => ({
+  id: r.id, runId: r.run_id, roomId: r.room_id, crop: r.crop, at: r.at,
+  figures: r.figures === null ? null : JSON.parse(r.figures), context: r.context === null ? null : JSON.parse(r.context),
+});
+// ---- end Economics stage 2 ----
 // ---- end Economics ----
 
 // ---- Money truth ---- the sale steps read one crop's picks in a span (made with the step; a file at 28 without it gains it)
@@ -1004,6 +1030,12 @@ function migrate(db) {
       db.exec(MONEY_TRUTH);
     }
     if (version < 29) addDataIntegrity(db, Date.now()); // ---- Data integrity ---- (spec 2026-11-12-data-integrity-design.md 2)
+    // ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.2; version 30, after data integrity's 29):
+    // the plans table, and a row with no figures for every run of before
+    if (version < 30) {
+      db.exec(ECONOMICS_PLANS);
+      db.prepare(ECONOMICS_PLANS_BEFORE).run(Date.now());
+    }
     db.exec(`PRAGMA user_version = ${VERSION}`);
     db.exec('COMMIT');
   } catch (err) {
@@ -3092,6 +3124,22 @@ export function openDb(path, { log = console.error } = {}) {
     // The simulator rows still working (settled when the farm app starts).
     economicsSimsWorking() {
       return econQ.working.all().map(economicsRow);
+    },
+
+    // ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 7.2) A plan is planRow's.
+    // A run's plan of a crop, or null.
+    economicsPlan(runId, crop) {
+      const r = db.prepare('SELECT * FROM economics_plans WHERE run_id = ? AND crop = ?').get(runId, crop);
+      return r ? planRow(r) : null;
+    },
+    // A room and crop's plans, newest run first.
+    economicsPlans(roomId, crop) {
+      return db.prepare('SELECT * FROM economics_plans WHERE room_id = ? AND crop = ? ORDER BY run_id DESC').all(roomId, crop).map(planRow);
+    },
+    // A run's plan written once: { runId, roomId, crop, at, figures, context }. → true when written (a row there stays).
+    saveEconomicsPlan({ runId, roomId, crop, at, figures, context }) {
+      return db.prepare('INSERT OR IGNORE INTO economics_plans (run_id, room_id, crop, at, figures, context) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(runId, roomId, crop, at, JSON.stringify(figures), JSON.stringify(context)).changes > 0;
     },
     // ---- end Economics ----
 

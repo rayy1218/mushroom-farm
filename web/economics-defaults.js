@@ -71,7 +71,7 @@ const houseWay = (way) => [
 ];
 export const FIGURES = [
   fig('price', 'Selling price', 'RM/kg', 'crop', 0, 1000),
-  fig('shrink', 'Shrink, harvest to sale', '%', 'crop', 0, 90),
+  fig('shrink', 'Loss after harvest', '%', 'crop', 0, 90),
   fig('pack', 'Packing and delivery', 'RM/kg', 'crop', 0, 100),
   fig('blockPrice', 'Block price, ready to fruit', 'RM a block', 'crop', 0, 100),
   { ...fig('tariff', 'Electricity price', 'RM/kWh', 'farm', 0, 10), settings: true },
@@ -104,6 +104,9 @@ export const FIGURES = [
   fig('import.landed', 'Landed price', 'RM/kg', 'crop', 0, 1000),
   fig('import.buyHours', 'Trading labour', 'hours a day', 'crop', 0, 24),
   fig('import.rent', 'Rent', 'RM a month', 'crop', 0, RENT_MAX),
+  // ---- Economics stage 2 ---- (spec 2026-11-12-economics-stage-2-design.md 6.3) the crop's market: never in figuresFor (no
+  // fold, no swing); the map caps its kg sold by it
+  fig('market.kgWeek', 'What you can sell', 'kg a week', 'crop', 0, 100_000),
 ];
 const BY_KEY = new Map(FIGURES.map((f) => [f.key, f]));
 export const figureOf = (key) => BY_KEY.get(key) ?? null;

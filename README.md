@@ -38,7 +38,7 @@ Built for one farm in lowland Malaysia. The owner and the workers each sign in, 
 | Today | The day's tasks for every room, by morning, afternoon and upkeep. Made for a phone |
 | Harvest | kg picked per day, room and crop, its expected value and the energy cost per kg |
 | Business | This month's profit, what needs attention, and each run's profit so far. Owner only: workers see no money |
-| Economics | One room's month with one crop against the other ways to grow or buy it |
+| Economics | One room's month with one crop against the other ways to grow or buy it: what moves its profit most, its profit over selling prices and yields (capped by what you can sell, once you set it), and each run against the plan saved when it started |
 
 ### Screens
 

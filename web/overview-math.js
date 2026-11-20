@@ -225,7 +225,14 @@ export function withTitlePrefix(title, count) {
 const STATUS_WORDS = { timeout: 'Timeout', offline: 'Offline' };
 
 // A value to its digits, the thousands grouped like the room page: "23.5", "1,301".
-export const grouped = (x, digits) => x.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+// One Intl.NumberFormat a number of places, kept: toLocaleString makes a new one each call (the Economics review: the map's
+// 49 labels a keystroke).
+const FORMATS = new Map();
+export const grouped = (x, digits) => {
+  let f = FORMATS.get(digits);
+  if (!f) FORMATS.set(digits, (f = new Intl.NumberFormat('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })));
+  return f.format(x);
+};
 
 // The value of a sensor on a room card: "23.5 °C", with the status word after it when the sensor is not online.
 export function sensorText(sensor, field, digits, unit) {

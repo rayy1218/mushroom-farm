@@ -198,3 +198,13 @@ test('labour as people: the workers and a worker\'s month at RM 1,700 × 1.1495,
   assert.equal(figureOf('wage').label, 'Labour cost, other ways');
   assert.equal(researchOf('yours.other', 'pink', ROOM, 1482).value, 0);
 });
+
+// ---- Economics stage 2 (spec 6.3) ----
+test('market.kgWeek: a figure of every crop\'s market, never a fold\'s; its refusal in the Settings rule\'s words', async () => {
+  const { figureOf, figuresFor, checkFigure, ECONOMICS_CROPS, placeOf } = await import('../web/economics-defaults.js');
+  assert.deepEqual({ ...figureOf('market.kgWeek') }, { key: 'market.kgWeek', label: 'What you can sell', unit: 'kg a week', scope: 'crop', min: 0, max: 100_000, whole: false, way: 'market' });
+  for (const c of ECONOMICS_CROPS) assert.equal(figuresFor(c).some((f) => f.key === 'market.kgWeek'), false);
+  assert.equal(checkFigure('market.kgWeek', 12.5), null);
+  assert.equal(checkFigure('market.kgWeek', -1).replaceAll('\u00a0', ' '), 'What you can sell must be a number from 0 to 100,000 kg a week');
+  assert.deepEqual(placeOf('market.kgWeek', 3, 'pink'), { roomId: 0, crop: 'pink' });
+});
